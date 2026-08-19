@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "Viu Auto Studio - Flow Connector",
+  "description": "Tự động tạo ảnh/video qua Google Flow (labs.google/fx) cho Viu Auto Studio. API URL backend cấu hình được ở trang Options (mặc định http://127.0.0.1:8000). Không thu thập dữ liệu ngoài Flow và backend cục bộ.",
+  "version": "1.1.0",
+  "permissions": [
+    "tabs",
+    "activeTab",
+    "downloads",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://labs.google/fx/*",
+    "http://127.0.0.1:*/*",
+    "http://localhost:*/*"
+  ],
+  "background": {
+    "service_worker": "scripts/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://labs.google/fx/*"],
+      "js": ["content/flow-selectors.js", "content/flow-automation.js", "content/flow-pipeline.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "action": {
+    "default_title": "Viu Auto Studio - Flow Connector"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["content/page-bridge.js"],
+      "matches": ["*://labs.google/fx/*"]
+    }
+  ]
+}

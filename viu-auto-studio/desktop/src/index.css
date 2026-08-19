@@ -1,0 +1,250 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Reference-matched palette (pixel-sampled from 27 reference screenshots)
+       amber #FAAA02, navy bg #0B0F12, panel #141D22, table #1A2229, border #293740 */
+    --background: 210 12% 6%;
+    --foreground: 210 20% 93%;
+    --card: 210 14% 11%;
+    --card-foreground: 210 20% 93%;
+    --primary: 42 98% 49%; /* #FAAA02 */
+    --primary-foreground: 45 97% 11%; /* #372A01 */
+    --secondary: 210 14% 14%;
+    --secondary-foreground: 210 15% 85%;
+    --muted: 210 14% 14%;
+    --muted-foreground: 215 18% 62%;
+    --accent: 200 20% 16%;
+    --accent-foreground: 210 20% 90%;
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 206 20% 21%;
+    --input: 206 16% 14%;
+    --ring: 42 98% 49%;
+    --radius: 0.75rem;
+  }
+  .dark {
+    --background: 210 16% 5%;
+    --foreground: 210 20% 93%;
+    --card: 210 14% 11%;
+    --card-foreground: 210 20% 93%;
+    --primary: 42 98% 49%;
+    --primary-foreground: 45 97% 11%;
+    --secondary: 210 14% 14%;
+    --secondary-foreground: 210 15% 85%;
+    --muted: 210 14% 14%;
+    --muted-foreground: 215 18% 58%;
+    --accent: 200 20% 16%;
+    --accent-foreground: 210 20% 90%;
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 206 20% 21%;
+    --input: 206 16% 14%;
+    --ring: 42 98% 49%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family:
+      "Inter",
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      sans-serif;
+  }
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(206 14% 18%);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Gradient utilities */
+@layer utilities {
+  .bg-gradient-primary {
+    background: linear-gradient(135deg, #d9940a 0%, #faaa02 50%, #ffc233 100%);
+  }
+  .bg-gradient-action {
+    background: linear-gradient(135deg, #f9a825 0%, #faaa02 100%);
+  }
+  .bg-gradient-success {
+    background: linear-gradient(135deg, #10b981 0%, #22c55e 100%);
+  }
+  /* CYAN progression gradient — "Tiếp tục / Next" buttons (reference 01_Y_Tuong) */
+  .bg-gradient-continue {
+    background: linear-gradient(135deg, #006b94 0%, #009cd8 50%, #00b8f0 100%);
+  }
+  .shadow-continue {
+    box-shadow: 0 0 18px rgba(0, 156, 216, 0.25), 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+  /* Deep-teal active stage pill (reference: active pill body #002430/#00546C) */
+  .stage-pill-active {
+    background: linear-gradient(135deg, #002430 0%, #00546c 100%);
+    border: 1px solid rgba(0, 156, 216, 0.45);
+    color: #b8e9f8;
+  }
+  .bg-gradient-card {
+    background: linear-gradient(145deg, #141d22 0%, #0f171c 100%);
+  }
+  .border-gradient {
+    border: 1px solid rgba(250, 170, 2, 0.22);
+  }
+  .border-subtle {
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  .shadow-glow {
+    box-shadow: 0 0 20px rgba(250, 170, 2, 0.12), 0 4px 20px rgba(0, 0, 0, 0.3);
+  }
+  .shadow-card {
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2), 0 1px 3px rgba(0, 0, 0, 0.15);
+  }
+  .text-gradient-primary {
+    background: linear-gradient(135deg, #faaa02 0%, #ffc233 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}
+
+/* Card styles */
+.vas-card {
+  background: #141d22;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.75rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+.vas-card-hover:hover {
+  border-color: rgba(250, 170, 2, 0.3);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3), 0 0 10px rgba(250, 170, 2, 0.08);
+}
+
+/* Status badges */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.status-proposed { background: rgba(249, 115, 22, 0.15); color: #f97316; }
+.status-producing { background: rgba(250, 170, 2, 0.15); color: #faaa02; }
+.status-failed { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+.status-pending { background: rgba(100, 116, 139, 0.15); color: #94a3b8; }
+.status-success { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+.status-completed { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+.status-skipped { background: rgba(100, 116, 139, 0.1); color: #64748b; }
+.status-draft { background: rgba(100, 116, 139, 0.15); color: #94a3b8; }
+
+/* Progress bar */
+.progress-track {
+  background: hsl(210 14% 15%);
+  border-radius: 999px;
+  height: 6px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+.progress-fill-purple { background: linear-gradient(90deg, #d9940a, #faaa02); }
+.progress-fill-green { background: linear-gradient(90deg, #10b981, #22c55e); }
+.progress-fill-orange { background: linear-gradient(90deg, #f9a825, #eab308); }
+.progress-fill-red { background: linear-gradient(90deg, #ef4444, #dc2626); }
+.progress-fill-gray { background: hsl(210 12% 25%); }
+
+/* Sidebar active indicator — dark teal band matching reference */
+.nav-item-active {
+  background: linear-gradient(90deg, rgba(0, 84, 108, 0.55) 0%, rgba(0, 60, 80, 0.35) 100%);
+  border-left: 3px solid #00b8f0;
+  color: #e2e8f0;
+}
+.nav-item {
+  border-left: 3px solid transparent;
+  color: #8b9eb0;
+}
+.nav-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #e2e8f0;
+}
+
+/* Input focus */
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: rgba(250, 170, 2, 0.5);
+  box-shadow: 0 0 0 2px rgba(250, 170, 2, 0.1);
+}
+
+/* Visual clarity pass: consistent Windows typography, higher contrast surfaces,
+   and crisper interactive states across every route. */
+@layer base {
+  html {
+    background: #090d11;
+    text-rendering: optimizeLegibility;
+    font-synthesis: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    min-width: 1024px;
+    font-family: "Segoe UI Variable", "Segoe UI", Inter, ui-sans-serif, system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    letter-spacing: 0.005em;
+  }
+  h1, h2, h3, h4 {
+    letter-spacing: -0.018em;
+    text-wrap: balance;
+  }
+  button, input, textarea, select {
+    font: inherit;
+  }
+}
+
+/* Keep panels distinct from the canvas instead of visually blending together. */
+.vas-card {
+  background: linear-gradient(145deg, #172129 0%, #11191f 100%);
+  border-color: rgba(148, 181, 199, 0.16);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.20), inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+.vas-card-hover:hover {
+  transform: translateY(-1px);
+  border-color: rgba(250, 170, 2, 0.46);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(250, 170, 2, 0.08);
+}
+.nav-item {
+  letter-spacing: 0.01em;
+}
+.nav-item-active {
+  background: linear-gradient(90deg, rgba(0, 115, 146, 0.58), rgba(0, 69, 92, 0.36));
+  box-shadow: inset 0 1px 0 rgba(125, 225, 255, 0.08);
+}
+input, textarea, select {
+  color: #e6edf3;
+  background-color: #111b22;
+  border-color: rgba(148, 181, 199, 0.22);
+}
+input::placeholder, textarea::placeholder {
+  color: #718392;
+  opacity: 1;
+}
+input:hover, textarea:hover, select:hover {
+  border-color: rgba(148, 181, 199, 0.36);
+}

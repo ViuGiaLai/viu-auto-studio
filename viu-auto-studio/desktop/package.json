@@ -1,0 +1,93 @@
+{
+  "name": "viu-auto-studio-desktop",
+  "version": "1.0.0",
+  "description": "Viu Auto Studio — AI video generator desktop app (Electron + React + Vite)",
+  "private": true,
+  "main": "dist-electron/main.mjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "electron:dev": "vite",
+    "electron:build": "vite build && electron-builder",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@electron-toolkit/utils": "^4.0.0",
+    "@radix-ui/react-dialog": "^1.1.2",
+    "@radix-ui/react-dropdown-menu": "^2.1.2",
+    "@radix-ui/react-label": "^2.1.0",
+    "@radix-ui/react-popover": "^1.1.2",
+    "@radix-ui/react-progress": "^1.1.0",
+    "@radix-ui/react-select": "^2.1.2",
+    "@radix-ui/react-separator": "^1.1.0",
+    "@radix-ui/react-slider": "^1.2.1",
+    "@radix-ui/react-slot": "^1.1.0",
+    "@radix-ui/react-switch": "^1.1.1",
+    "@radix-ui/react-tabs": "^1.1.1",
+    "@radix-ui/react-toast": "^1.2.2",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.441.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.0",
+    "tailwind-merge": "^2.5.2",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.20",
+    "electron": "^32.3.3",
+    "electron-builder": "^25.0.0",
+    "esbuild": "^0.28.2",
+    "postcss": "^8.4.45",
+    "puppeteer-core": "^25.8.0",
+    "tailwindcss": "^3.4.11",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.6",
+    "vite-plugin-electron": "^1.1.1",
+    "vite-plugin-electron-renderer": "^1.0.0"
+  },
+  "build": {
+    "appId": "com.viuautostudio.app",
+    "productName": "Viu Auto Studio",
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend",
+        "to": "backend",
+        "filter": [
+          "**/*",
+          "!**/__pycache__",
+          "!*.pyc"
+        ]
+      },
+      {
+        "from": "resources/ffmpeg",
+        "to": "ffmpeg",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "type": "module"
+}

@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+**/desktop/dist/
+**/desktop/dist-electron/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# Runtime / user data (browser profile contains secrets, must NOT be pushed)
+**/data/labs_profile/
+**/data/upload_tmp/
+**/data/subtitle_preview/
+**/data/app.db*
+**/data/tts_preview.mp3
+**/data/connector_workers.json
+
+# Env & secrets
+.env
+.env.*
+*.local
+
+# Logs
+*.log
+npm-debug.log*

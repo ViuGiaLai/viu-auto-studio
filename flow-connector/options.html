@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Viu Auto Studio - Flow Connector · Cài đặt</title>
+  <style>
+    :root {
+      --bg: #080b14; --card: #111827; --border: #1f2937;
+      --purple: #7c3aed; --purple2: #a855f7; --text: #e5e7eb; --muted: #9ca3af;
+      --ok: #22c55e; --bad: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+      display: flex; justify-content: center; padding: 40px 16px;
+    }
+    .wrap { width: 100%; max-width: 720px; }
+    h1 { font-size: 22px; margin: 0 0 6px; background: linear-gradient(90deg, var(--purple), var(--purple2));
+      -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .sub { color: var(--muted); font-size: 13px; margin-bottom: 28px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 22px; margin-bottom: 16px; }
+    label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+    input[type="text"] {
+      width: 100%; background: #0a0e1a; border: 1px solid var(--border); color: var(--text);
+      border-radius: 10px; padding: 10px 12px; font-size: 14px; font-family: monospace;
+    }
+    input[type="text"]:focus { outline: none; border-color: var(--purple2); }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+    .row { display: flex; gap: 10px; margin-top: 16px; align-items: center; }
+    button {
+      background: linear-gradient(90deg, var(--purple), var(--purple2)); color: #fff; border: none;
+      border-radius: 10px; padding: 9px 18px; font-size: 13px; cursor: pointer; font-weight: 600;
+    }
+    button.secondary { background: #1f2937; }
+    #status { font-size: 13px; margin-left: 8px; }
+    .ok { color: var(--ok); } .bad { color: var(--bad); }
+    hr { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Viu Auto Studio — Flow Connector</h1>
+    <p class="sub">Extension tự động tạo ảnh/video qua Google Flow cho Viu Auto Studio. Cấu hình API URL backend cục bộ tại đây.</p>
+
+    <div class="card">
+      <label for="apiBase">API URL của backend (không có đuôi /api)</label>
+      <input type="text" id="apiBase" placeholder="http://127.0.0.1:8000" />
+      <p class="hint">
+        Ứng dụng desktop tự khởi động backend trên một cổng còn trống và truyền URL này
+        cho extension. Nếu dùng ứng dụng desktop, thông thường không cần đổi giá trị này.
+        Giá trị phải bắt đầu bằng <code>http://</code>, ví dụ <code>http://127.0.0.1:8000</code>.
+      </p>
+      <div class="row">
+        <button id="saveBtn">Lưu cấu hình</button>
+        <button id="testBtn" class="secondary">Kiểm tra kết nối</button>
+        <span id="status"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="hint" style="margin:0">
+        <strong>Trạng thái worker:</strong> <span id="workerInfo">—</span><br/>
+        Khi extension kết nối với backend, trạng thái "Extension đang kết nối" sẽ hiện
+        ở mục Flow Connector trong Cài đặt của ứng dụng Viu Auto Studio.
+      </p>
+    </div>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Viu Auto Studio Flow Connector",
+  "version": "1.0.0",
+  "description": "Nhận Flow task từ Viu Auto Studio, tạo media trên Google Flow và trả file thật về FastAPI.",
+  "permissions": ["storage", "alarms", "tabs", "downloads"],
+  "host_permissions": [
+    "https://labs.google/*",
+    "https://*.googleusercontent.com/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": { "service_worker": "service-worker.js", "type": "module" },
+  "content_scripts": [
+    {
+      "matches": ["https://labs.google/fx/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options.html",
+  "action": { "default_title": "Viu Flow Connector", "default_popup": "options.html" }
+}
