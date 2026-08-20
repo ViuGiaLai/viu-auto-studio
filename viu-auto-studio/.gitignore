@@ -1,0 +1,50 @@
+# Local secrets and environment files
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# Local application state and credentials
+/data/*.db
+/data/*.sqlite
+/data/*.sqlite3
+/data/*.db-wal
+/data/*.db-shm
+/data/connector_workers.json
+/data/upload_tmp/
+/data/labs_profile/
+/data/runtime/
+/data/projects/
+/data/logs/
+
+# Python caches and local environments
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node/Electron dependencies and generated output
+**/node_modules/
+desktop/dist/
+desktop/dist-electron/
+desktop/release-*/
+desktop/.vite/
+
+# Generated logs, captures, and temporary reports
+*.log
+captures/
+desktop/capture-*/
+desktop/capture-*/
+*.tmp
+*.bak
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

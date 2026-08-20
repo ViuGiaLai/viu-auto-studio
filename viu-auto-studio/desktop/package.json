@@ -76,6 +76,14 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "../flow-connector",
+        "to": "flow-connector",
+        "filter": [
+          "**/*",
+          "!**/*.map"
+        ]
       }
     ],
     "win": {

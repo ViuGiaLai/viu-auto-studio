@@ -1,7 +1,8 @@
 import type {
   Channel, DashboardStats, FFmpegCheck, MediaInfo, Project, RenderConfig,
   RenderJob, ScriptData, ScriptPayload, Scene, SubtitleConfig, TTSConfig, TTSVoice,
-  Character, PipelineState, StudioSettings,
+    Character, PipelineState, StudioSettings, TimelineProject,
+
 } from "@/types"
 
 export type SkillCatalogItem = {
@@ -90,6 +91,46 @@ export async function startFlowBrowser(projectId: number, factorySessionId: stri
   return w.electronAPI.startFlow({ projectId, factorySessionId })
 }
 
+export async function openLocalPath(target: string): Promise<{ ok: boolean; message: string }> {
+  const w = window as unknown as { electronAPI?: { openPath?: (path: string) => Promise<{ ok: boolean; message: string }> } }
+  if (!w.electronAPI?.openPath) return { ok: false, message: "Thao tác này chỉ khả dụng trong Electron Desktop." }
+  return w.electronAPI.openPath(target)
+}
+
+export async function openAiBrowser(provider: "chatgpt" | "gemini"): Promise<{ ok: boolean; status: string; message: string; profilePath?: string; browserName?: string }> {
+  const w = window as unknown as { electronAPI?: { openAiBrowser?: (input: { provider: "chatgpt" | "gemini" }) => Promise<{ ok: boolean; status: string; message: string; profilePath?: string; browserName?: string }> } }
+  if (!w.electronAPI?.openAiBrowser) {
+    const url = provider === "chatgpt" ? "https://chatgpt.com/" : "https://gemini.google.com/app"
+    window.open(url, "_blank", "noopener,noreferrer")
+    return { ok: true, status: "web_opened", message: `Đã mở trang đăng nhập ${provider === "chatgpt" ? "ChatGPT" : "Gemini"}.` }
+  }
+  return w.electronAPI.openAiBrowser({ provider })
+}
+
+export async function getAiBrowserStatus(provider: "chatgpt" | "gemini"): Promise<{ connected: boolean; email?: string; model?: string; plan?: string; browserRunning?: boolean; message?: string }> {
+  const w = window as unknown as { electronAPI?: { getAiBrowserStatus?: (input: { provider: "chatgpt" | "gemini" }) => Promise<{ connected: boolean; email?: string; model?: string; plan?: string; browserRunning?: boolean; message?: string }> } }
+  if (!w.electronAPI?.getAiBrowserStatus) {
+    return { connected: false }
+  }
+  return w.electronAPI.getAiBrowserStatus({ provider })
+}
+
+export async function logoutAiBrowser(provider: "chatgpt" | "gemini"): Promise<{ ok: boolean; message: string }> {
+  const w = window as unknown as { electronAPI?: { logoutAiBrowser?: (input: { provider: "chatgpt" | "gemini" }) => Promise<{ ok: boolean; message: string }> } }
+  if (!w.electronAPI?.logoutAiBrowser) {
+    return { ok: true, message: "Đã đăng xuất" }
+  }
+  return w.electronAPI.logoutAiBrowser({ provider })
+}
+
+export function formatApiUrl(path: string): string {
+  const clean = path.startsWith("/") ? path : `/${path}`
+  if (API_BASE.startsWith("http")) {
+    return clean.startsWith("/api") ? `${API_BASE}${clean}` : `${API_BASE}/api${clean}`
+  }
+  return clean.startsWith("/api") ? clean : `/api${clean}`
+}
+
 
 
 export async function buildApiUrl(path: string): Promise<string> {
@@ -165,9 +206,11 @@ export const api = {
     video_type?: string
     aspect_ratio?: string
     language?: string
-    target_duration?: number
+        target_duration?: number
     project_type?: string
+    output_folder?: string
   }) => post<Project>(`/projects`, data),
+
   updateProject: (id: number, data: Partial<Project>) =>
     request<Project>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   updateProjectConfig: (id: number, config: Record<string, unknown>) =>
@@ -203,8 +246,9 @@ export const api = {
   getScript: (projectId: number) => request<ScriptData>(`/projects/${projectId}/script`),
   saveScript: (projectId: number, payload: ScriptPayload) =>
     post<{ ok: boolean; script_id: number }>(`/projects/${projectId}/script`, payload),
-  approveScript: (projectId: number) =>
-    post<{ ok: boolean; approved: boolean }>(`/projects/${projectId}/script/approve`),
+    approveScript: (projectId: number) =>
+    post<{ ok: boolean; approved: boolean; needs_scene_analysis?: boolean }>(`/projects/${projectId}/script/approve`),
+
   generateSeo: (projectId: number) =>
     post<{ ok: boolean; seo: { youtube_title: string; description: string; hashtags: string[]; tags: string[] } }>(
       `/projects/${projectId}/generate-seo`,
@@ -251,7 +295,20 @@ export const api = {
       `/projects/${projectId}/scenes/${sceneId}/regenerate-prompt`,
       data ?? {},
     ),
+    getTimeline: (projectId: number) => request<TimelineProject>(`/projects/${projectId}/timeline`),
+  saveTimeline: (projectId: number, timeline: {
+    duration: number
+    settings: Record<string, unknown>
+    expected_version?: number
+    clips: Array<Record<string, unknown>>
+  }) =>
+    request<TimelineProject>(`/projects/${projectId}/timeline`, {
+      method: "PUT",
+      body: JSON.stringify(timeline),
+    }),
+
   // Channel config (Cấu hình kênh modal)
+
   channelGetConfig: (id: number) => request<{ ok: boolean; config: Record<string, unknown> }>(`/channels/${id}/config`),
   channelUpdateConfig: (id: number, config: Record<string, unknown>) =>
     request<{ ok: boolean; config: Record<string, unknown> }>(`/channels/${id}/config`, {
@@ -268,6 +325,8 @@ export const api = {
     request<{ ok: boolean; updated?: string[] }>(`/settings`, { method: "PATCH", body: JSON.stringify(data) }),
   settingsTelegramTest: (data: { bot_token: string; chat_id: string; send_message?: boolean; message?: string }) =>
     post<{ ok: boolean; bot?: { username?: string; name?: string }; message_sent?: boolean }>(`/settings/telegram/test`, data),
+  settingsDeepSeekTest: (data: { api_key: string }) =>
+    post<{ ok: boolean; message: string }>(`/settings/deepseek/test`, data),
   systemDiagnose: () =>
     request<{
       backend: string
@@ -351,14 +410,14 @@ export const api = {
 
   // TTS
   ttsGetConfig: () => request<TTSConfig>(`/tts/config`),
-  ttsSaveConfig: (data: {
+    ttsSaveConfig: (data: Partial<TTSConfig> & {
     provider: string
     voice: string
     speed: number
     volume: number
     model_dir: string
-    cloud_api_key?: string
   }) => post<TTSConfig>(`/tts/config`, data),
+
   ttsListProviders: () => request<Array<{ id: string; name: string; available: boolean }>>(`/tts/providers`),
   ttsListVoices: (provider?: string) =>
     request<TTSVoice[]>(`/tts/voices${provider ? `?provider=${encodeURIComponent(provider)}` : ""}`),

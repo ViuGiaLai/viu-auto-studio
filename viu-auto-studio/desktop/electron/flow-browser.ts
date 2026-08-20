@@ -18,6 +18,21 @@ type FlowBrowserStartResult = {
 let browserProcess: ChildProcess | null = null
 let browserPort = 0
 
+function terminateBrowserTree(proc: ChildProcess): void {
+  if (!proc.pid) return
+  if (process.platform === "win32") {
+    spawn("taskkill", ["/pid", String(proc.pid), "/t", "/f"], {
+      windowsHide: true,
+      stdio: "ignore",
+    })
+  } else {
+    proc.kill("SIGTERM")
+    setTimeout(() => {
+      if (proc.exitCode === null) proc.kill("SIGKILL")
+    }, 3000)
+  }
+}
+
 function candidateChromePaths(): string[] {
   const env = process.env.VIU_CHROME_PATH
   const values = env ? [env] : []
@@ -80,7 +95,7 @@ async function configureExtension(runtime: RuntimeConfig, input: FlowBrowserStar
             apiBaseUrl: runtime.apiBaseUrl,
             bootstrapToken: runtime.flowBootstrapToken,
             factorySessionId: input.factorySessionId,
-            flowUrl: "https://labs.google/fx/vi/tools/flow",
+            flowUrl: "https://labs.google/fx/tools/flow",
           })
           return
         }
@@ -124,7 +139,7 @@ export async function startFlowBrowser(runtime: RuntimeConfig, input: FlowBrowse
     "--disable-sync",
     `--load-extension=${extensionPath}`,
     `--disable-extensions-except=${extensionPath}`,
-    "https://labs.google/fx/vi/tools/flow",
+    "https://labs.google/fx/tools/flow",
   ]
   browserProcess = spawn(chrome, args, { detached: false, windowsHide: false, stdio: "ignore" })
   browserProcess.once("exit", () => {
@@ -132,7 +147,7 @@ export async function startFlowBrowser(runtime: RuntimeConfig, input: FlowBrowse
     browserPort = 0
   })
   if (!(await waitForDevTools(browserPort))) {
-    browserProcess.kill()
+    terminateBrowserTree(browserProcess)
     browserProcess = null
     browserPort = 0
     return { ok: false, status: "failed", message: "Chrome không mở được remote debugging session." }
@@ -141,6 +156,9 @@ export async function startFlowBrowser(runtime: RuntimeConfig, input: FlowBrowse
     await configureExtension(runtime, input)
     return { ok: true, status: "started", message: "Đã mở Chrome Flow profile và nạp Flow Connector.", profilePath }
   } catch (error) {
+    terminateBrowserTree(browserProcess)
+    browserProcess = null
+    browserPort = 0
     return { ok: false, status: "failed", message: String(error instanceof Error ? error.message : error), profilePath }
   }
 }
@@ -156,9 +174,8 @@ function resolveFlowConnectorPath(): string | null {
 }
 
 export function stopFlowBrowser(): void {
-  if (browserProcess) {
-    browserProcess.kill()
-    browserProcess = null
-    browserPort = 0
-  }
+  const proc = browserProcess
+  browserProcess = null
+  browserPort = 0
+  if (proc) terminateBrowserTree(proc)
 }

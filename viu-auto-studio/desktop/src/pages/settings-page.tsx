@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react"
-import { Settings as SettingsIcon, Play, RefreshCw, AlertTriangle, CheckCircle2, KeyRound, Image, Zap, ExternalLink, FolderOpen, Send, ShieldCheck } from "lucide-react"
-import { api, openExternalUrl, selectDirectory } from "@/services/api"
+import {
+  Settings as SettingsIcon, Play, RefreshCw, AlertTriangle, CheckCircle2,
+  KeyRound, Image, Zap, ExternalLink, FolderOpen, Send, ShieldCheck,
+  Globe, Bot, Sparkles, MessageSquare, Eye, EyeOff, LogOut, Chrome, Check
+} from "lucide-react"
+import { api, openExternalUrl, selectDirectory, openAiBrowser, getAiBrowserStatus, logoutAiBrowser, mediaUrl } from "@/services/api"
 
 import { globalApi } from "@/services/pages-api"
 import { toast } from "@/hooks/use-toast"
@@ -16,7 +20,6 @@ import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/design-system"
 import { cn } from "@/utils/cn"
-import { mediaUrl } from "@/services/api"
 
 const SAMPLE_TEXT_VI = "Xin chào, đây là giọng đọc mẫu của Viu Auto Studio. Hãy điều chỉnh tốc độ và âm lượng để phù hợp với video của bạn."
 
@@ -40,6 +43,18 @@ export default function SettingsPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [customText, setCustomText] = useState(SAMPLE_TEXT_VI)
   const [dirty, setDirty] = useState(false)
+
+  // AI Dịch & SEO state
+  const [aiTranslationProvider, setAiTranslationProvider] = useState<"deepseek" | "chatgpt" | "gemini">("chatgpt")
+  const [chatgptStatus, setChatgptStatus] = useState<{ connected: boolean; email?: string; plan?: string; browserRunning?: boolean }>({ connected: false })
+  const [geminiStatus, setGeminiStatus] = useState<{ connected: boolean; email?: string; model?: string; browserRunning?: boolean }>({ connected: false })
+  const [geminiModelTier, setGeminiModelTier] = useState<string>("3.5 Flash")
+  const [deepseekKey, setDeepseekKey] = useState<string>("")
+  const [showDeepseekKey, setShowDeepseekKey] = useState(false)
+  const [deepseekTesting, setDeepseekTesting] = useState(false)
+  const [deepseekResult, setDeepseekResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [chatgptLoading, setChatgptLoading] = useState(false)
+  const [geminiLoading, setGeminiLoading] = useState(false)
 
   // Google Labs image provider
   const [labsEnabled, setLabsEnabled] = useState(false)
@@ -82,6 +97,7 @@ export default function SettingsPage() {
   const setOperatorProfile = useAppStore((s) => s.setOperatorProfile)
   const [globalSettings, setGlobalSettings] = useState<Record<string, unknown>>({})
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const pollingRef = useRef<Record<string, ReturnType<typeof setInterval>>>({})
 
   const loadAll = async () => {
     setLoading(true)
@@ -128,6 +144,13 @@ export default function SettingsPage() {
       setSettingsDraft(set)
       setProviders(provs)
       setVoices(vs)
+      if (set) {
+        if (set.ai_translation_provider) setAiTranslationProvider(set.ai_translation_provider as "deepseek" | "chatgpt" | "gemini")
+        if (set.gemini_model) setGeminiModelTier(String(set.gemini_model))
+        if (set.deepseek_api_key) setDeepseekKey(String(set.deepseek_api_key))
+      }
+      getAiBrowserStatus("chatgpt").then(setChatgptStatus).catch(() => {})
+      getAiBrowserStatus("gemini").then(setGeminiStatus).catch(() => {})
       if (cfg && !cfg.voice && vs.length > 0) {
         saveTTS({ voice: vs[0].id } as Partial<TTSConfig>)
       }
@@ -138,8 +161,154 @@ export default function SettingsPage() {
     }
   }
 
+  const handleOpenAiBrowser = async (provider: "chatgpt" | "gemini") => {
+    if (provider === "chatgpt") setChatgptLoading(true)
+    else setGeminiLoading(true)
+
+    try {
+      const res = await openAiBrowser(provider)
+      toast({
+        title: res.ok ? "Đã mở trình duyệt Chrome/Edge" : "Không thể mở trình duyệt",
+        description: res.message,
+        variant: res.ok ? "default" : "destructive",
+      })
+    } catch (e) {
+      toast({ title: "Lỗi mở trình duyệt", description: String(e), variant: "destructive" })
+    } finally {
+      // CLEAR LOADING IMMEDIATELY so the button returns to normal
+      if (provider === "chatgpt") setChatgptLoading(false)
+      else setGeminiLoading(false)
+    }
+
+    // Start background watcher without locking the button
+    if (pollingRef.current[provider]) {
+      clearInterval(pollingRef.current[provider])
+    }
+    const deadline = Date.now() + 120_000
+    pollingRef.current[provider] = setInterval(async () => {
+      if (Date.now() > deadline) {
+        if (pollingRef.current[provider]) {
+          clearInterval(pollingRef.current[provider])
+          delete pollingRef.current[provider]
+        }
+        return
+      }
+      try {
+        const status = await getAiBrowserStatus(provider)
+        if (status.connected) {
+          if (pollingRef.current[provider]) {
+            clearInterval(pollingRef.current[provider])
+            delete pollingRef.current[provider]
+          }
+          if (provider === "chatgpt") {
+            setChatgptStatus(status)
+            toast({ title: "Đã kết nối ChatGPT", description: status.email ? `Tài khoản: ${status.email}` : "Đã đăng nhập thành công" })
+          } else {
+            setGeminiStatus(status)
+            toast({ title: "Đã kết nối Gemini (Google)", description: status.email ? `Tài khoản: ${status.email}` : "Đã đăng nhập thành công" })
+          }
+        }
+      } catch {
+        // Polling error ignored
+      }
+    }, 2500)
+  }
+
+  const handleRefreshAiStatus = async (provider: "chatgpt" | "gemini") => {
+    if (provider === "chatgpt") setChatgptLoading(true)
+    else setGeminiLoading(true)
+    try {
+      const status = await getAiBrowserStatus(provider)
+      if (provider === "chatgpt") {
+        setChatgptStatus(status)
+        toast({ title: status.connected ? "ChatGPT đã kết nối" : "Chưa phát hiện đăng nhập ChatGPT", description: status.email || status.message })
+      } else {
+        setGeminiStatus(status)
+        toast({ title: status.connected ? "Gemini đã kết nối" : "Chưa phát hiện đăng nhập Gemini", description: status.email || status.message })
+      }
+    } catch (e) {
+      toast({ title: "Lỗi kiểm tra", description: String(e), variant: "destructive" })
+    } finally {
+      if (provider === "chatgpt") setChatgptLoading(false)
+      else setGeminiLoading(false)
+    }
+  }
+
+  const handleLogoutAiBrowser = async (provider: "chatgpt" | "gemini") => {
+    if (pollingRef.current[provider]) {
+      clearInterval(pollingRef.current[provider])
+      delete pollingRef.current[provider]
+    }
+    try {
+      const res = await logoutAiBrowser(provider)
+      if (provider === "chatgpt") {
+        setChatgptStatus({ connected: false })
+      } else {
+        setGeminiStatus({ connected: false })
+      }
+      toast({ title: "Đã đăng xuất", description: res.message })
+    } catch (e) {
+      toast({ title: "Lỗi đăng xuất", description: String(e), variant: "destructive" })
+    }
+  }
+
+  const handleTestDeepSeek = async () => {
+    setDeepseekTesting(true)
+    setDeepseekResult(null)
+    try {
+      const res = await api.settingsDeepSeekTest({ api_key: deepseekKey })
+      setDeepseekResult(res)
+      toast({
+        title: res.ok ? "Kết nối DeepSeek thành công" : "Kiểm tra thất bại",
+        description: res.message,
+        variant: res.ok ? "default" : "destructive",
+      })
+    } catch (e) {
+      const msg = String(e)
+      setDeepseekResult({ ok: false, message: msg })
+      toast({ title: "Lỗi kết nối DeepSeek", description: msg, variant: "destructive" })
+    } finally {
+      setDeepseekTesting(false)
+    }
+  }
+
+  const handleSaveDeepSeek = async () => {
+    try {
+      await api.settingsSave({ deepseek_api_key: deepseekKey })
+      setDirty(false)
+      toast({ title: "Đã lưu DeepSeek API key" })
+    } catch (e) {
+      toast({ title: "Lỗi khi lưu key", description: String(e), variant: "destructive" })
+    }
+  }
+
+  const handleSelectAiTranslationProvider = async (provider: "deepseek" | "chatgpt" | "gemini") => {
+    setAiTranslationProvider(provider)
+    setSettingsDraft((s) => ({ ...s, ai_translation_provider: provider }))
+    try {
+      await api.settingsSave({ ai_translation_provider: provider })
+      toast({ title: "Đã đổi nhà cung cấp Dịch / SEO", description: provider === "deepseek" ? "DeepSeek (API key)" : provider === "chatgpt" ? "ChatGPT (tài khoản)" : "Gemini (tài khoản)" })
+    } catch {
+      // Ignored
+    }
+  }
+
+  const handleSelectGeminiModel = async (model: string) => {
+    setGeminiModelTier(model)
+    setSettingsDraft((s) => ({ ...s, gemini_model: model }))
+    try {
+      await api.settingsSave({ gemini_model: model })
+      toast({ title: `Đã chọn model Gemini: ${model}` })
+    } catch {
+      // Ignored
+    }
+  }
+
   useEffect(() => {
     loadAll()
+    return () => {
+      Object.values(pollingRef.current).forEach((timer) => clearInterval(timer))
+    }
   }, [])
 
   // Refresh voice list whenever the selected provider changes
@@ -635,160 +804,491 @@ export default function SettingsPage() {
         </TabsContent>
 
         {/* AI Dịch & Ảnh */}
-        <TabsContent value="ai">
-          <div className="vas-card p-5">
-            <h3 className="mb-4 text-base font-semibold text-slate-100">AI Dịch & Ảnh</h3>
-<p className="mb-4 text-sm text-slate-500">Nhà cung cấp AI cho kịch bản, dịch thuật và tạo ảnh</p>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label>Nhà cung cấp AI (văn bản)</Label>
-                <Select
-                  value={String(settingsDraft.ai_provider ?? "default")}
-                  onValueChange={(v) => { setDirty(true); setSettingsDraft((s) => ({ ...s, ai_provider: v })) }}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="openrouter">OpenRouter</SelectItem>
-                    <SelectItem value="gemini">Gemini</SelectItem>
-                    <SelectItem value="default">Mặc định</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Model</Label>
-                <Input
-                  placeholder="Vd: google/gemini-2.0-flash"
-                  value={String(settingsDraft.ai_model ?? "")}
-                  onChange={(e) => { setDirty(true); setSettingsDraft((s) => ({ ...s, ai_model: e.target.value })) }}
-                />
-              </div>
-              <div className="space-y-1.5 sm:col-span-2">
-                                <div className="flex items-center justify-between gap-2">
-                  <Label>API Key</Label>
-                  <span className={cn("text-xs", Boolean(settings.ai_api_key_set) ? "text-emerald-400" : "text-slate-500")}>
-                    {Boolean(settings.ai_api_key_set) ? "Đã có key đã lưu" : "Chưa cấu hình"}
-                  </span>
+        <TabsContent value="ai" className="space-y-6">
+          {/* Card 1: Dịch & SEO (AI) */}
+          <div className="vas-card p-6 border border-white/10 bg-[#0d1527] rounded-xl shadow-xl space-y-6">
+            <div>
+              <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+                <Globe className="h-5 w-5 text-indigo-400" />
+                Dịch & SEO (AI)
+              </h3>
+              <p className="mt-1 text-sm text-slate-400">
+                Nhà cung cấp dịch / SEO
+              </p>
+            </div>
+
+            {/* 3 Provider Options */}
+            <div className="grid gap-3 sm:grid-cols-3">
+              {/* Option 1: DeepSeek */}
+              <button
+                type="button"
+                onClick={() => handleSelectAiTranslationProvider("deepseek")}
+                className={cn(
+                  "flex flex-col items-start p-4 rounded-xl border text-left transition-all relative",
+                  aiTranslationProvider === "deepseek"
+                    ? "border-purple-500 bg-purple-500/10 ring-1 ring-purple-500/40 shadow-sm"
+                    : "border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]"
+                )}
+              >
+                <div className="flex items-center justify-between w-full mb-1.5">
+                  <div className="flex items-center gap-2 font-medium text-slate-100">
+                    <Bot className="h-4 w-4 text-purple-400" />
+                    <span>DeepSeek (API key)</span>
+                  </div>
+                  {aiTranslationProvider === "deepseek" && (
+                    <div className="h-2 w-2 rounded-full bg-purple-400" />
+                  )}
                 </div>
-                <Input
+                <p className="text-xs text-slate-400">
+                  Ổn định, tính phí theo API key.
+                </p>
+              </button>
 
-                  type="password"
-                  placeholder="Nhập API key mới (để trống nếu giữ nguyên)"
-                  value={String(settingsDraft.ai_api_key ?? "")}
-                  onChange={(e) => { setDirty(true); setSettingsDraft((s) => ({ ...s, ai_api_key: e.target.value })) }}
-                />
-                                <p className="text-xs text-muted-foreground">Key đã lưu không được trả về frontend. Nhập key mới chỉ khi muốn thay thế.</p>
+              {/* Option 2: ChatGPT */}
+              <button
+                type="button"
+                onClick={() => handleSelectAiTranslationProvider("chatgpt")}
+                className={cn(
+                  "flex flex-col items-start p-4 rounded-xl border text-left transition-all relative",
+                  aiTranslationProvider === "chatgpt"
+                    ? "border-emerald-500 bg-emerald-500/10 ring-1 ring-emerald-500/40 shadow-sm"
+                    : "border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]"
+                )}
+              >
+                <div className="flex items-center justify-between w-full mb-1.5">
+                  <div className="flex items-center gap-2 font-medium text-slate-100">
+                    <MessageSquare className="h-4 w-4 text-emerald-400" />
+                    <span>ChatGPT (tài khoản)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {chatgptStatus.connected && (
+                      <span className="flex h-2 w-2 rounded-full bg-emerald-400" title="Đã kết nối" />
+                    )}
+                    {aiTranslationProvider === "chatgpt" && (
+                      <div className="h-2 w-2 rounded-full bg-emerald-400 ring-2 ring-emerald-400/40" />
+                    )}
+                  </div>
+                </div>
+                <p className="text-xs text-slate-400">
+                  Dùng gói đã đăng ký, không cần API key.
+                </p>
+              </button>
 
+              {/* Option 3: Gemini */}
+              <button
+                type="button"
+                onClick={() => handleSelectAiTranslationProvider("gemini")}
+                className={cn(
+                  "flex flex-col items-start p-4 rounded-xl border text-left transition-all relative",
+                  aiTranslationProvider === "gemini"
+                    ? "border-indigo-500 bg-indigo-500/10 ring-1 ring-indigo-500/40 shadow-sm"
+                    : "border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]"
+                )}
+              >
+                <div className="flex items-center justify-between w-full mb-1.5">
+                  <div className="flex items-center gap-2 font-medium text-slate-100">
+                    <Sparkles className="h-4 w-4 text-indigo-400" />
+                    <span>Gemini (tài khoản)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {geminiStatus.connected && (
+                      <span className="flex h-2 w-2 rounded-full bg-emerald-400" title="Đã kết nối" />
+                    )}
+                    {aiTranslationProvider === "gemini" && (
+                      <div className="h-2 w-2 rounded-full bg-indigo-400 ring-2 ring-indigo-400/40" />
+                    )}
+                  </div>
+                </div>
+                <p className="text-xs text-slate-400">
+                  Đăng nhập Google, không cần API key.
+                </p>
+              </button>
+            </div>
+
+            {/* Section: Tài khoản ChatGPT */}
+            <div className="rounded-xl border border-white/10 bg-black/20 p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <h4 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
+                    <MessageSquare className="h-4 w-4 text-emerald-400" />
+                    Tài khoản ChatGPT
+                  </h4>
+                  {chatgptStatus.connected ? (
+                    <div className="flex items-center gap-2 text-xs text-emerald-300">
+                      <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                      <span>Đã kết nối: <strong className="font-semibold text-slate-100">{chatgptStatus.email || "rmahviu05.gl@gmail.com"}</strong></span>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400">
+                      Chưa đăng nhập — mở Chrome/Edge để đăng nhập tài khoản OpenAI / ChatGPT.
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {chatgptStatus.connected ? (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleOpenAiBrowser("chatgpt")}
+                        disabled={chatgptLoading}
+                        className="gap-1 text-xs border-white/15 hover:bg-white/10"
+                      >
+                        <Chrome className="h-3.5 w-3.5 text-slate-300" />
+                        Mở trình duyệt
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => handleLogoutAiBrowser("chatgpt")}
+                        className="gap-1 text-xs bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 border border-rose-500/30"
+                      >
+                        <LogOut className="h-3.5 w-3.5" />
+                        Đăng xuất
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenAiBrowser("chatgpt")}
+                        disabled={chatgptLoading}
+                        className={cn(
+                          "flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold text-white shadow-md transition-all",
+                          "bg-[#d9822b] hover:bg-[#c47220] active:scale-[0.98] cursor-pointer",
+                          chatgptLoading && "opacity-80 cursor-wait"
+                        )}
+                      >
+                        <Chrome className={cn("h-4 w-4 shrink-0", chatgptLoading && "animate-spin")} />
+                        <span>{chatgptLoading ? "Đang mở…" : "Đăng nhập bằng Chrome/Edge"}</span>
+                      </button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleRefreshAiStatus("chatgpt")}
+                        disabled={chatgptLoading}
+                        className="h-8 w-8 p-0 text-xs border-white/15 hover:bg-white/10"
+                        title="Kiểm tra lại trạng thái đăng nhập"
+                      >
+                        <RefreshCw className={cn("h-3.5 w-3.5", chatgptLoading && "animate-spin")} />
+                      </Button>
+                    </>
+                  )}
+                </div>
               </div>
+
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-200/90 leading-relaxed flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                <span>
+                  ⚠️ Dùng endpoint nội bộ không chính thức của ChatGPT: có thể gián đoạn khi OpenAI thay đổi, và có rủi ro với tài khoản. Gói Free bị giới hạn rất nặng — nên dùng gói trả phí (Plus/Pro).
+                </span>
+              </div>
+            </div>
+
+            {/* Section: Tài khoản Gemini (Google) */}
+            <div className="rounded-xl border border-white/10 bg-black/20 p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <h4 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-indigo-400" />
+                    Tài khoản Gemini (Google)
+                  </h4>
+                  {geminiStatus.connected ? (
+                    <div className="flex items-center gap-2 text-xs text-emerald-300">
+                      <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                      <span>Đã kết nối: <strong className="font-semibold text-slate-100">{geminiStatus.email || "Gemini"}</strong></span>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400">
+                      Chưa đăng nhập — mở Chrome/Edge để đăng nhập tài khoản Google.
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {geminiStatus.connected ? (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleOpenAiBrowser("gemini")}
+                        disabled={geminiLoading}
+                        className="gap-1 text-xs border-white/15 hover:bg-white/10"
+                      >
+                        <Chrome className="h-3.5 w-3.5 text-slate-300" />
+                        Mở trình duyệt
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => handleLogoutAiBrowser("gemini")}
+                        className="gap-1 text-xs bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 border border-rose-500/30"
+                      >
+                        <LogOut className="h-3.5 w-3.5" />
+                        Đăng xuất
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenAiBrowser("gemini")}
+                        disabled={geminiLoading}
+                        className={cn(
+                          "flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold text-white shadow-md transition-all",
+                          "bg-[#d9822b] hover:bg-[#c47220] active:scale-[0.98] cursor-pointer",
+                          geminiLoading && "opacity-80 cursor-wait"
+                        )}
+                      >
+                        <Chrome className={cn("h-4 w-4 shrink-0", geminiLoading && "animate-spin")} />
+                        <span>{geminiLoading ? "Đang mở…" : "Đăng nhập bằng Chrome/Edge"}</span>
+                      </button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleRefreshAiStatus("gemini")}
+                        disabled={geminiLoading}
+                        className="h-8 w-8 p-0 text-xs border-white/15 hover:bg-white/10"
+                        title="Kiểm tra lại trạng thái đăng nhập"
+                      >
+                        <RefreshCw className={cn("h-3.5 w-3.5", geminiLoading && "animate-spin")} />
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Model Gemini Selector */}
+              <div className="space-y-2 pt-1 border-t border-white/5">
+                <Label className="text-xs font-medium text-slate-300">Model Gemini</Label>
+                <div className="grid gap-2.5 sm:grid-cols-3">
+                  {[
+                    { id: "3.1 Flash-Lite", label: "3.1 Flash-Lite", desc: "Nhanh nhất." },
+                    { id: "3.5 Flash", label: "3.5 Flash", desc: "Mặc định, toàn diện." },
+                    { id: "3.1 Pro", label: "3.1 Pro", desc: "Chất lượng cao, chậm hơn." },
+                  ].map((m) => {
+                    const isSelected = geminiModelTier === m.id || (!geminiModelTier && m.id === "3.5 Flash")
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => handleSelectGeminiModel(m.id)}
+                        className={cn(
+                          "flex flex-col items-start p-3 rounded-lg border text-left transition-all",
+                          isSelected
+                            ? "border-indigo-500/80 bg-indigo-500/15 ring-1 ring-indigo-500/40"
+                            : "border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]"
+                        )}
+                      >
+                        <div className="flex items-center justify-between w-full">
+                          <span className="text-xs font-semibold text-slate-100">{m.label}</span>
+                          {isSelected && <Check className="h-3.5 w-3.5 text-indigo-400" />}
+                        </div>
+                        <span className="text-[11px] text-slate-400 mt-0.5">{m.desc}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="text-[11px] text-slate-400 italic">
+                  App dùng đúng model bạn đang chọn sẵn trên tài khoản gemini.google.com. Muốn đổi model, hãy chọn lại ở trình duyệt Gemini (lựa chọn ở đây chỉ để ghi nhớ).
+                </p>
+              </div>
+
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-200/90 leading-relaxed flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                <span>
+                  ⚠️ Dùng endpoint nội bộ không chính thức của Gemini: có thể gián đoạn khi Google thay đổi, và có rủi ro với tài khoản. Phiên có thể hết hạn theo thời gian — khi đó đăng nhập lại.
+                </span>
+              </div>
+            </div>
+
+            {/* Section: DeepSeek API Key */}
+            <div className="rounded-xl border border-white/10 bg-black/20 p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-semibold text-slate-200 flex items-center gap-2">
+                  <KeyRound className="h-4 w-4 text-purple-400" />
+                  DeepSeek API Key
+                </Label>
+                {Boolean(settings.deepseek_api_key_set) && (
+                  <span className="text-xs text-emerald-400 flex items-center gap-1">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Đã có key lưu trong máy
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative flex-1 min-w-[260px]">
+                  <Input
+                    type={showDeepseekKey ? "text" : "password"}
+                    placeholder="sk-..."
+                    value={deepseekKey}
+                    onChange={(e) => {
+                      setDeepseekKey(e.target.value)
+                      setDirty(true)
+                      setDeepseekResult(null)
+                    }}
+                    className="pr-16 bg-black/40 border-white/10 text-sm font-mono"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowDeepseekKey(!showDeepseekKey)}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 h-7 px-2 text-xs text-slate-400 hover:text-slate-200"
+                  >
+                    {showDeepseekKey ? <EyeOff className="h-3.5 w-3.5 mr-1" /> : <Eye className="h-3.5 w-3.5 mr-1" />}
+                    {showDeepseekKey ? "Ẩn" : "Hiện"}
+                  </Button>
+                </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleTestDeepSeek}
+                  disabled={deepseekTesting}
+                  className="gap-1.5 text-xs border-white/15 hover:bg-white/10"
+                >
+                  <RefreshCw className={cn("h-3.5 w-3.5", deepseekTesting && "animate-spin")} />
+                  {deepseekTesting ? "Đang test…" : "Test connection"}
+                </Button>
+
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleSaveDeepSeek}
+                  className="gap-1.5 text-xs bg-purple-600 hover:bg-purple-500 text-white"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Lưu key
+                </Button>
+              </div>
+
+              {deepseekResult && (
+                <p className={cn("text-xs flex items-center gap-1.5", deepseekResult.ok ? "text-emerald-400" : "text-rose-400")}>
+                  {deepseekResult.ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+                  {deepseekResult.message}
+                </p>
+              )}
+
+              <p className="text-[11px] text-slate-400 flex items-center gap-1.5">
+                <ShieldCheck className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                <span>Key được mã hoá bảo mật bằng safeStorage (Windows DPAPI), không lưu dưới dạng plaintext.</span>
+              </p>
             </div>
           </div>
-          <div className="mt-6 vas-card p-5">
+
+          {/* Card 2: Nguồn tạo ảnh AI cho từng cảnh */}
+          <div className="vas-card p-6 border border-white/10 bg-[#0d1527] rounded-xl shadow-xl space-y-5">
             <div className="mb-1 flex items-center justify-between">
-              <h3 className="text-base font-semibold text-slate-100">🖼 Nguồn tạo ảnh AI cho từng cảnh</h3>
+              <h3 className="text-base font-semibold text-slate-100 flex items-center gap-2">
+                <Image className="h-4.5 w-4.5 text-amber-400" />
+                Nguồn tạo ảnh AI cho từng cảnh
+              </h3>
             </div>
-            <p className="mb-4 text-sm text-slate-500">
-              Nguồn tạo ảnh/video chính là <span className="font-medium text-amber-300">UTO Flow (labs.google/fx — Nano Banana 2)</span>,
+            <p className="text-sm text-slate-400 leading-relaxed">
+              Nguồn tạo ảnh/video chính là <span className="font-semibold text-amber-300">UTO Flow (labs.google/fx — Nano Banana 2)</span>,
               tự động gửi prompt của từng cảnh sang Flow, theo dõi tiến trình và tải ảnh/video về đúng scene.
               Gemini chỉ phục vụ viết kịch bản, chia cảnh và tạo prompt. Pollinations.ai là bước cuối khi được bật cho phép.
-              Prompt của mỗi ảnh được AI viết theo nội dung TOÀN cảnh (phân cảnh ngữ nghĩa). Khi mọi nguồn thất bại,
-              pipeline báo lỗi rõ ràng kèm nguyên nhân — không tự dùng ảnh nền màu.
             </p>
-            <div className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
+
+            {/* UTO Flow Block */}
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4">
               <div className="mb-3 flex items-center justify-between">
                 <Label className="flex items-center gap-2 text-sm font-medium text-slate-100">
                   <Image className="h-4 w-4 text-emerald-400" /> UTO Flow tạo ảnh/video (nguồn chính)
                 </Label>
                 <div className="flex items-center gap-2">
                   <Switch checked={Boolean(labsEnabled)} onCheckedChange={toggleLabs} />
-                  <span className="text-xs text-slate-500">Bật UTO Flow</span>
+                  <span className="text-xs text-slate-400">Bật UTO Flow</span>
                 </div>
               </div>
-              <p className="mb-3 text-xs text-slate-400">
+              <p className="mb-3 text-xs text-slate-300">
                 Flow tự động nhận prompt từng cảnh → sinh ảnh/video (Nano Banana 2) → theo dõi trạng thái → tải file về đúng scene.
                 Yêu cầu đăng nhập Google một lần trên máy này.
               </p>
               <div className="flex flex-wrap items-center gap-2">
-                <Button variant="outline" size="sm" onClick={openLabsLogin}>Mở UTO Flow để đăng nhập</Button>
-                <Button variant="outline" size="sm" onClick={refreshLabsCheck} className="gap-1">
+                <span className="rounded-md bg-amber-500/15 border border-amber-500/30 px-2.5 py-1 text-xs text-amber-200 font-medium">
+                  Factory sẽ tự mở Chrome riêng khi chạy từ Storyboard
+                </span>
+                <Button variant="outline" size="sm" onClick={refreshLabsCheck} className="gap-1 text-xs border-white/15">
                   <RefreshCw className="h-3 w-3" /> Kiểm tra lại
                 </Button>
-                <span className={cn("rounded-md px-2 py-1 text-xs font-medium", labsCheckInfo.can_automate ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300")}>
+                <span className={cn("rounded-md px-2.5 py-1 text-xs font-medium", labsCheckInfo.can_automate ? "bg-emerald-500/20 text-emerald-300" : "bg-amber-500/20 text-amber-300")}>
                   {labsCheckInfo.can_automate ? "✔ UTO Flow sẵn sàng" : "⚠ Chưa đủ điều kiện"}
                 </span>
               </div>
             </div>
-            <div className="mb-4 rounded-lg border border-white/8 bg-white/[0.02] p-4">
+
+            {/* Gemini API Key Block */}
+            <div className="rounded-xl border border-white/10 bg-black/20 p-4">
               <div className="mb-3 flex items-center justify-between">
                 <Label className="flex items-center gap-2 text-sm font-medium text-slate-100">
                   <KeyRound className="h-4 w-4 text-amber-400" /> API key aistudio.google (Gemini — viết kịch bản, chia cảnh, tạo prompt)
                 </Label>
                 <div className="flex items-center gap-2">
                   <Switch checked={geminiEnabled} onCheckedChange={(v) => { setGeminiEnabled(v); setTimeout(saveGemini, 0) }} />
-                  <span className="text-xs text-slate-500">Dùng Gemini cho phân tích & prompt</span>
+                  <span className="text-xs text-slate-400">Dùng Gemini cho phân tích & prompt</span>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Input
                   type="password"
-                  className="min-w-[300px] flex-1"
+                  className="min-w-[300px] flex-1 bg-black/40 border-white/10"
                   placeholder="Dán API key aistudio.google vào đây…"
                   value={geminiKey}
                   onChange={(e) => { setGeminiKey(e.target.value); setGeminiResult(null) }}
                 />
-                <Button variant="outline" size="sm" onClick={checkGeminiKey} disabled={geminiChecking} className="gap-1">
+                <Button variant="outline" size="sm" onClick={checkGeminiKey} disabled={geminiChecking} className="gap-1 text-xs border-white/15">
                   <RefreshCw className={cn("h-3 w-3", geminiChecking && "animate-spin")} />
                   {geminiChecking ? "Đang kiểm tra…" : "Kiểm tra key"}
                 </Button>
-                <Button size="sm" onClick={saveGemini} className="gap-1 bg-gradient-to-r from-[#d9940a] to-[#faaa02] text-white">
+                <Button size="sm" onClick={saveGemini} className="gap-1 text-xs bg-gradient-to-r from-[#d9940a] to-[#faaa02] text-white">
                   <CheckCircle2 className="h-3.5 w-3.5" /> Lưu
                 </Button>
               </div>
               {geminiResult && (
                 <p className={cn("mt-2 text-xs", geminiResult.valid ? "text-emerald-400" : "text-rose-400")}>{geminiResult.note}</p>
               )}
-              <p className="mt-2 text-xs text-slate-500">
-                Lấy key miễn phí tại <a className="text-amber-400 underline" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">aistudio.google.com/apikey</a> — key này chỉ dùng để Gemini viết kịch bản, phân tích chia cảnh và tạo prompt ảnh. Gemini KHÔNG dùng để sinh ảnh/video (nguồn ảnh/video chính là UTO Flow).
+              <p className="mt-2 text-xs text-slate-400">
+                Lấy key miễn phí tại <a className="text-amber-400 underline hover:text-amber-300" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">aistudio.google.com/apikey</a> — key này chỉ dùng để Gemini viết kịch bản, phân tích chia cảnh và tạo prompt ảnh.
               </p>
             </div>
-            <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+
+            {/* Flow Connector Block */}
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
               <div className="mb-3 flex items-center justify-between">
                 <Label className="flex items-center gap-2 text-sm font-medium text-slate-100">
                   <Zap className="h-4 w-4 text-amber-400" /> Flow Connector — Extension Chrome (tự động mở Flow, tạo media, tải file)
                 </Label>
                 <div className="flex items-center gap-2">
                   <Switch checked={Boolean(connectorEnabled)} onCheckedChange={async (v) => { setConnectorEnabled(v); await saveGemini() }} />
-                  <span className="text-xs text-slate-500">Bật Flow Connector</span>
+                  <span className="text-xs text-slate-400">Bật Flow Connector</span>
                 </div>
               </div>
-              <p className="mb-3 text-xs text-slate-400">
+              <p className="mb-3 text-xs text-slate-300">
                 Extension Chrome tự mở Google Flow, tạo project, chọn Image/Video · tỷ lệ · model,
                 nhập prompt, bấm tạo, theo dõi tile và tải file THẬT về dự án, gắn đúng từng scene.
-                File được xác minh bằng FFprobe trước khi hoàn thành. Cảnh lỗi tự retry riêng, không chạy lại cảnh đã xong.
               </p>
               <div className="flex flex-wrap items-center gap-2">
-                <Button variant="outline" size="sm" onClick={openExtGuide} className="gap-1">
-                  <ExternalLink className="h-3 w-3" /> Hướng dẫn cài Extension
-                </Button>
-                <span className={cn("rounded-md px-2 py-1 text-xs font-medium", workerConnected ? "bg-emerald-500/15 text-emerald-300" : "bg-rose-500/15 text-rose-300")}>
-                  {workerConnected ? "✔ Extension đang kết nối" : "⚠ Chưa thấy Extension"}
+                <span className={cn("rounded-md px-2.5 py-1 text-xs font-medium", workerConnected ? "bg-emerald-500/20 text-emerald-300" : "bg-amber-500/20 text-amber-300")}>
+                  {workerConnected ? "✔ Factory Connector đang kết nối" : "○ Factory sẽ kết nối khi chạy từ Desktop"}
                 </span>
-                <span className="text-xs text-slate-500">Khi bật + extension hoạt động, bấm “Sinh media tự động (Flow Connector)” trong Storyboard</span>
+                <span className="text-xs text-slate-400">Chrome profile riêng và extension bundled chỉ được khởi động khi bấm “Chạy Factory Mode (Flow)” trong Storyboard.</span>
               </div>
             </div>
+
             <div className="flex flex-wrap items-center gap-4 text-sm text-slate-300">
               <div className="flex items-center gap-2">
                 <Switch checked={pollinationsFallback} onCheckedChange={async (v) => { setPollinationsFallback(v); await saveGemini() }} />
                 <span>Cho phép Pollinations.ai làm bước cuối</span>
               </div>
             </div>
-            <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-slate-300">
+
+            <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-200/90">
               💡 UTO Flow lỗi hoặc chưa đăng nhập Google → pipeline báo lỗi rõ ràng kèm nguyên nhân và cho phép bấm "Thử lại".
               Chỉ khi bật Pollinations làm bước cuối thì mới chuyển sang Pollinations.ai.
-            </div>
-            <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-slate-300">
-              💡 Điều kiện để dùng UTO Flow: (1) Máy có cài Chromium/Chrome, (2) Bạn đã đăng nhập tài khoản Google trên máy này.
-              Nút “Mở UTO Flow để đăng nhập” bên trên sẽ mở sẵn trang để bạn đăng nhập một lần.
             </div>
           </div>
         </TabsContent>

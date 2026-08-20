@@ -83,7 +83,7 @@ export default function VoiceConfigPage() {
         volume: config.volume,
       })
       if (res.ok && res.audio_path) {
-        setPreviewUrl(res.audio_path + "?t=" + Date.now())
+        setPreviewUrl(mediaUrl(res.audio_path))
         toast({ title: "Đã tạo giọng đọc mẫu" })
       } else {
         toast({ title: "Nghe thử thất bại", description: res.message, variant: "destructive" })
@@ -293,7 +293,23 @@ export default function VoiceConfigPage() {
               {previewing ? "Đang tạo..." : "Nghe thử"}
             </Button>
             {previewUrl && (
-              <audio controls src={previewUrl} className="w-full" autoPlay />
+              <audio
+                key={previewUrl}
+                controls
+                src={previewUrl}
+                className="w-full"
+                autoPlay
+                onCanPlay={(e) => {
+                  e.currentTarget.play().catch(() => {})
+                }}
+                onError={() => {
+                  toast({
+                    title: "Lỗi phát âm thanh mẫu",
+                    description: "Không thể nạp luồng audio. Vui lòng bấm 'Nghe thử' lại.",
+                    variant: "destructive",
+                  })
+                }}
+              />
             )}
           </div>
         </div>
@@ -370,13 +386,22 @@ export default function VoiceConfigPage() {
                               if (res.ok && res.audio_path) {
                                 const audio = new Audio(mediaUrl(res.audio_path))
                                 audio.onended = () => setPlayingVoice(null)
-                                audio.play()
+                                audio.onerror = () => {
+                                  setPlayingVoice(null)
+                                  toast({ title: "Không thể phát âm thanh", variant: "destructive" })
+                                }
+                                await audio.play().catch((err) => {
+                                  setPlayingVoice(null)
+                                  toast({ title: "Lỗi phát âm thanh", description: String(err), variant: "destructive" })
+                                })
                                 setTimeout(() => setPlayingVoice(null), 10000)
                               } else {
                                 setPlayingVoice(null)
+                                toast({ title: "Nghe thử thất bại", description: res.message, variant: "destructive" })
                               }
-                            } catch {
+                            } catch (e) {
                               setPlayingVoice(null)
+                              toast({ title: "Nghe thử thất bại", description: String(e), variant: "destructive" })
                             }
                           }}
                           className="rounded-md border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs text-slate-300 transition-colors hover:bg-white/[0.08]"

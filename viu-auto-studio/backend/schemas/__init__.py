@@ -102,12 +102,19 @@ class ProjectCreate(BaseModel):
 
 class ProjectUpdate(BaseModel):
     name: Optional[str] = None
+    channel_id: Optional[int] = None
+
+    topic: Optional[str] = None
+    video_type: Optional[str] = None
+    aspect_ratio: Optional[str] = None
+
     topic: Optional[str] = None
     video_type: Optional[str] = None
     aspect_ratio: Optional[str] = None
     language: Optional[str] = None
     target_duration: Optional[int] = None
     config_json: Optional[str] = None
+    project_directory: Optional[str] = None
 
 
 class ProjectRead(BaseModel):
@@ -128,7 +135,9 @@ class ProjectRead(BaseModel):
     output_video_path: Optional[str] = None
     thumbnail_path: Optional[str] = None
     error_message: Optional[str] = None
+    config_json: Optional[str] = None
     created_at: datetime
+
     updated_at: datetime
 
     model_config = {"from_attributes": True}
@@ -273,7 +282,20 @@ class TTSConfigRequest(BaseModel):
     speed: float = Field(default=1.0, ge=0.25, le=4.0)
     volume: float = Field(default=1.0, ge=0.0, le=2.0)
     model_dir: str = ""
-    cloud_api_key: str = ""
+    cloud_api_key: Optional[str] = None
+    # Optional OmniVoice controls; ignored by other providers.
+    reference_audio: str = ""
+    reference_text: str = ""
+    voice_clone_prompt: str = ""
+    voice_design: str = ""
+    model_name: str = "k2-fsa/OmniVoice"
+    device: str = "auto"
+    duration: Optional[float] = Field(default=None, ge=0.1, le=3600.0)
+    num_step: int = Field(default=32, ge=4, le=128)
+    normalize_text: bool = False
+    postprocess_output: bool = True
+    audio_chunk_duration: float = Field(default=15.0, ge=5.0, le=120.0)
+    audio_chunk_threshold: float = Field(default=30.0, ge=10.0, le=600.0)
 
 
 class TTSConfigRead(BaseModel):
@@ -283,6 +305,18 @@ class TTSConfigRead(BaseModel):
     volume: float
     model_dir: str
     cloud_api_key_masked: str = ""
+    reference_audio: str = ""
+    reference_text: str = ""
+    voice_clone_prompt: str = ""
+    voice_design: str = ""
+    model_name: str = "k2-fsa/OmniVoice"
+    device: str = "auto"
+    duration: Optional[float] = None
+    num_step: int = 32
+    normalize_text: bool = False
+    postprocess_output: bool = True
+    audio_chunk_duration: float = 15.0
+    audio_chunk_threshold: float = 30.0
 
 
 class TTSVoice(BaseModel):
@@ -469,6 +503,16 @@ class TTSSynthesizeRequest(BaseModel):
     text: str = Field(min_length=1)
     speed: float = Field(default=1.0, ge=0.25, le=4.0)
     output_format: str = "mp3"  # mp3 | wav
+    reference_audio: str = ""
+    reference_text: str = ""
+    voice_clone_prompt: str = ""
+    voice_design: str = ""
+    duration: Optional[float] = Field(default=None, ge=0.1, le=3600.0)
+    num_step: int = Field(default=32, ge=4, le=128)
+    normalize_text: bool = False
+    postprocess_output: bool = True
+    audio_chunk_duration: float = Field(default=15.0, ge=5.0, le=120.0)
+    audio_chunk_threshold: float = Field(default=30.0, ge=10.0, le=600.0)
 
 
 class TTSProviderRead(BaseModel):
@@ -485,6 +529,7 @@ class StudioSettingsRead(BaseModel):
     ai_provider: str = "gemini"
     ai_model: str = ""
     ai_api_key_set: bool = False
+    ai_translation_provider: str = "chatgpt"
     deepseek_api_key: str = ""
     deepseek_api_key_set: bool = False
     gemini_model: str = "3.5 Flash"
@@ -505,6 +550,7 @@ class StudioSettingsUpdate(BaseModel):
     ai_provider: Optional[str] = None
     ai_model: Optional[str] = None
     ai_api_key: Optional[str] = None
+    ai_translation_provider: Optional[str] = None
     deepseek_api_key: Optional[str] = None
     gemini_model: Optional[str] = None
     tts_provider: Optional[str] = None

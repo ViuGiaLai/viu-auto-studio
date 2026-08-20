@@ -130,14 +130,65 @@ def _call_llm(messages: list[dict], text_only: bool = True):
     raise RuntimeError("Không thể gọi AI để phân tích kịch bản — kiểm tra kết nối/API")
 
 
-def analyze_semantic_scenes(script: str, existing_narrations: list[str] | None = None) -> dict:
+def _heuristic_semantic_scenes(
+    script: str,
+    existing_narrations: list[str] | None = None,
+    style_memory: str = "",
+) -> dict:
+    """Chia cảnh dự phòng theo câu/đoạn khi LLM không khả dụng (chưa có API key hoặc offline).
+
+    Tự động sinh visual_prompt chi tiết, style_prompt và transition_description
+    cho từng cảnh để storyboard và Flow Factory luôn hoạt động đầy đủ.
+    """
+    from backend.services.script_service import split_into_sentences
+
+    if existing_narrations and any(str(n).strip() for n in existing_narrations):
+        raw_items = [str(n).strip() for n in existing_narrations if str(n).strip()]
+    else:
+        raw_items = split_into_sentences(script)
+        if not raw_items:
+            raw_items = [s.strip() for s in re.split(r"[\r\n]+|[.!?]+\s+", script) if s.strip()]
+
+    if not raw_items:
+        return {"scenes": [], "note": "Kịch bản rỗng"}
+
+    scenes = []
+    default_style = style_memory.strip() or "Cinematic, photorealistic, 8k resolution, detailed lighting"
+
+    for i, narration in enumerate(raw_items):
+        clean_text = narration.strip()
+        prompt = f"Cinematic detailed illustration portraying: {clean_text}. Photorealistic, realistic lighting, 8k resolution, high quality"
+        if default_style and default_style not in prompt:
+            prompt = f"{prompt}, {default_style}"
+
+        scenes.append({
+            "narration": clean_text,
+            "visual_prompt": prompt,
+            "style_prompt": default_style,
+            "transition_description": "Smooth cinematic camera panning with steady focus",
+            "reason": f"Phân cảnh tự động #{i+1}",
+        })
+
+    return {
+        "scenes": scenes,
+        "common_style": default_style,
+        "note": "Phân cảnh quy tắc ngữ nghĩa tự động",
+    }
+
+
+def analyze_semantic_scenes(
+    script: str,
+    existing_narrations: list[str] | None = None,
+    style_memory: str = "",
+) -> dict:
     """Phân tích kịch bản → danh sách cảnh hình ảnh ngữ nghĩa.
 
-    Nếu existing_narrations có giá trị (cảnh đã chia tay), AI sẽ tôn trọng
-    ranh giới đó và chỉ chia nhỏ/điều chỉnh khi thật cần thiết.
+    Nếu có LLM (Gemini / OpenRouter), gọi LLM.
+    Nếu LLM chưa cấu hình API key hoặc thất bại, tự động chuyển sang _heuristic_semantic_scenes
+    để đảm bảo pipeline luôn tạo được scenes và visual prompts.
     """
     script = (script or "").strip()
-    if not script:
+    if not script and not existing_narrations:
         return {"scenes": [], "note": "Kịch bản rỗng"}
     user_ctx = ""
     if existing_narrations:
@@ -147,41 +198,50 @@ def analyze_semantic_scenes(script: str, existing_narrations: list[str] | None =
             "các ranh giới này, chỉ tách thêm khi một đoạn chứa nhiều sự kiện khác "
             "nhau rõ ràng:\n" + ctx_lines
         )
+    if style_memory.strip():
+        user_ctx += (
+            "\nĐây là định hướng bắt buộc của kênh. Hãy áp dụng nhất quán vào "
+            "visual_prompt và style_prompt của mọi cảnh, không tự đổi tone:\n" + style_memory.strip()
+        )
     messages = [
         {"role": "system", "content": SYSTEM_INSTRUCTION},
         {"role": "user", "content": f"Kịch bản:\n\n{script}{user_ctx}"},
     ]
-    raw = _call_llm(messages)
     try:
-        data = json.loads(raw)
-    except ValueError:
-        m = re.search(r"\{.*\}", raw, re.S)
-        data = json.loads(m.group(0)) if m else {"scenes": []}
-    if isinstance(data, list):
-        data = {"scenes": data}
-    # Một số model không trả đúng schema: có thể trả mảng cảnh trực tiếp hoặc
-    # dùng tên trường khác (script_segment, text, subtitle) thay vì narration.
-    scenes = data.get("scenes") or []
-    if not scenes:
-        for key in ("scene", "segment", "items"):
-            cand = data.get(key) or []
-            if isinstance(cand, list) and cand:
-                scenes = cand
-                break
-    for s in scenes:
-        narration = (s.get("narration") or "").strip()
-        if not narration:
-            narration = (s.get("script_segment") or s.get("script_content") or s.get("text") or s.get("subtitle") or "").strip()
-        if not narration:
-            subs = s.get("subtitles") or []
-            narration = " ".join(str(t) for t in subs).strip()
-        s["narration"] = narration
-        s["visual_prompt"] = (s.get("visual_prompt") or "").strip()
-        s["style_prompt"] = (s.get("style_prompt") or "").strip()
-        s["transition_description"] = (s.get("transition_description") or "").strip()
-    if not scenes:
-        return {"scenes": [], "note": "AI không phân tích được — dùng chia theo câu mặc định"}
-    return {"scenes": scenes, "note": "Đã phân tích ngữ nghĩa"}
+        raw = _call_llm(messages)
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            m = re.search(r"\{.*\}", raw, re.S)
+            data = json.loads(m.group(0)) if m else {"scenes": []}
+        if isinstance(data, list):
+            data = {"scenes": data}
+        scenes = data.get("scenes") or []
+        if not scenes:
+            for key in ("scene", "segment", "items"):
+                cand = data.get(key) or []
+                if isinstance(cand, list) and cand:
+                    scenes = cand
+                    break
+        for s in scenes:
+            narration = (s.get("narration") or "").strip()
+            if not narration:
+                narration = (s.get("script_segment") or s.get("script_content") or s.get("text") or s.get("subtitle") or "").strip()
+            if not narration:
+                subs = s.get("subtitles") or []
+                narration = " ".join(str(t) for t in subs).strip()
+            s["narration"] = narration
+            s["visual_prompt"] = (s.get("visual_prompt") or "").strip() or f"Cinematic scene portraying: {narration}"
+            s["style_prompt"] = (s.get("style_prompt") or "").strip() or style_memory.strip()
+            s["transition_description"] = (s.get("transition_description") or "").strip() or "Smooth cinematic camera motion"
+            s["reason"] = (s.get("reason") or "").strip() or "Phân cảnh ngữ nghĩa AI"
+        if scenes:
+            return {"scenes": scenes, "note": "Đã phân tích ngữ nghĩa qua AI"}
+    except Exception:
+        # LLM không khả dụng hoặc chưa có API key → chuyển sang fallback
+        pass
+
+    return _heuristic_semantic_scenes(script, existing_narrations, style_memory)
 
 
 def rewrite_scene_prompt(
@@ -215,15 +275,24 @@ def rewrite_scene_prompt(
             ),
         },
     ]
-    raw = _call_llm(messages)
     try:
-        data = json.loads(raw)
-    except ValueError:
-        m = re.search(r"\{.*\}", raw, re.S)
-        data = json.loads(m.group(0)) if m else {}
-    prompt = (data.get("visual_prompt") or "").strip()
-    if not prompt:
-        raise RuntimeError("AI không viết lại được prompt — thử lại")
-    if style_memory:
-        prompt = prompt.rstrip(". ") + ". " + style_memory
-    return prompt
+        raw = _call_llm(messages)
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            m = re.search(r"\{.*\}", raw, re.S)
+            data = json.loads(m.group(0)) if m else {}
+        prompt = (data.get("visual_prompt") or "").strip()
+        if prompt:
+            if style_memory and style_memory not in prompt:
+                prompt = prompt.rstrip(". ") + ". " + style_memory
+            return prompt
+    except Exception:
+        pass
+
+    # Heuristic fallback if LLM is unavailable
+    clean_narration = scene_narration.strip()
+    fallback_prompt = f"Cinematic detailed illustration portraying: {clean_narration}. Photorealistic, realistic lighting, 8k resolution, high quality"
+    if style_memory and style_memory not in fallback_prompt:
+        fallback_prompt = f"{fallback_prompt}, {style_memory}"
+    return fallback_prompt

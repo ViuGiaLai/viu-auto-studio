@@ -7,9 +7,13 @@ Cài đặt ứng dụng (app_settings toàn cục), Phân tích KPI.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
+
 import platform
+import secrets
 import shutil
+
 import threading
 import time
 from datetime import datetime, timedelta
@@ -27,9 +31,12 @@ from backend.core.database import get_db
 from backend.models import (
     AppSetting,
     AuditLog,
+
     Character,
     CharacterRef,
+    Channel,
     ConnectorTask,
+
     FlowConnection,
     Idea,
     Job,
@@ -171,7 +178,32 @@ class ClipRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class TimelineClipPayload(BaseModel):
+    track: str = "visual"
+    asset_id: Optional[int] = None
+    source_path: str = ""
+    scene_id: Optional[int] = None
+    clip_start: float = 0.0
+    clip_end: float = 0.0
+    in_point: float = 0.0
+    out_point: float = 0.0
+    volume: float = 1.0
+    transform: dict = {}
+    group_id: str = ""
+    locked: bool = False
+    order_index: int = 0
+
+
+class TimelineProjectPayload(BaseModel):
+    """Canonical JSON document edited by the Desktop timeline editor."""
+    duration: float = 0.0
+    settings: dict = {}
+    clips: list[TimelineClipPayload] = []
+    expected_version: Optional[int] = None
+
+
 class PublishMetaCreate(BaseModel):
+
     project_id: int
     title: str = ""
     description: str = ""
@@ -743,9 +775,161 @@ def queue_summary(db: Session = Depends(get_db)):
 # Timeline / Dựng phim
 # ---------------------------------------------------------------------------
 
+
+def _clip_dict(c: TimelineClip) -> dict:
+    try:
+        transform = json.loads(c.transform_json or "{}")
+    except (TypeError, ValueError):
+        transform = {}
+    return {
+        "id": c.id,
+        "timeline_id": c.timeline_id,
+        "track": c.track,
+        "asset_id": c.asset_id,
+        "source_path": c.source_path or "",
+        "scene_id": c.scene_id,
+        "clip_start": float(c.clip_start or 0.0),
+        "clip_end": float(c.clip_end or 0.0),
+        "in_point": float(c.in_point or 0.0),
+        "out_point": float(c.out_point or 0.0),
+        "volume": float(c.volume if c.volume is not None else 1.0),
+        "transform": transform if isinstance(transform, dict) else {},
+        "group_id": c.group_id or "",
+        "locked": bool(c.locked),
+        "order_index": int(c.order_index or 0),
+        "created_at": c.created_at.isoformat() if c.created_at else None,
+    }
+
+
+def _timeline_dict(t: Timeline, clips: list[TimelineClip]) -> dict:
+    try:
+        settings = json.loads(t.settings_json or "{}")
+    except (TypeError, ValueError):
+        settings = {}
+    return {
+        "id": t.id,
+        "project_id": t.project_id,
+        "version": t.version,
+        "duration": float(t.duration or 0.0),
+        "settings": settings if isinstance(settings, dict) else {},
+        "autosave": bool(t.autosave),
+        "created_at": t.created_at.isoformat() if t.created_at else None,
+        "clips": [_clip_dict(c) for c in clips],
+    }
+
+
+def _ensure_project_timeline(project_id: int, db: Session) -> Timeline:
+    t = db.query(Timeline).filter(
+        Timeline.project_id == project_id,
+        Timeline.autosave == True,  # noqa: E712
+    ).order_by(Timeline.version.desc()).first()
+    if t:
+        return t
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(404, "Không tìm thấy dự án")
+    scenes = db.query(Scene).filter(Scene.project_id == project_id).order_by(Scene.order_index).all()
+    duration = 0.0
+    t = Timeline(project_id=project_id, version=1, autosave=True, settings_json=json.dumps({
+        "aspect_ratio": project.aspect_ratio or "16:9",
+        "fps": 30,
+        "background_color": "#000000",
+    }))
+    db.add(t)
+    db.flush()
+    for index, scene in enumerate(scenes):
+        start = duration
+        scene_duration = max(float(scene.duration or 0.0), 0.1)
+        end = start + scene_duration
+        source = scene.video_path or scene.image_path or scene.media_path or ""
+        if source:
+            db.add(TimelineClip(
+                timeline_id=t.id,
+                track="visual",
+                source_path=source,
+                scene_id=scene.id,
+                clip_start=start,
+                clip_end=end,
+                in_point=0.0,
+                out_point=scene_duration,
+                order_index=index,
+                transform_json=json.dumps({"effect": scene.effect or "zoom_in"}),
+            ))
+        if scene.audio_path:
+            db.add(TimelineClip(
+                timeline_id=t.id,
+                track="voice",
+                source_path=scene.audio_path,
+                scene_id=scene.id,
+                clip_start=start,
+                clip_end=end,
+                in_point=0.0,
+                out_point=scene_duration,
+                order_index=index,
+            ))
+        duration = end
+    t.duration = duration
+    db.commit()
+    db.refresh(t)
+    return t
+
+
+@router.get("/projects/{project_id}/timeline")
+def get_timeline_project(project_id: int, db: Session = Depends(get_db)):
+    t = _ensure_project_timeline(project_id, db)
+    clips = db.query(TimelineClip).filter(TimelineClip.timeline_id == t.id).order_by(
+        TimelineClip.track, TimelineClip.order_index, TimelineClip.clip_start,
+    ).all()
+    return _timeline_dict(t, clips)
+
+
+@router.put("/projects/{project_id}/timeline")
+def save_timeline_project(project_id: int, payload: TimelineProjectPayload = Body(...), db: Session = Depends(get_db)):
+    t = _ensure_project_timeline(project_id, db)
+    if payload.expected_version is not None and payload.expected_version != t.version:
+        raise HTTPException(409, "Timeline đã được cập nhật ở phiên khác; hãy tải lại trước khi lưu")
+    if payload.duration < 0 or payload.duration > 24 * 60 * 60:
+        raise HTTPException(422, "Thời lượng timeline không hợp lệ")
+    for clip in payload.clips:
+        if clip.clip_start < 0 or clip.clip_end <= clip.clip_start:
+            raise HTTPException(422, "Khoảng thời gian clip không hợp lệ")
+        if clip.clip_end > 24 * 60 * 60:
+            raise HTTPException(422, "Clip vượt giới hạn timeline 24 giờ")
+        if clip.in_point < 0 or clip.out_point < clip.in_point:
+            raise HTTPException(422, "Khoảng source của clip không hợp lệ")
+    db.query(TimelineClip).filter(TimelineClip.timeline_id == t.id).delete(synchronize_session=False)
+    t.version = int(t.version or 0) + 1
+    t.duration = float(payload.duration)
+    t.settings_json = json.dumps(payload.settings or {}, ensure_ascii=False)
+    t.autosave = True
+    for index, clip in enumerate(payload.clips):
+        db.add(TimelineClip(
+            timeline_id=t.id,
+            track=clip.track.strip() or "visual",
+            asset_id=clip.asset_id,
+            source_path=clip.source_path.strip(),
+            scene_id=clip.scene_id,
+            clip_start=clip.clip_start,
+            clip_end=clip.clip_end,
+            in_point=clip.in_point,
+            out_point=clip.out_point,
+            volume=max(0.0, min(2.0, clip.volume)),
+            transform_json=json.dumps(clip.transform or {}, ensure_ascii=False),
+            group_id=clip.group_id,
+            locked=clip.locked,
+            order_index=clip.order_index if clip.order_index >= 0 else index,
+        ))
+    db.commit()
+    clips = db.query(TimelineClip).filter(TimelineClip.timeline_id == t.id).order_by(
+        TimelineClip.track, TimelineClip.order_index, TimelineClip.clip_start,
+    ).all()
+    return _timeline_dict(t, clips)
+
+
 @router.post("/projects/{project_id}/timelines")
-def create_timeline(payload: TimelineCreate = Body(...),
-                    project_id: int = 0, db: Session = Depends(get_db)):
+def create_timeline(project_id: int, payload: TimelineCreate = Body(...),
+                    db: Session = Depends(get_db)):
+
     t = Timeline(project_id=project_id, duration=payload.duration,
                  settings_json=__import__("json").dumps(payload.settings or {}))
     db.add(t)
@@ -1025,7 +1209,7 @@ def get_flow_connection(db: Session = Depends(get_db)):
 def _require_flow_bootstrap_token(value: str | None) -> None:
     if not FLOW_BOOTSTRAP_TOKEN:
         raise HTTPException(503, "Flow bootstrap token chưa được Electron khởi tạo")
-    if value != FLOW_BOOTSTRAP_TOKEN:
+    if not secrets.compare_digest(value or "", FLOW_BOOTSTRAP_TOKEN):
         raise HTTPException(403, "Flow Connector bootstrap token không hợp lệ")
 
 
@@ -1039,6 +1223,30 @@ def start_factory_flow(payload: FactoryStartRequest, db: Session = Depends(get_d
     if not scenes:
         raise HTTPException(409, "Project chưa có scene. Hãy duyệt kịch bản và chạy phân cảnh trước.")
 
+    # Channel config is stored separately from project wizard config. Merge both
+    # with project/media values taking precedence, so the saved channel settings
+    # actually control Factory behavior without losing per-project overrides.
+    channel_cfg: dict = {}
+    if project.channel_id:
+        channel = db.query(Channel).filter(Channel.id == project.channel_id).first()
+        if channel and channel.config_json:
+            try:
+                channel_cfg = json.loads(channel.config_json) if isinstance(channel.config_json, str) else dict(channel.config_json)
+            except (TypeError, ValueError):
+                channel_cfg = {}
+    project_cfg: dict = {}
+    if project.config_json:
+        try:
+            project_cfg = json.loads(project.config_json) if isinstance(project.config_json, str) else dict(project.config_json)
+        except (TypeError, ValueError):
+            project_cfg = {}
+    project_channel_cfg = project_cfg.get("channel") if isinstance(project_cfg.get("channel"), dict) else {}
+    project_media_cfg = project_cfg.get("media") if isinstance(project_cfg.get("media"), dict) else {}
+    effective_cfg = {**channel_cfg, **project_channel_cfg, **project_media_cfg}
+    image_mode = str(effective_cfg.get("image_mode") or effective_cfg.get("mix_mode") or "mixed").lower()
+    include_video = bool(payload.include_video) and image_mode not in {"image", "images", "static", "static_image"}
+    video_model = str(effective_cfg.get("video_model") or "Veo 3.1 Lite")
+
     connection = get_or_create_connection(db)
     session_id = connection.factory_session_id if (
         connection.factory_project_id == payload.project_id
@@ -1048,7 +1256,7 @@ def start_factory_flow(payload: FactoryStartRequest, db: Session = Depends(get_d
     connection.factory_project_id = payload.project_id
     connection.factory_session_id = session_id
     connection.factory_mode = bool(payload.factory_mode)
-    connection.include_video = bool(payload.include_video)
+    connection.include_video = include_video
     connection.factory_stage = "image"
 
     created = 0
@@ -1090,7 +1298,7 @@ def start_factory_flow(payload: FactoryStartRequest, db: Session = Depends(get_d
             prompt=prompt,
             media_type="video" if stage == "video" else "image",
             aspect=payload.aspect or project.aspect_ratio or "16:9",
-            model=payload.model or ("Veo 3.1 Lite" if stage == "video" else "Nano Banana 2"),
+            model=payload.model or (video_model if stage == "video" else "Nano Banana 2"),
             factory_session_id=session_id,
         ))
         scene.status = "media_pending"
@@ -1109,7 +1317,14 @@ def start_factory_flow(payload: FactoryStartRequest, db: Session = Depends(get_d
     connection.factory_state = "ready" if connection.status == "paired" and heartbeat_fresh else "waiting_login"
     connection.last_error = ""
     connection.last_state_at = datetime.utcnow()
-    project.status = "rendering" if created or skipped else project.status
+    if created:
+        project.status = "preparing_media"
+        project.current_step = "Media"
+        project.progress = max(project.progress or 0, 60)
+    elif skipped:
+        project.status = "media_ready"
+        project.current_step = "Media đã xác minh"
+        project.progress = max(project.progress or 0, 70)
     db.commit()
     return {
         "ok": True,
@@ -1117,7 +1332,7 @@ def start_factory_flow(payload: FactoryStartRequest, db: Session = Depends(get_d
         "factory_session_id": session_id,
         "factory_state": connection.factory_state,
         "requires_login": connection.factory_state == "waiting_login",
-        "include_video": payload.include_video,
+        "include_video": include_video,
         "factory_stage": connection.factory_stage,
         "created": created,
         "skipped": skipped,

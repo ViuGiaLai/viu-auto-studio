@@ -127,10 +127,12 @@ def get_provider(name: str | None = None) -> AIProvider:
     if not _REGISTRY:
         from backend.services.ai.openrouter import OpenRouterProvider
         from backend.services.ai.gemini import GeminiProvider
+        from backend.services.ai.deepseek import DeepSeekProvider
         from backend.services.ai.local_provider import LocalScriptProvider
 
         _REGISTRY["openrouter"] = OpenRouterProvider()
         _REGISTRY["gemini"] = GeminiProvider()
+        _REGISTRY["deepseek"] = DeepSeekProvider()
         _REGISTRY["local"] = LocalScriptProvider()
 
     resolved = (name or AI_PROVIDER).lower()
@@ -154,10 +156,10 @@ def get_provider(name: str | None = None) -> AIProvider:
 def list_providers() -> List[dict]:
     from backend.services.ai.openrouter import OpenRouterProvider
     from backend.services.ai.gemini import GeminiProvider
-
+    from backend.services.ai.deepseek import DeepSeekProvider
     from backend.services.ai.local_provider import LocalScriptProvider
 
-    providers = [OpenRouterProvider(), GeminiProvider(), LocalScriptProvider()]
+    providers = [OpenRouterProvider(), GeminiProvider(), DeepSeekProvider(), LocalScriptProvider()]
     return [{"id": p.name, "configured": p.is_configured} for p in providers]
 
 

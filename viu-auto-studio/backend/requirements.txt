@@ -7,3 +7,7 @@ python-multipart>=0.0.9
 alembic>=1.13,<2
 psutil>=5.9,<7
 youtube-transcript-api>=1.0,<2
+
+# Optional local voice cloning provider (install separately; requires compatible PyTorch/CUDA):
+# omnivoice
+# soundfile

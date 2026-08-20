@@ -12,6 +12,7 @@ Quy tắc an toàn (bắt buộc theo đặc tả):
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import re
 import subprocess
@@ -67,6 +68,11 @@ class FFmpegEngine:
 
     def __init__(self, log_path: Optional[str] = None) -> None:
         self.log_path = Path(log_path) if log_path else None
+        try:
+            configured_timeout = int(os.getenv("VIU_FFMPEG_TIMEOUT_SECONDS", "14400"))
+        except ValueError:
+            configured_timeout = 14400
+        self.timeout_seconds = max(60, configured_timeout)
         if self.log_path:
             self.log_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -75,38 +81,47 @@ class FFmpegEngine:
         """Run ffmpeg with the given argument list. Return full stderr log.
 
         All arguments MUST be passed as a list — never a single shell string.
+        The process has a hard timeout so a broken codec/filter cannot leave a
+        render thread and child process alive forever.
         """
         availability = check_ffmpeg()
         if not availability["ffmpeg"]:
             raise RenderError(INSTALL_GUIDE)
 
-        if self.log_path:
-            log_file = open(self.log_path, "a", encoding="utf-8")
-            log_file.write(
-                f"\n=== {datetime.now().isoformat()} ===\n$ ffmpeg "
-                + " ".join(args) + "\n"
-            )
-        else:
-            log_file = None
-
+        log_file = None
         try:
+            if self.log_path:
+                log_file = self.log_path.open("a", encoding="utf-8")
+                log_file.write(
+                    f"\n=== {datetime.now().isoformat()} ===\n$ ffmpeg "
+                    + " ".join(args) + "\n"
+                )
+                log_file.flush()
+
             process = subprocess.Popen(
                 [FFMPEG_BIN, *args],
-                stdout=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 text=True,
             )
-            stderr_lines: List[str] = []
-            assert process.stderr is not None
-            for line in process.stderr:
-                stderr_lines.append(line)
-                if log_file:
-                    log_file.write(line)
-                    log_file.flush()
-                if progress_callback:
+            try:
+                _, stderr = process.communicate(timeout=self.timeout_seconds)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                _, stderr = process.communicate()
+                detail = (stderr or "")[-1500:]
+                raise RenderError(
+                    f"FFmpeg timeout sau {self.timeout_seconds}s. "
+                    f"Xem log tại {self.log_path}: {detail}"
+                ) from None
+
+            full_log = stderr or ""
+            if log_file:
+                log_file.write(full_log)
+                log_file.flush()
+            if progress_callback:
+                for line in full_log.splitlines(True):
                     progress_callback(line)
-            process.wait()
-            full_log = "".join(stderr_lines)
             if process.returncode != 0:
                 raise RenderError(
                     f"FFmpeg thất bại (exit {process.returncode}). "
@@ -286,7 +301,13 @@ class FFmpegEngine:
                     "-t", f"{offset + a_d:.3f}",
                     "-y", tmp,
                 ]
-                self.run(v_args)
+                try:
+                    self.run(v_args)
+                except Exception:
+                    Path(tmp).unlink(missing_ok=True)
+                    raise
+                if merged != available_clips[0]:
+                    Path(merged).unlink(missing_ok=True)
                 merged = tmp
             concat_args = ["-i", merged, "-map", "0:v", "-map", "0:a"]
         else:
@@ -311,7 +332,13 @@ class FFmpegEngine:
             "-c:a", "aac", "-b:a", "192k",
             "-y", concat_tmp,
         ]
-        self.run(args)
+        try:
+            self.run(args)
+        except Exception:
+            Path(concat_tmp).unlink(missing_ok=True)
+            for temp in Path(output_path).parent.glob("_xfade_*.mp4"):
+                temp.unlink(missing_ok=True)
+            raise
 
         # 2) Mix music (ducked), overlay logo, burn global subtitles, attach intro/outro
         inputs2: List[str] = ["-i", concat_tmp]
@@ -371,8 +398,12 @@ class FFmpegEngine:
             "-c:a", "aac", "-b:a", "192k",
             "-y", output_path,
         ]
-        self.run(args)
-        Path(concat_tmp).unlink(missing_ok=True)
+        try:
+            self.run(args)
+        finally:
+            Path(concat_tmp).unlink(missing_ok=True)
+            for temp in Path(output_path).parent.glob("_xfade_*.mp4"):
+                temp.unlink(missing_ok=True)
         return output_path
 
     # ------------------------------------------------------------------

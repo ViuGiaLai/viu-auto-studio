@@ -1,26 +1,30 @@
 import { Table } from "@/components/design-system"
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
+
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom"
 import {
   ArrowLeft, Wand2, Check, Play, Square, Pause, Clock, RotateCcw, Upload, Trash2,
   GripVertical, SplitSquareHorizontal, Combine, RefreshCw, Mic, ImageIcon,
   FileVideo, Clapperboard, AlertCircle, ListChecks, Sparkles, FolderOpen, Settings, Zap,
-  ShieldCheck, ClipboardPaste, Download,
+    ShieldCheck, ClipboardPaste, Download, Save, Plus, Copy, ChevronLeft, ChevronRight,
+
 } from "lucide-react"
-import { api, outputVideoUrl, selectDirectory, startFlowBrowser } from "@/services/api"
+import { api, mediaUrl, openLocalPath, outputVideoUrl, selectDirectory, startFlowBrowser } from "@/services/api"
 
 import { toast } from "@/hooks/use-toast"
 import { useEditorStore } from "@/stores/editor-store"
 import { useAppStore } from "@/stores/app-store"
 import type {
   Project, ScriptData, ScriptPayload, Scene, SeoSchema, SubtitleConfig, TTSConfig,
-  Character,
+    Character, TimelineClip, TimelineProject,
 } from "@/types"
+
 import type { MediaAssetRead } from "@/services/pages-api"
 import { mediaAssetsApi } from "@/services/pages-api"
 import { ASPECT_RATIOS, LANGUAGES, SCENE_EFFECTS, STATUS_LABELS, VIDEO_TYPES } from "@/types"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
-import { Button } from "@/components/design-system"
+import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/design-system"
+
 import { Input } from "@/components/design-system"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -72,15 +76,26 @@ const SUBTITLE_PRESETS: Array<{ name: string; cfg: Partial<SubtitleConfig> }> = 
 function NewProjectForm({ onCreated }: { onCreated: (id: number) => void }) {
   const [name, setName] = useState("")
   const [topic, setTopic] = useState("")
-  const [channelType, setChannelType] = useState<"recap" | "ai_studio">("ai_studio")
+    const [channelType, setChannelType] = useState<"recap" | "ai_studio">("ai_studio")
+  const [channelId, setChannelId] = useState<number | null>(null)
+  const [channels, setChannels] = useState<Array<{ id: number; name: string }>>([])
   const [videoType, setVideoType] = useState("long")
+
   const [aspect, setAspect] = useState("16:9")
   const [language, setLanguage] = useState("vi")
   const [duration, setDuration] = useState(120)
   const [outputFolder, setOutputFolder] = useState("")
   const [loading, setLoading] = useState(false)
 
+    useEffect(() => {
+    api.listChannels().then((items) => {
+      setChannels(items)
+      if (items.length === 1) setChannelId(items[0].id)
+    }).catch(() => undefined)
+  }, [])
+
   const submit = async (e: React.FormEvent) => {
+
     e.preventDefault()
     if (!name.trim()) {
       toast({ title: "Thiếu tên dự án", variant: "destructive" })
@@ -89,13 +104,16 @@ function NewProjectForm({ onCreated }: { onCreated: (id: number) => void }) {
     setLoading(true)
     try {
       const p = await api.createProject({
-        name: name.trim(),
+                name: name.trim(),
+        channel_id: channelId,
         topic: topic.trim() || undefined,
+
         video_type: videoType,
         aspect_ratio: aspect,
         language,
         target_duration: duration,
         project_type: channelType === "recap" ? "recap" : "ai_studio",
+        output_folder: outputFolder.trim() || undefined,
       })
       toast({ title: "Đã tạo dự án", description: p.name })
       onCreated(p.id)
@@ -189,8 +207,21 @@ function NewProjectForm({ onCreated }: { onCreated: (id: number) => void }) {
         </div>
       </div>
 
+            <div className="space-y-1.5">
+        <Label>Kênh sản xuất</Label>
+        <Select value={channelId ? String(channelId) : "none"} onValueChange={(value) => setChannelId(value === "none" ? null : Number(value))}>
+          <SelectTrigger><SelectValue placeholder="Chọn kênh" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Không gắn kênh</SelectItem>
+            {channels.map((channel) => <SelectItem key={channel.id} value={String(channel.id)}>{channel.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <p className="text-[11px] text-slate-500">Kênh quyết định giọng, phong cách viết, model media và chế độ duyệt.</p>
+      </div>
+
       {/* Output folder */}
       <div className="space-y-1.5">
+
         <Label>Output Folder (tuỳ chọn)</Label>
         <div className="flex gap-2">
           <Input
@@ -495,7 +526,7 @@ function ScriptCreator({ project, onDone }: { project: Project; onDone: () => vo
 // ---------------------------------------------------------------------------
 // Step 2: Script editor (full-text edit, split, reorder)
 // ---------------------------------------------------------------------------
-function ScriptEditor({ project, onBuildScenes }: { project: Project; onBuildScenes: () => void }) {
+function ScriptEditor({ project, onBuildScenes, onApproveAndContinue }: { project: Project; onBuildScenes: () => void; onApproveAndContinue: () => Promise<void> }) {
   const { script, setScript, dirtyScript, setDirtyScript } = useEditorStore()
   const [text, setText] = useState("")
 
@@ -511,6 +542,7 @@ function ScriptEditor({ project, onBuildScenes }: { project: Project; onBuildSce
   const [saving, setSaving] = useState(false)
   const [autoSaveTimer, setAutoSaveTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
   const [seoGenerating, setSeoGenerating] = useState(false)
+  const [approving, setApproving] = useState(false)
 
   useEffect(() => {
     if (script?.full_script !== undefined) {
@@ -551,11 +583,18 @@ function ScriptEditor({ project, onBuildScenes }: { project: Project; onBuildSce
   }
 
   const approve = async () => {
+    setApproving(true)
     try {
-      const res = await api.approveScript(project.id)
-      if (res.approved) toast({ title: "Đã duyệt kịch bản", description: "Bạn có thể chia cảnh ngay" })
+      if (script && text.trim() !== (script.full_script || "").trim()) {
+        await api.saveScript(project.id, { ...script, full_script: text })
+        setScript({ ...script, full_script: text })
+        setDirtyScript(false)
+      }
+      await onApproveAndContinue()
     } catch (e) {
-      toast({ title: "Duyệt thất bại", description: String(e), variant: "destructive" })
+      toast({ title: "Pipeline sau duyệt thất bại", description: String(e), variant: "destructive" })
+    } finally {
+      setApproving(false)
     }
   }
 
@@ -610,10 +649,11 @@ function ScriptEditor({ project, onBuildScenes }: { project: Project; onBuildSce
               <SplitSquareHorizontal className="h-4 w-4" />
               Tách thành câu
             </Button>
-            <Button onClick={approve} variant="outline">
-              <Check className="h-4 w-4" />
-              Duyệt kịch bản
+                        <Button onClick={approve} variant="outline" disabled={approving}>
+              <Check className={cn("h-4 w-4", approving && "animate-pulse")} />
+              {approving ? "Đang chạy pipeline…" : "Duyệt kịch bản & chạy tiếp"}
             </Button>
+
             <Button onClick={onBuildScenes} className="bg-gradient-to-r from-amber-500 to-amber-300 hover:from-amber-400 hover:to-amber-200">
               <Clapperboard className="h-4 w-4" />
               Chia thành phân cảnh
@@ -1072,7 +1112,7 @@ function Storyboard({ project }: { project: Project }) {
                     <div className="overflow-hidden rounded-lg border bg-white/[0.03]/50">
                       <div className="border-b border-white/5 px-3 py-1.5 text-[10px] uppercase tracking-wide text-slate-500">Ảnh tham chiếu / image stage</div>
                       <img
-                        src={`/api/media/file?path=${encodeURIComponent(scene.image_path || scene.media_path || "")}`}
+                        src={mediaUrl(scene.image_path || scene.media_path || "")}
                         alt="scene reference image"
                         className="max-h-48 w-full object-contain"
                         loading="lazy"
@@ -1083,7 +1123,7 @@ function Storyboard({ project }: { project: Project }) {
                     <div className="overflow-hidden rounded-lg border bg-white/[0.03]/50">
                       <div className="border-b border-white/5 px-3 py-1.5 text-[10px] uppercase tracking-wide text-slate-500">Video cuối / video stage</div>
                       <video
-                        src={`/api/media/file?path=${encodeURIComponent(scene.video_path || scene.media_path || "")}`}
+                        src={mediaUrl(scene.video_path || scene.media_path || "")}
                         controls
                         className="max-h-48 w-full"
                       />
@@ -1470,9 +1510,212 @@ function STATE_BADGE(state: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Timeline Editor — canonical JSON backed by SQLite
+// ---------------------------------------------------------------------------
+const TIMELINE_TRACKS: Array<{ id: string; label: string; color: string }> = [
+  { id: "visual", label: "Video / Ảnh", color: "bg-cyan-500/70" },
+  { id: "overlay", label: "Overlay", color: "bg-violet-500/70" },
+  { id: "voice", label: "Voice", color: "bg-emerald-500/70" },
+  { id: "music", label: "Nhạc nền", color: "bg-amber-500/70" },
+  { id: "subtitle", label: "Phụ đề", color: "bg-rose-500/70" },
+]
+
+function TimelineEditor({ project, onRender }: { project: Project; onRender: () => void }) {
+  const [timeline, setTimeline] = useState<TimelineProject | null>(null)
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [dirty, setDirty] = useState(false)
+  const [zoom, setZoom] = useState(42)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const data = await api.getTimeline(project.id)
+      setTimeline(data)
+      setSelectedId(data.clips.find((clip: TimelineProject["clips"][number]) => clip.track === "visual")?.id ?? data.clips[0]?.id ?? null)
+      setDirty(false)
+    } catch (e) {
+      toast({ title: "Không tải được timeline", description: String(e), variant: "destructive" })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { void load() }, [project.id])
+
+  const selected = timeline?.clips.find((clip) => clip.id === selectedId) ?? null
+  const patchClip = (id: number | undefined, patch: Partial<TimelineClip>) => {
+    if (!timeline || id === undefined) return
+    setTimeline({ ...timeline, clips: timeline.clips.map((clip) => clip.id === id ? { ...clip, ...patch } : clip) })
+    setDirty(true)
+  }
+
+  const save = async () => {
+    if (!timeline) return
+    setSaving(true)
+    try {
+      const saved = await api.saveTimeline(project.id, {
+        duration: timeline.duration,
+        settings: timeline.settings,
+        expected_version: timeline.version,
+        clips: timeline.clips.map(({ id: _id, timeline_id: _timelineId, created_at: _createdAt, ...clip }) => clip),
+      })
+      setTimeline(saved)
+      setDirty(false)
+      toast({ title: "Đã lưu timeline", description: `Phiên bản ${saved.version}` })
+    } catch (e) {
+      toast({ title: "Lưu timeline thất bại", description: String(e), variant: "destructive" })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const removeSelected = () => {
+    if (!timeline || !selected || selected.locked) return
+    setTimeline({ ...timeline, clips: timeline.clips.filter((clip) => clip.id !== selected.id) })
+    setSelectedId(null)
+    setDirty(true)
+  }
+
+  const shiftSelected = (delta: number) => {
+    if (!selected || selected.locked) return
+    const length = selected.clip_end - selected.clip_start
+    const start = Math.max(0, Math.min(Math.max(0, timeline?.duration ?? selected.clip_end) - length, selected.clip_start + delta))
+    patchClip(selected.id, { clip_start: start, clip_end: start + length })
+  }
+
+  const duplicateSelected = () => {
+    if (!timeline || !selected) return
+    const length = selected.clip_end - selected.clip_start
+    const start = Math.min(Math.max(0, timeline.duration - length), selected.clip_end + 0.25)
+    const duplicate: TimelineClip = {
+      ...selected,
+      id: -Date.now(),
+      clip_start: start,
+      clip_end: start + length,
+      group_id: selected.group_id ? `${selected.group_id}-copy` : "copy",
+      order_index: timeline.clips.length,
+    }
+    setTimeline({ ...timeline, clips: [...timeline.clips, duplicate] })
+    setSelectedId(duplicate.id ?? null)
+    setDirty(true)
+  }
+
+  const splitSelected = () => {
+    if (!timeline || !selected || selected.locked) return
+    const midpoint = selected.clip_start + (selected.clip_end - selected.clip_start) / 2
+    if (midpoint <= selected.clip_start + 0.05 || midpoint >= selected.clip_end - 0.05) return
+    const splitId = -Date.now()
+    const first: TimelineClip = { ...selected, clip_end: midpoint, out_point: selected.in_point + (midpoint - selected.clip_start), id: splitId }
+    const second: TimelineClip = { ...selected, clip_start: midpoint, in_point: selected.in_point + (midpoint - selected.clip_start), id: splitId - 1, order_index: selected.order_index + 1 }
+    setTimeline({ ...timeline, clips: [...timeline.clips.filter((clip) => clip.id !== selected.id), first, second] })
+    setSelectedId(first.id ?? null)
+    setDirty(true)
+  }
+
+  const updateDuration = (value: number) => {
+    if (!timeline || !Number.isFinite(value)) return
+    setTimeline({ ...timeline, duration: Math.max(0.1, Math.min(86400, value)) })
+    setDirty(true)
+  }
+
+  if (loading) return <div className="vas-card p-6"><Progress value={45} className="w-52 animate-pulse" /></div>
+  if (!timeline) return null
+
+  const visualPreview = timeline.clips.find((clip) => clip.id === selectedId && Boolean(clip.source_path))
+    ?? timeline.clips.find((clip) => clip.track === "visual" && Boolean(clip.source_path))
+  const duration = Math.max(timeline.duration, 1)
+
+  return (
+    <div className="space-y-4">
+      <div className="vas-card p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="mr-auto">
+            <h3 className="text-base font-semibold text-slate-100">Timeline Editor</h3>
+            <p className="text-xs text-slate-500">Chỉnh sửa project JSON thật; thay đổi sẽ được dùng ở bước dựng phim.</p>
+          </div>
+          <Badge variant={dirty ? "warning" : "success"}>{dirty ? "Chưa lưu" : `Đã lưu v${timeline.version}`}</Badge>
+          <Button size="sm" variant="outline" onClick={() => void load()}><RefreshCw className="h-4 w-4" />Tải lại</Button>
+          <Button size="sm" onClick={() => void save()} disabled={!dirty || saving}><Save className="h-4 w-4" />{saving ? "Đang lưu..." : "Lưu timeline"}</Button>
+          <Button size="sm" className="bg-gradient-to-r from-amber-500 to-amber-300 text-black" onClick={onRender}><Play className="h-4 w-4" />Dựng phim</Button>
+        </div>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="vas-card overflow-hidden p-3">
+          <div className="mb-3 flex items-center gap-3 text-xs text-slate-400">
+            <Label className="text-xs">Thời lượng (giây)</Label>
+            <Input className="h-8 w-24" type="number" min={0.1} step={0.1} value={timeline.duration} onChange={(e) => updateDuration(Number(e.target.value))} />
+            <Label className="ml-auto text-xs">Zoom</Label>
+            <Button size="sm" variant="outline" onClick={() => setZoom((value) => Math.max(20, value - 8))}><ChevronLeft className="h-4 w-4" /></Button>
+            <span className="w-12 text-center">{zoom}px/s</span>
+            <Button size="sm" variant="outline" onClick={() => setZoom((value) => Math.min(120, value + 8))}><ChevronRight className="h-4 w-4" /></Button>
+          </div>
+          <div className="overflow-x-auto rounded-lg border border-white/[0.08] bg-[#0a0f12]">
+            <div className="min-w-[760px]" style={{ width: `${Math.max(760, duration * zoom + 110)}px` }}>
+              <div className="ml-28 h-7 border-b border-white/[0.08] text-[10px] text-slate-600">
+                {Array.from({ length: Math.ceil(duration) + 1 }, (_, second) => (
+                  <span key={second} className="inline-block border-l border-white/[0.08] pl-1" style={{ width: `${zoom}px` }}>{second}s</span>
+                ))}
+              </div>
+              {TIMELINE_TRACKS.map((track) => {
+                const clips = timeline.clips.filter((clip) => clip.track === track.id)
+                return (
+                  <div key={track.id} className="flex min-h-[58px] border-b border-white/[0.06]">
+                    <div className="flex w-28 shrink-0 items-center border-r border-white/[0.08] px-2 text-[11px] text-slate-400">{track.label}</div>
+                    <div className="relative flex-1">
+                      {clips.map((clip, index) => {
+                        const width = Math.max(28, (clip.clip_end - clip.clip_start) * zoom)
+                        const left = clip.clip_start * zoom
+                        const isSelected = clip.id === selectedId
+                        return (
+                          <button key={clip.id ?? `${track.id}-${index}`} type="button" onClick={() => setSelectedId(clip.id ?? null)} className={cn("absolute top-2 h-10 overflow-hidden rounded border px-2 text-left text-[10px] text-white transition", track.color, isSelected ? "border-white ring-2 ring-amber-300/70" : "border-white/10 hover:border-white/40")} style={{ left, width }}>
+                            <span className="block truncate">{clip.source_path ? clip.source_path.split(/[\\/]/).pop() : `${track.label} clip`}</span>
+                            <span className="text-[9px] text-white/70">{(clip.clip_end - clip.clip_start).toFixed(1)}s</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="vas-card space-y-4 p-4">
+          <div className="flex items-center justify-between"><h4 className="font-semibold">Clip đang chọn</h4><Badge variant="secondary">{selected?.track ?? "—"}</Badge></div>
+          {selected ? (
+            <>
+              {selected.source_path && (selected.track === "visual" || selected.track === "overlay") && <video src={mediaUrl(selected.source_path)} controls className="max-h-40 w-full rounded border border-white/10 bg-black" />}
+              <div className="grid grid-cols-2 gap-2">
+                <div><Label className="text-xs">Bắt đầu</Label><Input type="number" step={0.1} value={selected.clip_start} disabled={selected.locked} onChange={(e) => { const start = Math.max(0, Number(e.target.value)); patchClip(selected.id, { clip_start: start, clip_end: Math.max(start + 0.1, selected.clip_end) }) }} /></div>
+                <div><Label className="text-xs">Kết thúc</Label><Input type="number" step={0.1} value={selected.clip_end} disabled={selected.locked} onChange={(e) => { const end = Math.max(selected.clip_start + 0.1, Number(e.target.value)); patchClip(selected.id, { clip_end: end, out_point: Math.max(selected.in_point, selected.out_point + (end - selected.clip_end)) }) }} /></div>
+                <div><Label className="text-xs">In point</Label><Input type="number" step={0.1} value={selected.in_point} disabled={selected.locked} onChange={(e) => patchClip(selected.id, { in_point: Math.max(0, Number(e.target.value)) })} /></div>
+                <div><Label className="text-xs">Out point</Label><Input type="number" step={0.1} value={selected.out_point} disabled={selected.locked} onChange={(e) => patchClip(selected.id, { out_point: Math.max(selected.in_point, Number(e.target.value)) })} /></div>
+              </div>
+              <div><Label className="text-xs">Âm lượng: {(selected.volume * 100).toFixed(0)}%</Label><Slider value={[selected.volume]} min={0} max={2} step={0.05} disabled={selected.locked} onValueChange={(value) => patchClip(selected.id, { volume: value[0] })} /></div>
+              <div className="grid grid-cols-2 gap-2">
+                <Button size="sm" variant="outline" disabled={selected.locked} onClick={() => shiftSelected(-0.25)}><ChevronLeft className="h-4 w-4" />Lùi 0.25s</Button>
+                <Button size="sm" variant="outline" disabled={selected.locked} onClick={() => shiftSelected(0.25)}>Tiến 0.25s<ChevronRight className="h-4 w-4" /></Button>
+                <Button size="sm" variant="outline" disabled={selected.locked} onClick={splitSelected}><SplitSquareHorizontal className="h-4 w-4" />Tách đôi</Button>
+                <Button size="sm" variant="outline" onClick={duplicateSelected}><Copy className="h-4 w-4" />Nhân bản</Button>
+                <Button size="sm" variant="destructive" className="col-span-2" disabled={selected.locked} onClick={removeSelected}><Trash2 className="h-4 w-4" />Xóa clip khỏi timeline</Button>
+              </div>
+            </>
+          ) : <p className="text-sm text-slate-500">Chọn một clip trong timeline để chỉnh sửa.</p>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Xuất bản / Render
 // ---------------------------------------------------------------------------
 function RenderPanel({ project }: { project: Project }) {
+
   const { job } = useEditorStore()
   const [crf, setCrf] = useState(21)
   const [fps, setFps] = useState(30)
@@ -1524,10 +1767,11 @@ function RenderPanel({ project }: { project: Project }) {
     }
   }
 
-  return (
-    <div className="space-y-6">
+    return (
+    <div id="render-panel" className="space-y-6">
       <div className="vas-card p-5">
         <h3 className="mb-4 text-base font-semibold text-slate-100">Cấu hình render</h3>
+
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
@@ -1628,10 +1872,22 @@ function RenderPanel({ project }: { project: Project }) {
               <div className="space-y-2">
                 <video src={outputVideoUrl(project.id, "output")} controls className="w-full max-h-[50vh] rounded-lg border" />
                 <div className="flex gap-2">
-                  <Button variant="outline" onClick={() => api.openProjectFolder(project.id).catch(() => undefined)}>
+                                    <Button
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        const result = await api.openProjectFolder(project.id)
+                        const opened = await openLocalPath(result.path)
+                        if (!opened.ok) throw new Error(opened.message)
+                      } catch (e) {
+                        toast({ title: "Không mở được thư mục đầu ra", description: String(e), variant: "destructive" })
+                      }
+                    }}
+                  >
                     <FolderOpen className="h-4 w-4" />
                     Mở thư mục đầu ra
                   </Button>
+
                 </div>
               </div>
             )}
@@ -1663,9 +1919,16 @@ export default function ProjectEditorPage() {
   const { project, setProject, setScenes, setJob } = useEditorStore()
   const { backendOnline } = useAppStore()
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState("idea")
+    const [activeTab, setActiveTab] = useState("idea")
+  const userSelectedTab = useRef(false)
+  const selectTab = (tab: string) => {
+    userSelectedTab.current = true
+    setActiveTab(tab)
+  }
   const [channels, setChannels] = useState<Array<{ id: number; name: string }>>([])
-  const [configDialogOpen, setConfigDialogOpen] = useState(false)
+
+    const [configDialogOpen, setConfigDialogOpen] = useState(false)
+
   const job = useJobPolling(projectId, projectId !== null)
 
   useEffect(() => {
@@ -1678,19 +1941,154 @@ export default function ProjectEditorPage() {
       .getProject(projectId)
       .then((p) => {
         setProject(p)
-        setActiveTab(p.status === "draft" ? "idea" : "script")
+        const resumeTab = p.status === "draft"
+          ? "idea"
+          : ["generating_subtitles", "rendering", "completed"].includes(p.status)
+            ? "publish"
+            : ["preparing_media", "media_ready"].includes(p.status)
+              ? "media"
+              : "script"
+        setActiveTab((current) => userSelectedTab.current ? current : resumeTab)
       })
+
       .catch((e) => toast({ title: "Không mở được dự án", description: String(e), variant: "destructive" }))
       .finally(() => setLoading(false))
     api.listChannels().then(setChannels).catch(() => undefined)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, isNew])
 
-  useEffect(() => {
+    useEffect(() => {
     if (job) setJob(job)
+    if (job && !userSelectedTab.current && ["generating_subtitles", "rendering", "completed"].includes(job.status)) {
+      setActiveTab("publish")
+    }
   }, [job, setJob])
 
+  useEffect(() => {
+    if (!projectId || isNew) return
+    let stopped = false
+    const pollFactoryTab = async () => {
+      try {
+        const connection = await api.flowConnection()
+        if (stopped || connection.factory_project_id !== projectId) return
+        if (userSelectedTab.current) return
+        if (["completed"].includes(connection.factory_state || "")) {
+          setActiveTab("publish")
+        } else if (["processing", "generate_image", "generate_video", "ready", "waiting_login"].includes(connection.factory_state || "")) {
+          setActiveTab("media")
+        }
+      } catch {
+        // Backend may be starting; normal project polling will retry next interval.
+      }
+    }
+    void pollFactoryTab()
+    const timer = window.setInterval(() => void pollFactoryTab(), 3000)
+    return () => {
+      stopped = true
+      window.clearInterval(timer)
+    }
+  }, [projectId, isNew])
+
+  const openChannelConfig = () => {
+    if (!projectId) return
+    setConfigDialogOpen(true)
+  }
+
+  const changeProjectFolder = async () => {
+    if (!projectId) return
+    const selected = await selectDirectory()
+    if (!selected) return
+    try {
+      const updated = await api.updateProject(projectId, { project_directory: selected })
+      setProject(updated)
+      toast({ title: "Đã đổi thư mục dự án", description: updated.project_directory })
+    } catch (e) {
+      toast({ title: "Không đổi được thư mục dự án", description: String(e), variant: "destructive" })
+    }
+  }
+
+  const approveAndContinue = async () => {
+    if (!projectId || !project) return
+    const approval = await api.approveScript(projectId)
+    setActiveTab("storyboard")
+
+    const existingScenes = await api.listScenes(projectId)
+    if (approval.needs_scene_analysis || existingScenes.length === 0 || existingScenes.some((scene) => !scene.visual_prompt)) {
+      let analysis: { scenes: any[] } = { scenes: [] }
+      try {
+        analysis = await api.semanticAnalyze(projectId, {
+          existing_narrations: existingScenes.map((scene) => scene.narration).filter(Boolean),
+        })
+      } catch (err) {
+        console.warn("Semantic analysis failed, fallback to direct buildScenes:", err)
+      }
+      if (analysis.scenes && analysis.scenes.length > 0) {
+        await api.buildScenes(projectId, { semantic_analysis: analysis.scenes })
+      } else {
+        await api.buildScenes(projectId)
+      }
+      const refreshedProject = await api.getProject(projectId)
+      setProject(refreshedProject)
+    }
+
+    // Chờ semantic scene preparation hoàn tất trước khi TTS/Factory nhận task.
+    const deadline = Date.now() + 120_000
+    let scenesReady = false
+    while (Date.now() < deadline) {
+      const [state, scenes] = await Promise.all([
+        api.pipelineStatus(projectId).catch(() => null),
+        api.listScenes(projectId),
+      ])
+      if (state?.status === "failed") throw new Error(state.last_log || "Pipeline chuẩn bị thất bại")
+      if (scenes.length > 0 && scenes.every((scene) => Boolean(scene.visual_prompt))) {
+        scenesReady = true
+        break
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+    }
+    if (!scenesReady) throw new Error("Quá thời gian chờ phân cảnh có visual prompt")
+
+    setActiveTab("characters")
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    setActiveTab("media")
+    const prepared = await api.pipelineStartAuto(projectId)
+    if (!prepared.ok) throw new Error("Không thể khởi động bước TTS và chuẩn bị media")
+
+    const mediaDeadline = Date.now() + 120_000
+    let voiceReady = false
+    while (Date.now() < mediaDeadline) {
+      const scenes = await api.listScenes(projectId)
+      const state = await api.pipelineStatus(projectId).catch(() => null)
+      if (state?.status === "failed") throw new Error(state.last_log || "Pipeline TTS/media thất bại")
+      if (scenes.length > 0 && scenes.every((scene) => Boolean(scene.audio_path))) {
+        voiceReady = true
+        break
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+    }
+    if (!voiceReady) throw new Error("Quá thời gian chờ TTS tạo giọng thật cho các cảnh")
+
+    const factory = await api.factoryStart(projectId, {
+      media_type: "image",
+      aspect: project.aspect_ratio || "16:9",
+      include_video: true,
+      factory_mode: true,
+    })
+    const browser = await startFlowBrowser(projectId, factory.factory_session_id)
+    if (!browser.ok) {
+      throw new Error(browser.message || "Không khởi động được Chrome Flow")
+    }
+    setActiveTab("media")
+    toast({
+      title: factory.requires_login ? "Đã duyệt; đang chờ đăng nhập Google Flow" : "Đã duyệt và khởi động Factory",
+      description: factory.requires_login
+        ? "Chrome profile riêng đã mở. Đăng nhập một lần; Flow sẽ tự tiếp tục tạo media và sau đó dựng phim."
+        : "Phân cảnh, giọng, media và hàng đợi dựng phim đã được khởi động tự động.",
+    })
+  }
+
   if (loading) {
+
     return <div className="p-8"><Progress value={40} className="w-40 animate-pulse" /></div>
   }
 
@@ -1722,11 +2120,22 @@ export default function ProjectEditorPage() {
         title={project.name}
         status={<StatusBadge status={project.status}>{STATUS_LABELS[project.status] || project.status}</StatusBadge>}
         subtitle={<><span>{project.aspect_ratio}</span><span>·</span><span>{project.target_duration}s mục tiêu</span><span>·</span><span>{project.channel_id ? channels.find((c) => c.id === project.channel_id)?.name ?? `Kênh #${project.channel_id}` : "Không kênh"}</span></>}
-        actions={<><Link to="/projects"><Button variant="outline" size="sm"><ArrowLeft className="h-4 w-4" />Dự án</Button></Link><Button variant="outline" size="sm" onClick={() => setConfigDialogOpen(true)}><Settings className="h-4 w-4" />Cấu hình kênh</Button><Button size="sm" onClick={() => api.openProjectFolder(project.id).catch(() => undefined)}><FolderOpen className="h-4 w-4" />Thư mục dự án</Button></>}
+                actions={<><Link to="/projects"><Button variant="outline" size="sm"><ArrowLeft className="h-4 w-4" />Dự án</Button></Link><Button variant="outline" size="sm" onClick={openChannelConfig}><Settings className="h-4 w-4" />Cấu hình kênh</Button><Button size="sm" onClick={async () => {
+          try {
+            const result = await api.openProjectFolder(project.id)
+            const opened = await openLocalPath(result.path)
+            if (!opened.ok) throw new Error(opened.message)
+          } catch (e) {
+            toast({ title: "Không mở được thư mục dự án", description: String(e), variant: "destructive" })
+          }
+        }}><FolderOpen className="h-4 w-4" />Thư mục dự án</Button><Button variant="outline" size="sm" onClick={changeProjectFolder}><FolderOpen className="h-4 w-4" />Đổi thư mục</Button></>}
+
       />
       <Progress value={project.progress} className="h-1 rounded-none bg-[#111B21]" />
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <StageNavigation value={activeTab} onValueChange={setActiveTab} />
+            <Tabs value={activeTab} onValueChange={selectTab}>
+
+                <StageNavigation value={activeTab} onValueChange={selectTab} />
+
         <div className="p-5">
         <TabsContent value="idea" className="mt-4">
           <ScriptCreator project={project} onDone={() => setActiveTab("script")} />
@@ -1735,6 +2144,7 @@ export default function ProjectEditorPage() {
         <TabsContent value="script" className="mt-4">
           <ScriptEditor
             project={project}
+            onApproveAndContinue={approveAndContinue}
             onBuildScenes={async () => {
               try {
                 await api.buildScenes(project.id)
@@ -1763,20 +2173,25 @@ export default function ProjectEditorPage() {
           <SubtitleConfigPanel project={project} />
         </TabsContent>
 
-        <TabsContent value="publish" className="mt-4">
-          <RenderPanel project={project} />
+                <TabsContent value="publish" className="mt-4">
+          <TimelineEditor project={project} onRender={() => document.getElementById("render-panel")?.scrollIntoView({ behavior: "smooth" })} />
+          <div className="mt-6"><RenderPanel project={project} /></div>
         </TabsContent>
+
         </div>
       </Tabs>
 
-      {project.channel_id && (
-        <ChannelConfigDialog
-          channelId={project.channel_id}
-          channelName={channels.find((c) => c.id === project.channel_id)?.name ?? `Kênh #${project.channel_id}`}
-          open={configDialogOpen}
-          onOpenChange={setConfigDialogOpen}
-        />
-      )}
+      <ChannelConfigDialog
+        projectId={project.id}
+        channelId={project.channel_id}
+        channelName={project.channel_id ? channels.find((c) => c.id === project.channel_id)?.name ?? `Kênh #${project.channel_id}` : `${project.name} · cấu hình riêng`}
+        open={configDialogOpen}
+        onOpenChange={setConfigDialogOpen}
+        onSaved={() => {
+          void api.getProject(project.id).then(setProject).catch(() => undefined)
+        }}
+      />
+
     </div>
   )
 }

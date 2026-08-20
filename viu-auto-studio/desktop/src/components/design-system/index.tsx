@@ -37,8 +37,8 @@ export const STUDIO_STAGES = [
   { value: "storyboard", label: "Phân cảnh Visual" },
   { value: "characters", label: "Nhân vật" },
   { value: "media", label: "Media" },
-  { value: "subtitles", label: "Dựng phim" },
-  { value: "publish", label: "Xuất bản" },
+  { value: "publish", label: "Dựng phim" },
+  { value: "subtitles", label: "Xuất bản" },
 ] as const
 
 function PlayLogo({ size = 32 }: { size?: number }) {

@@ -44,6 +44,7 @@ export interface StudioSettings {
   ai_model: string
   ai_api_key_set: boolean
   ai_api_key?: string
+  ai_translation_provider?: string
   deepseek_api_key: string
   deepseek_api_key_set: boolean
   gemini_model: string
@@ -89,6 +90,7 @@ export interface Project {
   output_video_path: string
   thumbnail_path: string
   error_message: string
+  config_json?: string | null
   created_at: string
   updated_at: string
 }
@@ -159,6 +161,46 @@ export interface Scene {
   updated_at: string
 }
 
+export type TimelineTrack = "visual" | "voice" | "subtitle" | "music" | "overlay"
+
+export interface TimelineTransform {
+  scale?: number
+  x?: number
+  y?: number
+  opacity?: number
+  effect?: string
+}
+
+export interface TimelineClip {
+  id?: number
+  timeline_id?: number
+  track: TimelineTrack | string
+  asset_id?: number | null
+  source_path: string
+  scene_id?: number | null
+  clip_start: number
+  clip_end: number
+  in_point: number
+  out_point: number
+  volume: number
+  transform: TimelineTransform
+  group_id: string
+  locked: boolean
+  order_index: number
+  created_at?: string | null
+}
+
+export interface TimelineProject {
+  id: number
+  project_id: number
+  version: number
+  duration: number
+  settings: Record<string, unknown>
+  autosave: boolean
+  created_at?: string | null
+  clips: TimelineClip[]
+}
+
 export interface TTSConfig {
   provider: string
   voice: string
@@ -166,6 +208,18 @@ export interface TTSConfig {
   volume: number
   model_dir: string
   cloud_api_key_masked: string
+  reference_audio?: string
+  reference_text?: string
+  voice_clone_prompt?: string
+  voice_design?: string
+  model_name?: string
+  device?: string
+  duration?: number | null
+  num_step?: number
+  normalize_text?: boolean
+  postprocess_output?: boolean
+  audio_chunk_duration?: number
+  audio_chunk_threshold?: number
 }
 
 export interface RenderJob {

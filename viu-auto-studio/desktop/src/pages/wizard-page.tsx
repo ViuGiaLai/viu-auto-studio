@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import {
   ArrowLeft, ArrowRight, Check, Info, Layers, Mic2, Palette, Bot as Robot, Save, Sparkles, Wand2,
 } from "lucide-react"
-import { api } from "@/services/api"
+import { api, selectDirectory } from "@/services/api"
 import { toast } from "@/hooks/use-toast"
 import { Button } from "@/components/design-system"
 import { Input } from "@/components/design-system"
@@ -168,6 +168,16 @@ export default function WizardPage() {
   const [step, setStep] = useState(0)
   const [cfg, setCfg] = useState<WizardConfig>({ ...DEFAULT_CONFIG })
   const [creating, setCreating] = useState(false)
+  const [channelId, setChannelId] = useState<number | null>(null)
+  const [channels, setChannels] = useState<Array<{ id: number; name: string }>>([])
+  const [outputFolder, setOutputFolder] = useState("")
+
+  useEffect(() => {
+    api.listChannels().then((items) => {
+      setChannels(items)
+      if (items.length === 1) setChannelId(items[0].id)
+    }).catch(() => undefined)
+  }, [])
 
   const set = <K extends keyof WizardConfig>(k: K, v: WizardConfig[K]) => setCfg((c) => ({ ...c, [k]: v }))
 
@@ -246,15 +256,16 @@ export default function WizardPage() {
     try {
       const res = await api.createProject({
         name: cfg.name.trim(),
-        channel_id: null,
+                channel_id: channelId,
+
         topic: cfg.topic || cfg.name.trim(),
         video_type: cfg.videoType,
         aspect_ratio: cfg.aspectRatio,
         language: cfg.language,
         target_duration: cfg.targetDuration,
         project_type: cfg.projectType,
-        output_folder: "",
-      } as Parameters<typeof api.createProject>[0])
+        output_folder: outputFolder.trim() || undefined,
+      })
       const projectId: number = res.id
       await api.updateProjectConfig(projectId, configForSave as Record<string, unknown>)
       toast({ title: openStudio ? "Đã tạo dự án" : "Đã lưu nháp", description: cfg.name.trim() })
@@ -349,8 +360,25 @@ export default function WizardPage() {
                     <Input value={cfg.name} maxLength={100} onChange={(e) => set("name", e.target.value)}
                       placeholder="VD: Smart Living — 60 giây ứng dụng" className={inputCls} autoFocus />
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-slate-400">Loại dự án</label>
+                                  <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-400">Kênh sản xuất</label>
+                  <select value={channelId ? String(channelId) : "none"} onChange={(e) => setChannelId(e.target.value === "none" ? null : Number(e.target.value))} className={selectCls}>
+                    <option value="none">Không gắn kênh</option>
+                    {channels.map((channel) => <option key={channel.id} value={String(channel.id)}>{channel.name}</option>)}
+                  </select>
+                  <p className="text-[11px] text-slate-500">Kênh quyết định phong cách, giọng mặc định và cấu hình media cho project.</p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-400">Thư mục dự án</label>
+                  <div className="flex gap-2">
+                    <Input value={outputFolder} onChange={(e) => setOutputFolder(e.target.value)} placeholder="Để trống để dùng thư mục mặc định" className={`${inputCls} flex-1`} />
+                    <Button type="button" variant="outline" onClick={async () => { const selected = await selectDirectory(); if (selected) setOutputFolder(selected) }}>Chọn thư mục</Button>
+                  </div>
+                  <p className="text-[11px] text-slate-500">Media, audio, subtitle và output.mp4 sẽ được lưu trong thư mục này.</p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-400">Loại dự án</label>
+
                     <div className="grid grid-cols-2 gap-3">
                       {(["ai_studio", "recap"] as const).map((t) => (
                         <Button variant="ghost"

@@ -46,9 +46,12 @@ const PRELOAD_CJS = `const { contextBridge, ipcRenderer } = require("electron")
 contextBridge.exposeInMainWorld("electronAPI", {
   ping: () => ipcRenderer.invoke("ping"),
   openExternal: (url) => ipcRenderer.invoke("open:external", url),
+  openPath: (target) => ipcRenderer.invoke("shell:open-path", target),
   getRuntimeConfig: () => ipcRenderer.invoke("getRuntimeConfig"),
   getUserDataDir: () => ipcRenderer.invoke("getUserDataDir"),
   selectDirectory: () => ipcRenderer.invoke("dialog:select-directory"),
+  startFlow: (input) => ipcRenderer.invoke("flow:start", input),
+  stopFlow: () => ipcRenderer.invoke("flow:stop"),
 })
 `
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import { Plus, Search, Trash2, FolderOpen, Play, ChevronDown } from "lucide-react"
-import { api, mediaUrl } from "@/services/api"
+import { api, mediaUrl, openLocalPath } from "@/services/api"
 import { toast } from "@/hooks/use-toast"
 import type { Project } from "@/types"
 import { useAppStore } from "@/stores/app-store"
@@ -143,12 +143,8 @@ export default function ProjectsPage() {
   const handleOpenFolder = async (p: Project) => {
     try {
       const res = await api.openProjectFolder(p.id)
-      const electronApi = (window as unknown as { electron?: { openFolder?: (path: string) => void } }).electron
-      if (electronApi?.openFolder) {
-        electronApi.openFolder(res.path)
-      } else {
-        toast({ title: "Thư mục dự án", description: res.path })
-      }
+      const opened = await openLocalPath(res.path)
+      if (!opened.ok) throw new Error(opened.message)
     } catch (e) {
       toast({ title: "Không mở được thư mục", description: String(e), variant: "destructive" })
     }

@@ -12,6 +12,7 @@ Không có mock, không có fallback ảnh giả.
 import json
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import uuid
@@ -24,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from backend.core.config import DATA_DIR, FLOW_BOOTSTRAP_TOKEN, HOST, PORT, PROJECTS_DIR as _CFG_PROJECTS_DIR, FFPROBE_BIN
 from backend.core.database import get_db
-from backend.models import ConnectorTask, FlowConnection, PipelineState, Project, Scene
+from backend.models import Channel, ConnectorTask, FlowConnection, PipelineState, Project, RenderJob, Scene
 from backend.services.flow_factory import refresh_task_state, set_factory_state
 
 router = APIRouter(prefix="/connector", tags=["flow-connector"])
@@ -34,7 +35,7 @@ WORKER_STATE_PATH = os.path.join(DATA_DIR, "connector_workers.json")
 
 
 def _require_connector_token(value: str | None) -> None:
-    if FLOW_BOOTSTRAP_TOKEN and value != FLOW_BOOTSTRAP_TOKEN:
+    if FLOW_BOOTSTRAP_TOKEN and not secrets.compare_digest(value or "", FLOW_BOOTSTRAP_TOKEN):
         raise HTTPException(403, "Flow Connector token không hợp lệ")
 
 
@@ -67,6 +68,50 @@ def _sync_pipeline_state(db: Session, project_id: int) -> None:
         steps["Ảnh/Video"] = f"{round(ready * 100 / total)}%"
     state.step_data_json = json.dumps(steps, ensure_ascii=False)
     db.commit()
+    if ready >= total and not failed:
+        _maybe_start_render(project_id)
+
+
+def _maybe_start_render(project_id: int) -> None:
+    """Start the real FFmpeg render once Factory has delivered every final asset."""
+    from backend.core.database import SessionLocal
+    from backend.pipeline.queue import pipeline
+    from backend.services.tts import get_tts_config
+
+    db = SessionLocal()
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            return
+        scenes = db.query(Scene).filter(Scene.project_id == project_id).all()
+        if not scenes or any(
+            not scene.media_path or not os.path.isfile(scene.media_path)
+            or not scene.audio_path or not os.path.isfile(scene.audio_path)
+            for scene in scenes
+        ):
+            return
+        existing = db.query(RenderJob).filter(RenderJob.project_id == project_id).all()
+        if any(job.status in {"generating_voice", "voice_ready", "preparing_media", "media_ready", "generating_subtitles", "rendering"} for job in existing):
+            return
+        if any(job.status == "completed" and job.output_path and os.path.isfile(job.output_path) for job in existing):
+            return
+        project.status = "media_ready"
+        project.current_step = "Media đã xác minh"
+        db.commit()
+        started = pipeline.start(project_id, {}, get_tts_config(db))
+        if started.get("ok"):
+            project.status = "rendering"
+            project.current_step = "Dựng phim"
+            project.error_message = ""
+        else:
+            project.status = "failed"
+            project.error_message = started.get("message", "Không thể khởi động Dựng phim")
+        db.commit()
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        log.exception("Không thể tự khởi động render project %s: %s", project_id, exc)
+    finally:
+        db.close()
 
 
 # ---------------------------------------------------------------------------
@@ -513,7 +558,11 @@ def connector_task_complete(
     scene = db.query(Scene).get(t.scene_id)
     if not scene:
         raise HTTPException(404, "scene không tồn tại")
-    proj_dir = os.path.join(PROJECTS_DIR, f"project_{t.project_id}", "scenes")
+    project = db.query(Project).get(t.project_id)
+    if not project:
+        raise HTTPException(404, "project không tồn tại")
+    project_root = project.project_directory or os.path.join(PROJECTS_DIR, f"project_{t.project_id}")
+    proj_dir = os.path.join(project_root, "scenes")
     os.makedirs(proj_dir, exist_ok=True)
     if media_type == "video":
         ext = "mp4"
@@ -556,6 +605,18 @@ def connector_task_complete(
     if media_type == "image" and t.stage == "image" and connection and connection.factory_session_id == t.factory_session_id and connection.factory_mode and connection.include_video:
         connection.factory_stage = "video"
         connection.factory_state = "ready"
+        video_model = "Veo 3.1 Lite"
+        try:
+            channel_cfg = {}
+            if project.channel_id:
+                channel = db.query(Channel).filter(Channel.id == project.channel_id).first()
+                if channel and channel.config_json:
+                    channel_cfg = json.loads(channel.config_json) if isinstance(channel.config_json, str) else dict(channel.config_json)
+            project_cfg = json.loads(project.config_json) if isinstance(project.config_json, str) and project.config_json else {}
+            project_media = project_cfg.get("media") if isinstance(project_cfg.get("media"), dict) else {}
+            video_model = str(project_media.get("video_model") or channel_cfg.get("video_model") or video_model)
+        except (TypeError, ValueError):
+            pass
         db.add(ConnectorTask(
             task_id=str(uuid.uuid4()),
             project_id=t.project_id,
@@ -567,7 +628,7 @@ def connector_task_complete(
             prompt=t.prompt,
             media_type="video",
             aspect=t.aspect,
-            model="Veo 3.1 Lite",
+            model=video_model,
             factory_session_id=t.factory_session_id,
         ))
     db.commit()
@@ -628,8 +689,16 @@ def connector_task_reference(
         raise HTTPException(404, "task không tồn tại hoặc không gắn scene")
     scene = db.query(Scene).get(task.scene_id)
     reference = (scene.image_path if scene else "") or (scene.media_path if scene else "")
-    if not reference or not os.path.isfile(reference):
+    project = db.query(Project).filter(Project.id == task.project_id).first()
+    project_root = os.path.realpath((project.project_directory if project and project.project_directory else os.path.join(PROJECTS_DIR, str(task.project_id))))
+    reference_real = os.path.realpath(reference) if reference else ""
+    try:
+        inside_project = bool(reference_real) and os.path.commonpath([project_root, reference_real]) == project_root
+    except ValueError:
+        inside_project = False
+    if not inside_project or not os.path.isfile(reference_real):
         raise HTTPException(404, "Chưa có ảnh tham chiếu đã xác minh cho video stage")
+    reference = reference_real
     media_type = "image/jpeg" if reference.lower().endswith((".jpg", ".jpeg")) else "image/webp" if reference.lower().endswith(".webp") else "image/png"
     return FileResponse(reference, media_type=media_type, filename=os.path.basename(reference))
 
@@ -651,13 +720,25 @@ async def connector_task_ingest(
         raise HTTPException(404, "task không tồn tại hoặc không gắn scene")
     tmp = os.path.join(DATA_DIR, "upload_tmp")
     os.makedirs(tmp, exist_ok=True)
-    tmp_path = os.path.join(tmp, f"{task_id}__{file.filename or 'file'}")
+    # Never use UploadFile.filename as a path. It is client-controlled and may
+    # contain traversal characters or invalid Windows names.
+    safe_suffix = os.path.splitext(os.path.basename(file.filename or "file"))[1].lower()
+    if len(safe_suffix) > 12 or not re.fullmatch(r"\.[a-z0-9]{1,10}", safe_suffix):
+        safe_suffix = ".upload"
+    tmp_path = os.path.join(tmp, f"{uuid.uuid4().hex}{safe_suffix}")
+    max_upload_bytes = 512 * 1024 * 1024
+    total_bytes = 0
     with open(tmp_path, "wb") as f:
-        content = await file.read()
-        if len(content) < 1024:
+        while chunk := await file.read(1024 * 1024):
+            total_bytes += len(chunk)
+            if total_bytes > max_upload_bytes:
+                f.close()
+                os.remove(tmp_path)
+                raise HTTPException(413, "file upload vượt giới hạn 512 MB")
+            f.write(chunk)
+        if total_bytes < 1024:
             os.remove(tmp_path)
             raise HTTPException(422, "file quá nhỏ, không phải media thật")
-        f.write(content)
     try:
         media_type = str((file.content_type or "image")).split("/")[0]
         media_type = media_type if media_type in ("image", "video") else "image"
@@ -668,7 +749,11 @@ async def connector_task_ingest(
             t.updated_at = datetime.utcnow()
             db.commit()
             raise HTTPException(422, info.get("error", "file không hợp lệ"))
-        proj_dir = os.path.join(PROJECTS_DIR, f"project_{t.project_id}", "scenes")
+        project = db.query(Project).get(t.project_id)
+        if not project:
+            raise HTTPException(404, "project không tồn tại")
+        project_root = project.project_directory or os.path.join(PROJECTS_DIR, f"project_{t.project_id}")
+        proj_dir = os.path.join(project_root, "scenes")
         os.makedirs(proj_dir, exist_ok=True)
         if media_type == "video":
             ext = "mp4"
@@ -684,6 +769,10 @@ async def connector_task_ingest(
         scene = db.query(Scene).get(t.scene_id)
         scene.media_path = dest
         scene.media_type = media_type
+        if media_type == "image":
+            scene.image_path = dest
+        else:
+            scene.video_path = dest
         scene.status = "media_ready"
         scene.error_message = None
         t.status = "completed"

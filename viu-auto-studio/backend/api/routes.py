@@ -48,6 +48,8 @@ from backend.services.media import get_audio_duration, get_media_info
 log = logging.getLogger("viu.api")
 router = APIRouter()
 
+MEDIA_SUFFIXES = {".mp4", ".webm", ".mov", ".mp3", ".wav", ".flac", ".ogg", ".m4a", ".png", ".jpg", ".jpeg", ".webp"}
+
 
 # ===========================================================================
 # Health
@@ -211,6 +213,7 @@ def get_settings(db: Session = Depends(get_db)):
         ai_provider=settings.get("ai_provider", "gemini"),
         ai_model=settings.get("ai_model", settings.get("gemini_model", "")),
         ai_api_key_set=bool(str(settings.get("ai_api_key", "")).strip()),
+        ai_translation_provider=settings.get("ai_translation_provider", "chatgpt"),
         deepseek_api_key="",
         deepseek_api_key_set=bool(str(settings.get("deepseek_api_key", "")).strip()),
         gemini_model=settings.get("gemini_model", "3.5 Flash"),
@@ -256,6 +259,26 @@ def update_settings(payload: StudioSettingsUpdate, db: Session = Depends(get_db)
         updated.append(key)
     db.commit()
     return {"ok": True, "updated": updated}
+
+
+class DeepSeekTestRequest(BaseModel):
+    api_key: str = ""
+
+
+@router.post("/settings/deepseek/test")
+def test_deepseek(payload: DeepSeekTestRequest, db: Session = Depends(get_db)):
+    """Test connection with DeepSeek API key."""
+    from backend.services.ai.deepseek import DeepSeekProvider
+
+    stored = db.query(AppSetting).filter(AppSetting.key == "deepseek_api_key").first()
+    key = payload.api_key.strip() or (stored.value_encrypted if stored and stored.value_encrypted else "")
+    if not key:
+        raise HTTPException(422, "Chưa có API key DeepSeek để kiểm tra")
+    provider = DeepSeekProvider(api_key=key)
+    res = provider.test_connection(api_key=key)
+    if not res.get("ok"):
+        raise HTTPException(422, res.get("message", "Kết nối DeepSeek thất bại"))
+    return res
 
 
 class TelegramTestRequest(BaseModel):
@@ -917,7 +940,7 @@ def upload_scene_media(scene_id: int, file: UploadFile = File(...), db: Session 
 @router.post("/projects/{project_id}/build-scenes")
 def build_scenes_from_script(
     project_id: int,
-    request: Request,
+    payload: dict | None = None,
     db: Session = Depends(get_db),
 ):
     """Convert the approved script into scene records.
@@ -926,14 +949,8 @@ def build_scenes_from_script(
     - Body tùy chọn {"semantic_analysis": [{narration, visual_prompt, style_prompt}, ...]}:
       AI đã phân tích ngữ nghĩa — tạo cảnh theo phân cảnh của AI (không 1-1 câu-ảnh).
     """
-    body: dict = {}
-    try:
-        body = request.json() or {}
-    except Exception:  # noqa: BLE001
-        body = {}
+    body = payload if isinstance(payload, dict) else {}
     script = db.query(Script).filter(Script.project_id == project_id).first()
-    if script is None or not script.full_script:
-        raise HTTPException(400, "Chưa có kịch bản để xây dựng phân cảnh")
 
     semantic = body.get("semantic_analysis") if isinstance(body, dict) else None
     if isinstance(semantic, list) and semantic:
@@ -950,7 +967,13 @@ def build_scenes_from_script(
         if not segments:
             raise HTTPException(400, "Phân tích ngữ nghĩa rỗng")
         sentences = [seg["narration"] for seg in segments]
+        if script is None:
+            script = Script(project_id=project_id, full_script="\n".join(sentences), status="approved")
+            db.add(script)
+            db.commit()
     else:
+        if script is None or not script.full_script:
+            raise HTTPException(400, "Chưa có kịch bản để xây dựng phân cảnh")
         sentences = split_into_sentences(script.full_script)
         segments = None
     if not sentences:
@@ -1356,20 +1379,46 @@ def analyze_semantic_scenes(project_id: int, payload: dict, db: Session = Depend
     from backend.services.ai.semantic_scenes import analyze_semantic_scenes as _analyze
 
     script = db.query(Script).filter(Script.project_id == project_id).first()
+    project = db.query(Project).filter(Project.id == project_id).first()
     full_script = str(payload.get("full_script") or "")
     if not full_script and script:
         full_script = script.full_script or ""
     if not full_script:
         raise HTTPException(400, "Chưa có kịch bản để phân tích")
+    style_parts: list[str] = []
+    project_cfg: dict = {}
+    if project and project.config_json:
+        try:
+            project_cfg = json.loads(project.config_json) if isinstance(project.config_json, str) else dict(project.config_json)
+        except (TypeError, ValueError):
+            project_cfg = {}
+    project_channel_cfg = project_cfg.get("channel") if isinstance(project_cfg.get("channel"), dict) else {}
+    style_parts.extend(str(project_channel_cfg.get(key) or "") for key in ("niche", "script_style", "direction", "hook"))
+    if project and project.channel_id:
+
+        channel = db.query(Channel).filter(Channel.id == project.channel_id).first()
+        if channel and channel.config_json:
+            try:
+                channel_cfg = json.loads(channel.config_json) if isinstance(channel.config_json, str) else dict(channel.config_json)
+                style_parts.extend(str(channel_cfg.get(key) or "") for key in ("niche", "writing_style", "script_style", "channel_direction", "direction", "hook"))
+            except (TypeError, ValueError):
+                pass
     try:
         result = _analyze(
             full_script,
             existing_narrations=payload.get("existing_narrations"),
+            style_memory="\n".join(part for part in style_parts if part.strip()),
         )
-    except RuntimeError as exc:
-        raise HTTPException(502, f"AI phân tích thất bại: {exc}") from exc
+    except Exception as exc:
+        log.warning("Semantic analyze error, using fallback: %s", exc)
+        from backend.services.ai.semantic_scenes import _heuristic_semantic_scenes
+        result = _heuristic_semantic_scenes(
+            full_script,
+            existing_narrations=payload.get("existing_narrations"),
+            style_memory="\n".join(part for part in style_parts if part.strip()),
+        )
     # Gộp style nhất quán chung (chuỗi dùng cho tất cả cảnh)
-    styles = [s.get("style_prompt", "") for s in result["scenes"] if s.get("style_prompt")]
+    styles = [s.get("style_prompt", "") for s in result.get("scenes", []) if s.get("style_prompt")]
     result["common_style"] = styles[-1] if styles else ""
     return result
 
@@ -1508,16 +1557,14 @@ def media_info(payload: dict):
 @router.get("/media/file")
 def serve_media_file(path: str):
     """Serve a local media file to the frontend for preview playback."""
-    resolved = Path(path).resolve()
-    safe_roots = [PROJECTS_DIR.resolve(), DATA_DIR.resolve()]
-    if not any(str(resolved).startswith(str(root)) for root in safe_roots):
-        # Allow absolute paths only when explicitly requested by the user via the app
-        pass
-    if not resolved.exists():
-        raise HTTPException(404, "File không tồn tại")
+    clean_path = path.split("?")[0]
+    resolved = Path(clean_path).expanduser().resolve()
+    if resolved.suffix.lower() not in MEDIA_SUFFIXES or not resolved.is_file():
+        raise HTTPException(404, "File media không tồn tại hoặc không được hỗ trợ")
     content_type = {
         ".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
-        ".mp3": "audio/mpeg", ".wav": "audio/wav",
+        ".mp3": "audio/mpeg", ".wav": "audio/wav", ".flac": "audio/flac",
+        ".ogg": "audio/ogg", ".m4a": "audio/mp4",
         ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
         ".webp": "image/webp",
     }.get(resolved.suffix.lower(), "application/octet-stream")

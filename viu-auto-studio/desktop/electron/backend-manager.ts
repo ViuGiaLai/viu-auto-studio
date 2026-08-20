@@ -1,5 +1,5 @@
-import { randomBytes } from "node:crypto"
 import { ChildProcess, spawn } from "node:child_process"
+import { randomBytes } from "node:crypto"
 import { existsSync } from "node:fs"
 import fs from "node:fs"
 import path from "node:path"
@@ -114,7 +114,27 @@ async function waitForBackend(host: string, port: number, timeoutMs = 90_000): P
 }
 
 let backendProcess: ChildProcess | null = null
+let backendLogStream: fs.WriteStream | null = null
 let currentPort = 0
+
+function closeBackendLog(): void {
+  if (backendLogStream) {
+    backendLogStream.end()
+    backendLogStream = null
+  }
+}
+
+function terminateProcessTree(proc: ChildProcess, force = false): void {
+  if (!proc.pid) return
+  if (process.platform === "win32") {
+    spawn("taskkill", ["/pid", String(proc.pid), "/t", "/f"], {
+      windowsHide: true,
+      stdio: "ignore",
+    })
+    return
+  }
+  proc.kill(force ? "SIGKILL" : "SIGTERM")
+}
 
 export async function startBackend(): Promise<{ port: number; apiBaseUrl: string; flowBootstrapToken: string }> {
   // 1) Nếu đã có cấu hình runtime hợp lệ từ lần chạy trước, thử dùng lại cùng port
@@ -137,7 +157,6 @@ export async function startBackend(): Promise<{ port: number; apiBaseUrl: string
 
   const flowBootstrapToken = randomBytes(32).toString("hex")
   const logFile = path.join(logsDir, `backend-${port}.log`)
-  const logStream = fs.createWriteStream(logFile, { flags: "a" })
 
   if (!root || !py) {
     throw new Error(
@@ -166,6 +185,9 @@ export async function startBackend(): Promise<{ port: number; apiBaseUrl: string
     VIU_LOG_DIR: logsDir,
     VIU_FLOW_BOOTSTRAP_TOKEN: flowBootstrapToken,
   }
+
+  const logStream = fs.createWriteStream(logFile, { flags: "a" })
+  backendLogStream = logStream
 
   const args = [
     "-u",
@@ -206,11 +228,15 @@ export async function startBackend(): Promise<{ port: number; apiBaseUrl: string
   backendProcess.on("exit", (code) => {
     console.log(`[BackendManager] Backend thoát với mã ${code}`)
     logStream.write(`[${new Date().toISOString()}] Backend exit code=${code}\n`)
+    if (backendLogStream === logStream) closeBackendLog()
     backendProcess = null
   })
 
   const ready = await waitForBackend(BACKEND_HOST, port)
   if (!ready) {
+    terminateProcessTree(backendProcess, true)
+    closeBackendLog()
+    backendProcess = null
     throw new Error(
       `Backend không khởi động được trên port ${port}. Xem log tại: ${logFile}` +
         (py.isBundled ? "" : " (Máy này chưa cài Python — hãy dùng bộ cài đầy đủ của Viu Auto Studio)."),
@@ -250,14 +276,17 @@ export async function startBackend(): Promise<{ port: number; apiBaseUrl: string
 }
 
 export function stopBackend(): void {
-  if (backendProcess) {
+  const proc = backendProcess
+  if (proc) {
     console.log("[BackendManager] Dừng backend...")
-    backendProcess.kill("SIGTERM")
-    const proc = backendProcess
+    terminateProcessTree(proc)
     backendProcess = null
     setTimeout(() => {
-      if (proc.exitCode === null) proc.kill("SIGKILL")
+      if (proc.exitCode === null) terminateProcessTree(proc, true)
+      closeBackendLog()
     }, 5000)
+  } else {
+    closeBackendLog()
   }
 }
 

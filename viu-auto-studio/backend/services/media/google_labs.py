@@ -23,6 +23,9 @@ from __future__ import annotations
 from backend.core.config import DATA_DIR
 
 import logging
+import os
+import shutil
+import sys
 import time
 from pathlib import Path
 
@@ -30,7 +33,7 @@ import requests
 
 logger = logging.getLogger("viu.labs")
 
-FLOW_URL = "https://labs.google/fx/vi/tools/flow"
+FLOW_URL = "https://labs.google/fx/tools/flow"
 MEDIA_URL_PREFIX = "getMediaUrlRedirect"
 
 
@@ -47,6 +50,31 @@ class UTOFlowError(Exception):
 
 
 DEFAULT_MODEL = "Nano Banana 2"
+
+
+def _find_chrome_executable() -> str | None:
+    """Find a real Chrome/Chromium binary on Windows, macOS or Linux."""
+    candidates = [
+        os.getenv("VIU_CHROME_PATH", ""),
+        shutil.which("chrome"),
+        shutil.which("google-chrome"),
+        shutil.which("chromium"),
+        shutil.which("chromium-browser"),
+    ]
+    if os.name == "nt":
+        candidates.extend([
+            os.path.expandvars(r"%PROGRAMFILES%\\Google\\Chrome\\Application\\chrome.exe"),
+            os.path.expandvars(r"%PROGRAMFILES(X86)%\\Google\\Chrome\\Application\\chrome.exe"),
+            os.path.expandvars(r"%LOCALAPPDATA%\\Google\\Chrome\\Application\\chrome.exe"),
+        ])
+    elif sys.platform == "darwin":
+        candidates.append("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+    else:
+        candidates.append("/usr/bin/chromium")
+    for candidate in candidates:
+        if candidate and Path(candidate).expanduser().is_file():
+            return str(Path(candidate).expanduser())
+    return None
 
 
 def _fill_prompt_js() -> str:
@@ -90,13 +118,16 @@ def _run_flow_job(
     profile.mkdir(parents=True, exist_ok=True)
 
     with sync_playwright() as pw:
-        ctx = pw.chromium.launch_persistent_context(
-            str(profile),
-            executable_path="/usr/bin/chromium",
-            headless=False,
-            args=["--no-first-run"],
-            viewport={"width": 1366, "height": 900},
-        )
+        launch_kwargs = {
+            "user_data_dir": str(profile),
+            "headless": False,
+            "args": ["--no-first-run"],
+            "viewport": {"width": 1366, "height": 900},
+        }
+        executable = _find_chrome_executable()
+        if executable:
+            launch_kwargs["executable_path"] = executable
+        ctx = pw.chromium.launch_persistent_context(**launch_kwargs)
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.set_default_timeout(60000)
@@ -300,11 +331,16 @@ def check_labs_signed_in() -> dict:
     profile = DATA_DIR / "labs_profile"
     profile.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as pw:
-        ctx = pw.chromium.launch_persistent_context(
-            str(profile), executable_path="/usr/bin/chromium",
-            headless=False, args=["--no-first-run"],
-            viewport={"width": 1280, "height": 800},
-        )
+        launch_kwargs = {
+            "user_data_dir": str(profile),
+            "headless": False,
+            "args": ["--no-first-run"],
+            "viewport": {"width": 1280, "height": 800},
+        }
+        executable = _find_chrome_executable()
+        if executable:
+            launch_kwargs["executable_path"] = executable
+        ctx = pw.chromium.launch_persistent_context(**launch_kwargs)
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.goto(FLOW_URL, wait_until="domcontentloaded", timeout=60000)
