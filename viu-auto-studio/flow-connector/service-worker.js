@@ -178,6 +178,8 @@ async function runOnce() {
     const result = await chrome.tabs.sendMessage(tab.id, { type: 'VAS_RUN_TASK', task });
     if (!result?.ok || !result.mediaUrl) throw new Error(result?.error || 'Flow không trả media URL');
     await upload(task, result.mediaUrl);
+    // Task completed successfully — immediately process the next task with 0 delay!
+    setTimeout(() => void runOnce(), 100);
   } catch (error) {
     if (task?.task_id) {
       await request(`/api/connector/tasks/${task.task_id}/fail`, {
@@ -190,6 +192,11 @@ async function runOnce() {
     busy = false;
   }
 }
+
+// Fast continuous polling loop (every 2s) so new tasks run immediately with 0 waiting
+setInterval(() => {
+  void runOnce();
+}, 2000);
 
 chrome.runtime.onInstalled.addListener(() => chrome.alarms.create('vas-poll', { periodInMinutes: 0.25 }));
 chrome.runtime.onStartup.addListener(() => chrome.alarms.create('vas-poll', { periodInMinutes: 0.25 }));

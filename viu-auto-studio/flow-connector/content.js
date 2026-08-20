@@ -176,13 +176,34 @@ async function ensureEditor() {
   return false;
 }
 
-// Auto-navigate to editor on page load if logged in on landing page
-setTimeout(async () => {
-  if (isLandingPage() && !isLoginPage()) {
-    console.log('[VAS] Landing page detected on load, attempting to open project/editor...');
+// Auto-navigate to editor immediately without delay
+let navTriggered = false;
+async function tryAutoOpenEditor() {
+  if (navTriggered || editor() || isLoginPage()) return;
+  if (isLandingPage()) {
+    navTriggered = true;
+    console.log('[VAS] Landing page detected, opening project/editor immediately...');
     await ensureEditor();
   }
-}, 2500);
+}
+
+// Check immediately on script injection
+void tryAutoOpenEditor();
+
+// Also observe DOM to trigger immediately when buttons render
+const observer = new MutationObserver(() => {
+  if (!editor() && !isLoginPage() && isLandingPage() && !navTriggered) {
+    void tryAutoOpenEditor();
+  }
+});
+if (document.body) {
+  observer.observe(document.body, { childList: true, subtree: true });
+} else {
+  document.addEventListener('DOMContentLoaded', () => {
+    observer.observe(document.body, { childList: true, subtree: true });
+    void tryAutoOpenEditor();
+  });
+}
 
 async function fillPrompt(text) {
   const field = editor();
