@@ -7,12 +7,16 @@ import logging
 import re
 import shutil
 import time
+
+import requests
+
 from datetime import datetime
 from pathlib import Path
 from typing import List
 
 from fastapi import APIRouter, Body, Depends, HTTPException, UploadFile, File, Query, Request
 from fastapi.responses import FileResponse, Response
+from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -186,38 +190,115 @@ def dashboard(db: Session = Depends(get_db)):
     )
 
 
+def _setting_bool(value: object, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _tool_available(path: str) -> bool:
+    return bool(shutil.which(path) or (Path(path).is_absolute() and Path(path).exists()))
+
+
 @router.get("/settings", response_model=StudioSettingsRead)
 def get_settings(db: Session = Depends(get_db)):
-    """Fetch all app settings (Studio v2 style)."""
-    settings = {}
-    for s in db.query(AppSetting).all():
-        settings[s.key] = s.value_encrypted
-    
+    """Fetch persisted settings without returning raw API secrets."""
+    settings = {s.key: s.value_encrypted for s in db.query(AppSetting).all()}
+    engine_ok = _tool_available("ffmpeg") and _tool_available("ffprobe")
     return StudioSettingsRead(
         engine_mode=settings.get("engine_mode", "balanced"),
-        engine_installed=settings.get("engine_installed", "false") == "true",
+        engine_installed=engine_ok,
         ai_provider=settings.get("ai_provider", "gemini"),
-        deepseek_api_key=settings.get("deepseek_api_key", ""),
+        ai_model=settings.get("ai_model", settings.get("gemini_model", "")),
+        ai_api_key_set=bool(str(settings.get("ai_api_key", "")).strip()),
+        deepseek_api_key="",
+        deepseek_api_key_set=bool(str(settings.get("deepseek_api_key", "")).strip()),
         gemini_model=settings.get("gemini_model", "3.5 Flash"),
         tts_provider=settings.get("tts_provider", "edge"),
         tts_voice=settings.get("tts_voice", "vi-VN-HoaiMyNeural"),
         output_folder=settings.get("output_folder", str(PROJECTS_DIR)),
         display_language=settings.get("display_language", "vi"),
-        flow_logged_in=settings.get("flow_logged_in", "false") == "true",
+        production_language=settings.get("production_language", "vi"),
+        auto_refresh=_setting_bool(settings.get("auto_refresh"), True),
+        dark_mode=_setting_bool(settings.get("dark_mode"), True),
+        telegram_enabled=_setting_bool(settings.get("telegram_enabled")),
+        telegram_configured=bool(str(settings.get("telegram_bot_token", "")).strip() and str(settings.get("telegram_chat_id", "")).strip()),
+        flow_logged_in=_setting_bool(settings.get("flow_logged_in")),
     )
 
 
 @router.patch("/settings")
 def update_settings(payload: StudioSettingsUpdate, db: Session = Depends(get_db)):
-    """Update multiple settings."""
+    """Persist settings; blank secret fields keep the existing secret."""
+    updated: list[str] = []
+    kept_secret_fields = {"ai_api_key", "deepseek_api_key", "telegram_bot_token"}
     for key, value in payload.model_dump(exclude_unset=True).items():
+        if key in kept_secret_fields and value is None:
+            continue
+        if key in kept_secret_fields and isinstance(value, str) and not value.strip():
+            continue
+        if key == "output_folder" and value:
+            folder = Path(str(value)).expanduser()
+            try:
+                folder.mkdir(parents=True, exist_ok=True)
+                value = str(folder)
+            except OSError as exc:
+                raise HTTPException(422, f"Không thể tạo thư mục output: {exc}") from exc
+        if isinstance(value, bool):
+            stored = "true" if value else "false"
+        else:
+            stored = str(value)
         s = db.query(AppSetting).filter(AppSetting.key == key).first()
         if not s:
             s = AppSetting(key=key)
             db.add(s)
-        s.value_encrypted = str(value)
+        s.value_encrypted = stored
+        updated.append(key)
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "updated": updated}
+
+
+class TelegramTestRequest(BaseModel):
+    bot_token: str = ""
+    chat_id: str = ""
+    send_message: bool = False
+    message: str = "Viu Auto Studio: kết nối Telegram hoạt động."
+
+
+@router.post("/settings/telegram/test")
+def test_telegram(payload: TelegramTestRequest, db: Session = Depends(get_db)):
+    """Validate a Telegram bot and optionally send an explicit test message."""
+    stored = {s.key: s.value_encrypted for s in db.query(AppSetting).filter(AppSetting.key.in_(["telegram_bot_token", "telegram_chat_id"])).all()}
+    token = (payload.bot_token.strip() or str(stored.get("telegram_bot_token", "")).strip())
+    chat_id = (payload.chat_id.strip() or str(stored.get("telegram_chat_id", "")).strip())
+    if not token or not chat_id:
+        raise HTTPException(422, "Cần nhập Bot Token và Chat ID")
+    try:
+        me = requests.get(f"https://api.telegram.org/bot{token}/getMe", timeout=10)
+        data = me.json()
+    except (requests.RequestException, ValueError) as exc:
+        raise HTTPException(502, f"Không kết nối được Telegram: {exc}") from exc
+    if not me.ok or not data.get("ok"):
+        description = data.get("description", "Bot Token không hợp lệ")
+        raise HTTPException(422, description)
+    bot = data.get("result") or {}
+    result = {"ok": True, "bot": {"id": bot.get("id"), "username": bot.get("username"), "name": bot.get("first_name")}}
+    if payload.send_message:
+        try:
+            sent = requests.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": chat_id, "text": payload.message.strip() or "Viu Auto Studio"},
+                timeout=10,
+            )
+            sent_data = sent.json()
+        except (requests.RequestException, ValueError) as exc:
+            raise HTTPException(502, f"Bot hợp lệ nhưng gửi tin nhắn thất bại: {exc}") from exc
+        if not sent.ok or not sent_data.get("ok"):
+            raise HTTPException(422, sent_data.get("description", "Không gửi được tin nhắn thử"))
+        result["message_sent"] = True
+    else:
+        result["message_sent"] = False
+    return result
 
 
 # ===========================================================================
@@ -433,6 +514,8 @@ def duplicate_project(project_id: int, payload: ProjectDuplicate = Body(...), db
             narration=scene.narration,
             visual_prompt=scene.visual_prompt,
             negative_prompt=scene.negative_prompt,
+            style_prompt=scene.style_prompt,
+            transition_description=scene.transition_description,
             media_path=scene.media_path,
             media_type=scene.media_type,
             subtitle_text=scene.subtitle_text,
@@ -766,11 +849,13 @@ def approve_idea(payload: IdeaApproveRequest = Body(...), db: Session = Depends(
         state.step_data_json = json.dumps(steps)
     
     db.commit()
-    
-    # Start background pipeline
-    # pipeline.start_auto_production(payload.project_id)
-    
-    return {"ok": True}
+
+    # Start the real background preparation pipeline. It creates scenes/TTS and
+    # queues Flow tasks; it does not fabricate progress or force a failure.
+    started = pipeline.start_auto_production(payload.project_id)
+    if not started.get("ok", False):
+        raise HTTPException(409, started.get("message", "Không thể khởi động pipeline"))
+    return {"ok": True, "pipeline": started}
 
 
 @router.get("/projects/{project_id}/pipeline", response_model=PipelineStateRead)
@@ -791,8 +876,8 @@ def stop_production(project_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/workspace/scene-upload/{scene_id}")
-def upload_scene_media(scene_id: int, file: UploadFile = File(...)):
-    """Upload media (image/video) for a scene."""
+def upload_scene_media(scene_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Upload verified user media for a scene and expose the asset in all media consumers."""
     scene = db.query(Scene).filter(Scene.id == scene_id).first()
     if not scene:
         raise HTTPException(404, "Scene not found")
@@ -807,16 +892,25 @@ def upload_scene_media(scene_id: int, file: UploadFile = File(...)):
     media_dir = Path(project.project_directory) / "scene_media"
     media_dir.mkdir(parents=True, exist_ok=True)
     
-    file_path = media_dir / file.filename
+    safe_name = Path(file.filename or "media").name
+    if not safe_name or safe_name in {".", ".."}:
+        safe_name = "media"
+    file_path = media_dir / safe_name
     with open(file_path, "wb") as f:
-        f.write(file.file.read())
-    
+        shutil.copyfileobj(file.file, f)
+
+    media_type = "image" if file.content_type and file.content_type.startswith("image/") else "video"
     scene.media_path = str(file_path)
-    scene.media_type = "image" if file.content_type and file.content_type.startswith("image/") else "video"
+    scene.media_type = media_type
+    if media_type == "image":
+        scene.image_path = str(file_path)
+    else:
+        scene.video_path = str(file_path)
     scene.status = "media_ready"
+    scene.error_message = None
     db.commit()
-    
-    return {"ok": True, "media_path": str(file_path)}
+
+    return {"ok": True, "media_path": str(file_path), "media_type": media_type}
 
 
 
@@ -848,6 +942,7 @@ def build_scenes_from_script(
                 "narration": str(s.get("narration") or ""),
                 "visual_prompt": str(s.get("visual_prompt") or ""),
                 "style_prompt": str(s.get("style_prompt") or ""),
+                "transition_description": str(s.get("transition_description") or ""),
             }
             for s in semantic
             if str(s.get("narration") or "").strip()
@@ -873,6 +968,7 @@ def build_scenes_from_script(
         if segments is not None and idx < len(segments):
             scene.visual_prompt = segments[idx]["visual_prompt"]
             scene.style_prompt = segments[idx]["style_prompt"]
+            scene.transition_description = segments[idx]["transition_description"]
         else:
             scene.visual_prompt = f"Visual illustration for: {sentence}"
         if idx >= len(existing):
@@ -1013,9 +1109,15 @@ def set_scene_media(project_id: int, scene_id: int, payload: SceneMediaUpdate = 
     if not path.exists():
         raise HTTPException(400, "File media không tồn tại trên máy")
     scene.media_path = str(path.resolve())
-    scene.media_type = payload.media_type or "image"
+    media_type = payload.media_type or "image"
+    scene.media_type = media_type
+    if media_type == "image":
+        scene.image_path = scene.media_path
+    elif media_type == "video":
+        scene.video_path = scene.media_path
     info = get_media_info(scene.media_path)
     scene.status = "media_ready" if scene.audio_path else "pending"
+
     db.commit()
     db.refresh(scene)
     return scene
@@ -1430,11 +1532,13 @@ async def upload_media(project_id: int, file: UploadFile = File(...), db: Sessio
         raise HTTPException(404, "Project không tồn tại")
     dest_dir = Path(project.project_directory or str(PROJECTS_DIR / f"project_{project_id}")) / "assets"
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / (file.filename or "upload")
+    safe_name = Path(file.filename or "upload").name or "upload"
+    dest = dest_dir / safe_name
     with open(dest, "wb") as fh:
         while chunk := await file.read(1024 * 1024):
             fh.write(chunk)
-    return {"ok": True, "path": str(dest.resolve())}
+    media_type = "image" if (file.content_type or "").startswith("image/") else "video" if (file.content_type or "").startswith("video/") else "unknown"
+    return {"ok": True, "media_path": str(dest.resolve()), "media_type": media_type}
 
 
 # ===========================================================================
@@ -1597,8 +1701,32 @@ async def upload_library_media(file: UploadFile = File(...)):
     return {"ok": True, "path": str(dest.resolve()), "media_type": media_type}
 
 
+@router.delete("/library")
+def delete_library_media(path: str, db: Session = Depends(get_db)):
+    """Delete a global library asset only when it is not referenced by production data."""
+    assets_dir = (DATA_DIR / "assets").resolve()
+    target = Path(path).expanduser().resolve()
+    try:
+        target.relative_to(assets_dir)
+    except ValueError as exc:
+        raise HTTPException(403, "Chỉ được xóa file trong thư viện assets") from exc
+    if not target.is_file():
+        raise HTTPException(404, "Không tìm thấy file media")
+    target_str = str(target)
+    scene_refs = db.query(Scene).filter(Scene.media_path == target_str).count()
+    project_refs = db.query(Project).filter(Project.output_video_path == target_str).count()
+    if scene_refs or project_refs:
+        raise HTTPException(409, f"File đang được dùng bởi {scene_refs} cảnh và {project_refs} dự án")
+    try:
+        target.unlink()
+    except OSError as exc:
+        raise HTTPException(500, f"Không thể xóa file: {exc}") from exc
+    return {"ok": True, "path": target_str}
+
+
 @router.get("/library")
 def list_library(search: str | None = None):
+
     """List uploaded media across the assets folder and project directories."""
     assets_dir = DATA_DIR / "assets"
     items: List[dict] = []

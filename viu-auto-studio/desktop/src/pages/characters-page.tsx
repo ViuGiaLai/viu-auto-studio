@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { Plus, Copy, Search, Star, MoreVertical, UserCheck, Trash2, Upload, PencilLine } from "lucide-react"
+import { api } from "@/services/api"
 import { charactersGlobalApi, type CharacterGlobalRead } from "@/services/pages-api"
+
 import { toast } from "@/hooks/use-toast"
 import { Button } from "@/components/design-system"
 import { Input } from "@/components/design-system"
@@ -32,6 +34,9 @@ export default function CharactersPage() {
     negative_prompt: "", identity_prompt: "", face_lock: 95, outfit_lock: 90,
   })
   const [deleteId, setDeleteId] = useState<number | null>(null)
+  const [profileInput, setProfileInput] = useState<HTMLInputElement | null>(null)
+  const [refInput, setRefInput] = useState<HTMLInputElement | null>(null)
+  const [refTargetId, setRefTargetId] = useState<number | null>(null)
 
   const load = async () => {
     try {
@@ -80,18 +85,21 @@ export default function CharactersPage() {
       return
     }
     try {
+            const payload = {
+        name: form.name.trim(), code: form.code.trim() || undefined,
+        role: form.role, appearance: form.appearance || undefined,
+        negative: form.negative_prompt || undefined,
+        identity_prompt: form.identity_prompt || undefined,
+        face_lock: form.face_lock, outfit_lock: form.outfit_lock,
+      }
       if (detail) {
-        toast({ title: "Cập nhật hồ sơ nhân vật yêu cầu cơ chế update-or-keep theo đặc tả." })
+        await charactersGlobalApi.update(detail.id, payload)
+        toast({ title: "Đã cập nhật hồ sơ nhân vật" })
       } else {
-        await charactersGlobalApi.create({
-          name: form.name.trim(), code: form.code.trim() || undefined,
-          role: form.role, appearance: form.appearance || undefined,
-          negative_prompt: form.negative_prompt || undefined,
-          identity_prompt: form.identity_prompt || undefined,
-          face_lock: form.face_lock, outfit_lock: form.outfit_lock,
-        })
+        await charactersGlobalApi.create(payload)
         toast({ title: "Đã tạo nhân vật toàn cục" })
       }
+
       setDialogOpen(false)
       load()
     } catch (e) {
@@ -99,7 +107,48 @@ export default function CharactersPage() {
     }
   }
 
+    const importProfile = async (file: File | null) => {
+    if (!file) return
+    try {
+      const raw = JSON.parse(await file.text()) as { characters?: unknown } | unknown[]
+      const profiles = (Array.isArray(raw) ? raw : Array.isArray(raw.characters) ? raw.characters : [raw]) as Array<Record<string, unknown>>
+      const valid = profiles.filter((profile) => typeof profile.name === "string" && profile.name.trim())
+      if (!valid.length) throw new Error("File không chứa hồ sơ nhân vật hợp lệ")
+      for (const profile of valid) {
+        const text = (key: string) => typeof profile[key] === "string" ? String(profile[key]) : undefined
+        await charactersGlobalApi.create({
+          name: String(profile.name).trim(), code: text("code"), role: text("role"),
+          appearance: text("appearance"), negative: text("negative_prompt") || text("negative"),
+          identity_prompt: text("identity_prompt"), face_lock: Number(profile.face_lock ?? 95),
+          outfit_lock: Number(profile.outfit_lock ?? 90), seed: profile.seed == null ? null : Number(profile.seed),
+        })
+      }
+      toast({ title: `Đã nhập ${valid.length} hồ sơ nhân vật` })
+      await load()
+    } catch (e) {
+      toast({ title: "Nhập hồ sơ thất bại", description: String(e), variant: "destructive" })
+    } finally {
+      if (profileInput) profileInput.value = ""
+    }
+  }
+
+  const addReference = async (file: File | null) => {
+    if (!file || !refTargetId) return
+    try {
+      const uploaded = await api.uploadMedia(file)
+      await charactersGlobalApi.addRef(refTargetId, uploaded.path, "face")
+      toast({ title: "Đã thêm ảnh tham chiếu", description: file.name })
+      await load()
+    } catch (e) {
+      toast({ title: "Thêm ảnh tham chiếu thất bại", description: String(e), variant: "destructive" })
+    } finally {
+      setRefTargetId(null)
+      if (refInput) refInput.value = ""
+    }
+  }
+
   const deleteChar = async (id: number) => {
+
     try {
       await charactersGlobalApi.delete(id)
       toast({ title: "Đã xóa nhân vật" })
@@ -128,9 +177,24 @@ export default function CharactersPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" className="border-amber-500/40 text-amber-300 hover:bg-amber-500/10" onClick={() => toast({ title: "Chức năng nhập hồ sơ sẽ đọc file cấu hình JSON được cung cấp." })}>
-            <Upload className="mr-2 h-4 w-4" /> Nhập hồ sơ
+          <input
+            ref={setProfileInput}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(e) => void importProfile(e.target.files?.[0] || null)}
+          />
+          <input
+            ref={setRefInput}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => void addReference(e.target.files?.[0] || null)}
+          />
+          <Button variant="outline" className="border-amber-500/40 text-amber-300 hover:bg-amber-500/10" onClick={() => profileInput?.click()}>
+            <Upload className="mr-2 h-4 w-4" /> Nhập hồ sơ JSON
           </Button>
+
           <Button onClick={openCreate} className="bg-gradient-to-r from-[#d9940a] to-[#faaa02] text-white hover:opacity-90">
             <Plus className="mr-2 h-4 w-4" /> Tạo nhân vật
           </Button>
@@ -138,10 +202,9 @@ export default function CharactersPage() {
       </div>
 
       {/* Tabs + filters */}
-      <div className="flex flex-wrap items-center gap-3">
-        <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40">Thư viện ✓</Badge>
-        <Badge variant="outline" className="text-slate-400 border-white/10">Bộ sưu tập</Badge>
-        <Badge variant="outline" className="text-slate-400 border-white/10">Lịch sử nhất quán</Badge>
+              <div className="flex flex-wrap items-center gap-3">
+        <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40">Thư viện nhân vật</Badge>
+
         <div className="ml-auto flex items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
@@ -234,14 +297,18 @@ export default function CharactersPage() {
                   />
                 </div>
               </div>
-              <div className="mt-3 flex items-center gap-2 text-[11px] text-slate-500">
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
                 <Badge variant="outline" className="border-white/10 text-slate-400">
                   Đang dùng trong {c.used_projects ?? 0} dự án
                 </Badge>
                 <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
                   {(c.refs?.length ?? 0) > 0 ? `${c.refs!.length} ảnh tham chiếu` : "Chưa có ảnh"}
                 </Badge>
+                <Button type="button" variant="ghost" size="sm" className="ml-auto h-7 px-2 text-[11px] text-amber-300" onClick={() => { setRefTargetId(c.id); refInput?.click() }}>
+                  <Upload className="mr-1 h-3 w-3" /> Thêm ảnh
+                </Button>
               </div>
+
             </div>
           ))}
         </div>

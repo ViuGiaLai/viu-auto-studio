@@ -4,7 +4,31 @@ import type {
   Character, PipelineState, StudioSettings,
 } from "@/types"
 
+export type SkillCatalogItem = {
+  id: string
+  name: string
+  category: string
+  execution: string
+  description: string
+  requires_manus_api: boolean
+}
+
+export type SkillRun = {
+  id: number
+  project_id: number | null
+  skill_id: string
+  mode: string
+  status: string
+  input_json: string
+  output_text: string
+  external_task_id: string
+  error_message: string
+  created_at: string
+  updated_at: string
+}
+
 // ---------------------------------------------------------------------------
+
 // API base URL — động, không hardcode localhost/port.
 // Thứ tự ưu tiên:
 //  1. window.electronAPI.getRuntimeConfig() (app Electron đã khởi động backend)
@@ -57,6 +81,16 @@ export async function selectDirectory(): Promise<string | null> {
   if (!w.electronAPI?.selectDirectory) return null
   return w.electronAPI.selectDirectory()
 }
+
+export async function startFlowBrowser(projectId: number, factorySessionId: string): Promise<{ ok: boolean; status: string; message: string; profilePath?: string }> {
+  const w = window as unknown as { electronAPI?: { startFlow?: (input: { projectId: number; factorySessionId: string }) => Promise<{ ok: boolean; status: string; message: string; profilePath?: string }> } }
+  if (!w.electronAPI?.startFlow) {
+    return { ok: false, status: "unavailable", message: "Factory browser bootstrap chỉ có trong Electron Desktop." }
+  }
+  return w.electronAPI.startFlow({ projectId, factorySessionId })
+}
+
+
 
 export async function buildApiUrl(path: string): Promise<string> {
   const base = await resolveApiBaseUrl()
@@ -160,6 +194,7 @@ export const api = {
     outline?: string[]
     writing_style?: string
     audience?: string
+    niche?: string
     thumbnail_concept?: string
     thumbnail_prompt_en?: string
   }) => post<ScriptPayload>(`/ai/generate-script`, payload),
@@ -229,14 +264,34 @@ export const api = {
 
   // App settings (Cài đặt)
   settingsGet: () => request<StudioSettings>(`/settings`),
-  settingsSave: (data: Partial<StudioSettings>) =>
-    request<{ ok: boolean }>(`/settings`, { method: "PATCH", body: JSON.stringify(data) }),
+    settingsSave: (data: Partial<StudioSettings>) =>
+    request<{ ok: boolean; updated?: string[] }>(`/settings`, { method: "PATCH", body: JSON.stringify(data) }),
+  settingsTelegramTest: (data: { bot_token: string; chat_id: string; send_message?: boolean; message?: string }) =>
+    post<{ ok: boolean; bot?: { username?: string; name?: string }; message_sent?: boolean }>(`/settings/telegram/test`, data),
+  systemDiagnose: () =>
+    request<{
+      backend: string
+      ffmpeg_version: string
+      ffprobe_version: string
+      python_runtime: string
+      os: string
+      cpu: string
+      ram_gb: number
+      write_permission_app_data: boolean
+      write_permission_projects: boolean
+      demucs_available: boolean
+      yt_dlp_available: boolean
+      disk_free_gb: number
+    }>(`/system/diagnose`),
 
   // Media library (Thư viện)
+
   libraryList: (search?: string) =>
     request<{ ok: boolean; items: Array<{ path: string; name: string; media_type: string; size_kb: number; updated_at: string }> }>(
       `/library${search ? `?search=${encodeURIComponent(search)}` : ""}`,
     ),
+  libraryDelete: (path: string) =>
+    request<{ ok: boolean; path: string }>(`/library?path=${encodeURIComponent(path)}`, { method: "DELETE" }),
 
   // Pipeline step status (Tiến độ sản xuất — Workspace)
   pipelineStatus: (projectId: number) =>
@@ -376,8 +431,14 @@ export const api = {
   regenerateMedia: (project_id: number, scene_id: number) =>
     post<Scene>(`/projects/${project_id}/scenes/${scene_id}/regenerate-media`),
 
-  // Flow Connector (Chrome Extension) — tạo media tự động qua Google Flow
+    // Flow Connector (Chrome Extension) — Factory session + media queue Google Flow
+  factoryStart: (projectId: number, options: { media_type?: string; aspect?: string; model?: string; factory_mode?: boolean; include_video?: boolean } = {}) =>
+    post<{ ok: boolean; project_id: number; factory_session_id: string; factory_state: string; requires_login: boolean; created: number; skipped: number; missing_prompts: number }>(
+      `/flow-connection/factory/start`, { project_id: projectId, ...options },
+    ),
+  flowConnection: () => request<{ status: string; factory_state: string; factory_project_id?: number | null; factory_session_id?: string; last_error?: string; heartbeat_at?: string | null }>(`/flow-connection`),
   createMediaTasks: (projectId: number, options: { media_type?: string; aspect?: string; model?: string } = {}) =>
+
     post<{ created: number; skipped_existing: number; total_scenes: number; instruction?: string }>(
       `/connector/projects/${projectId}/media-tasks`, options,
     ),
@@ -445,7 +506,15 @@ export const api = {
   getJobLog: (jobId: number, lines = 100) =>
     request<{ ok: boolean; lines: string[] }>(`/render/jobs/${jobId}/log?lines=${lines}`),
 
+    // Skill Lab
+  skillCatalog: () => request<SkillCatalogItem[]>(`/skills/catalog`),
+  skillRuns: (projectId?: number) => request<SkillRun[]>(`/skills/runs${projectId ? `?project_id=${projectId}` : ""}`),
+  skillRun: (data: { skill_id: string; prompt?: string; project_id?: number; input?: Record<string, unknown>; use_manus?: boolean }) =>
+    post<SkillRun>(`/skills/runs`, data),
+  skillRunRefresh: (runId: number) => post<SkillRun>(`/skills/runs/${runId}/refresh`, {}),
+
   // System stats
+
   systemStats: () =>
     request<{
       cpu_percent: number

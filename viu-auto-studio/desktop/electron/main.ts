@@ -3,6 +3,7 @@ import path from "node:path"
 import http from "node:http"
 import fs from "node:fs"
 import { startBackend, stopBackend } from "./backend-manager"
+import { startFlowBrowser, stopFlowBrowser } from "./flow-browser"
 import { readRuntimeConfig, getUserDataDir, dirnameOf, findFreePort } from "./runtime-config"
 
 // __dirname an toàn cho ESM (file: protocol) — preload + dist index.html
@@ -156,6 +157,15 @@ function createWindow(): void {
 // IPC helpers exposed to the renderer
 ipcMain.handle("ping", async () => true)
 ipcMain.handle("getRuntimeConfig", async () => readRuntimeConfig())
+ipcMain.handle("flow:start", async (_event, input: { projectId: number; factorySessionId: string }) => {
+  const runtime = readRuntimeConfig()
+  if (!runtime) return { ok: false, status: "failed", message: "Runtime backend chưa sẵn sàng" }
+  return startFlowBrowser(runtime, input)
+})
+ipcMain.handle("flow:stop", async () => {
+  stopFlowBrowser()
+  return { ok: true }
+})
 ipcMain.handle("getUserDataDir", async () => getUserDataDir())
 ipcMain.handle("dialog:select-directory", async () => {
   const result = await dialog.showOpenDialog({ properties: ["openDirectory", "createDirectory"] })
@@ -205,6 +215,7 @@ app.on("window-all-closed", () => {
 })
 
 app.on("before-quit", () => {
+  stopFlowBrowser()
   stopBackend()
   stopUiServer()
 })

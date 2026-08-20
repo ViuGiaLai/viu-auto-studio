@@ -6,3 +6,4 @@ requests>=2.31,<3
 python-multipart>=0.0.9
 alembic>=1.13,<2
 psutil>=5.9,<7
+youtube-transcript-api>=1.0,<2

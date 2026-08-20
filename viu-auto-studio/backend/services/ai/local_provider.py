@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 
 from backend.schemas import ScriptSchema, ScriptGenerateRequest
+from backend.services.ai.niche_profiles import get_niche_profile
 from backend.services.ai.provider import AIProvider
 
 _SECTIONS = [
@@ -45,9 +46,10 @@ class LocalScriptProvider(AIProvider):
         lang = (request.language or "vi").lower()
         is_short = (request.video_type or "short") == "short"
         duration = int(request.target_duration or 60)
-        outline_items = list(request.outline) if request.outline else self._default_outline(topic, is_short)
-        hook = (request.hook or "").strip() or self._default_hook(topic)
-        seo_title = self._seo_title(topic, is_short)
+        profile = get_niche_profile(request.niche)
+        outline_items = list(request.outline) if request.outline else self._default_outline(topic, is_short, profile["display_name"])
+        hook = (request.hook or "").strip() or self._default_hook(topic, profile["display_name"])
+        seo_title = self._seo_title(topic, is_short, profile["display_name"])
 
         # Build full script: paragraphs for hook + each outline point + closing.
         paragraphs = [hook]
@@ -63,15 +65,16 @@ class LocalScriptProvider(AIProvider):
         return ScriptSchema(
             title=seo_title,
             hook=hook,
-            angle=(request.angle or "").strip() or "chia sẻ kiến thức dễ hiểu và ứng dụng ngay",
+            angle=(request.angle or "").strip() or f"chia sẻ theo góc nhìn {profile['display_name'].lower()}, dễ hiểu và ứng dụng ngay",
             outline=outline_items,
             full_script=full_script,
             thumbnail_concept=thumb_concept,
             thumbnail_prompt=thumb_prompt,
             seo={
                 "youtube_title": seo_title,
-                "description": f"Video chia sẻ về {topic.lower()}. "
+                "description":                 f"Video chia sẻ về {topic.lower()} theo định hướng {profile['display_name'].lower()}. "
                 f"Xem ngay để nắm những kiến thức quan trọng nhất chỉ trong {duration} giây.",
+
                 "hashtags": [f"#{topic.split()[0].lower()}"] if topic.split() else [],
                 "tags": [topic, f"kiến thức {topic.split()[0].lower()}" if topic.split() else ""],
             },
@@ -79,10 +82,10 @@ class LocalScriptProvider(AIProvider):
 
     # ---------------------------------------------------------------- helpers
     @staticmethod
-    def _default_outline(topic: str, is_short: bool) -> list:
+    def _default_outline(topic: str, is_short: bool, niche_name: str = "Nội dung tổng quát") -> list:
         if is_short:
             return [
-                f"Vì sao {topic.lower()} lại quan trọng với bạn",
+                f"Vì sao {topic.lower()} lại quan trọng trong {niche_name.lower()}",
                 f"Điều đầu tiên bạn cần biết về {topic.lower()}",
                 f"Bước đơn giản nhất để bắt đầu ngay hôm nay",
             ]
@@ -95,10 +98,10 @@ class LocalScriptProvider(AIProvider):
         ]
 
     @staticmethod
-    def _default_hook(topic: str) -> str:
+    def _default_hook(topic: str, niche_name: str = "nội dung tổng quát") -> str:
         return (
-            f"Bạn có biết {topic.lower()} ảnh hưởng trực tiếp đến cuộc sống hàng ngày của bạn? "
-            f"Hãy cùng khám phá ngay trong {60} giây tới."
+            f"Bạn có biết {topic.lower()} đang được nhìn rất khác trong lĩnh vực {niche_name.lower()}? "
+            f"Hãy cùng khám phá những điểm quan trọng nhất trong {60} giây tới."
         )
 
     @staticmethod
@@ -128,7 +131,7 @@ class LocalScriptProvider(AIProvider):
         )
 
     @staticmethod
-    def _seo_title(topic: str, is_short: bool) -> str:
+    def _seo_title(topic: str, is_short: bool, niche_name: str = "") -> str:
         base = f"{topic}"
         if is_short:
             return f"{base} — Bạn cần biết ngay! (Shorts)"

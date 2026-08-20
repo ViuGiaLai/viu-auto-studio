@@ -9,6 +9,7 @@ from typing import List
 
 from backend.core.config import AI_PROVIDER, GEMINI_MODEL, GEMINI_API_KEY, OPENROUTER_API_KEY, OPENROUTER_MODEL
 from backend.schemas import ScriptSchema, ScriptGenerateRequest
+from backend.services.ai.niche_profiles import format_niche_prompt
 
 
 class AIProvider(ABC):
@@ -31,6 +32,7 @@ class AIProvider(ABC):
 def _build_script_prompt(req: ScriptGenerateRequest) -> str:
     """Build the system+user prompt that forces JSON-structured output."""
     outline = "\n".join(f"- {item}" for item in req.outline) if req.outline else "(AI tự do lên dàn ý)"
+    niche_context = format_niche_prompt(req.niche)
     return f"""Bạn là biên kịch video YouTube/TikTok chuyên nghiệp, viết bằng tiếng {req.language}.
 
 TẠO MỘT KỊCH BẢN VIDEO HOÀN CHỈNH CHO:
@@ -43,6 +45,7 @@ TẠO MỘT KỊCH BẢN VIDEO HOÀN CHỈNH CHO:
 - Dàn ý yêu cầu: {outline}
 - Phong cách viết: {req.writing_style or "(AI tự chọn)"}
 - Đối tượng khán giả: {req.audience or "(AI tự chọn)"}
+{niche_context}
 - Concept thumbnail: {req.thumbnail_concept or "(AI tự chọn)"}
 - Prompt thumbnail tiếng Anh: {req.thumbnail_prompt_en or "(AI tự viết prompt tiếng Anh)"}
 

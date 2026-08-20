@@ -15,12 +15,14 @@ import time
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query
+
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from backend.core.config import LOG_DIR, PROJECTS_DIR, FFMPEG_BIN, FFPROBE_BIN
+from backend.core.config import FLOW_BOOTSTRAP_TOKEN, LOG_DIR, PROJECTS_DIR, FFMPEG_BIN, FFPROBE_BIN
+
 from backend.core.database import get_db
 from backend.models import (
     AppSetting,
@@ -46,6 +48,7 @@ from backend.models import (
     VoiceAsset,
 )
 from backend.services.ai.provider import generate_text
+from backend.services.flow_factory import connection_payload, get_or_create_connection, new_factory_session_id, set_factory_state
 
 router = APIRouter()
 
@@ -224,6 +227,14 @@ class CharacterGlobalRead(BaseModel):
     is_host: bool
     is_fixed: bool
     ai_tag: str
+    code: str = ""
+    role: str = ""
+    appearance: str = ""
+    negative_prompt: str = ""
+    identity_prompt: str = ""
+    face_lock: int = 95
+    outfit_lock: int = 90
+    seed: str = ""
     created_at: Optional[str]
     refs: list[dict] = []
 
@@ -232,14 +243,20 @@ class CharacterGlobalRead(BaseModel):
 
 class FlowConnectionRead(BaseModel):
     id: int
-    extension_id: str
-    extension_version: str
-    extension_name: str
-    google_account: str
-    profile_name: str
+    extension_id: str = ""
+    extension_version: str = ""
+    extension_name: str = ""
+    google_account: str = ""
+    profile_name: str = ""
     paired_at: Optional[datetime] = None
     heartbeat_at: Optional[datetime] = None
-    status: str
+    status: str = "unpaired"
+    factory_state: str = "waiting_login"
+    factory_project_id: Optional[int] = None
+    factory_session_id: str = ""
+    browser_profile_path: str = ""
+    last_error: str = ""
+    last_state_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -252,7 +269,17 @@ class FlowPairRequest(BaseModel):
     extension_name: str = "Viu Flow Connector"
 
 
+class FactoryStartRequest(BaseModel):
+    project_id: int
+    media_type: str = "image"
+    aspect: str = "16:9"
+    model: str = ""
+    factory_mode: bool = True
+    include_video: bool = True
+
+
 class GlobalSettingsRead(BaseModel):
+
     settings: dict
 
     model_config = ConfigDict(from_attributes=True)
@@ -896,17 +923,55 @@ def list_characters_global(db: Session = Depends(get_db)):
 @router.post("/characters-global")
 def create_character_global(payload: CharacterGlobalCreate = Body(...),
                             db: Session = Depends(get_db)):
-    ch = Character(project_id=None, channel_id=None, name=payload.name,
-                   description=payload.role or payload.appearance,
-                   is_host=True, ai_tag=payload.code or "")
+    ch = Character(
+        project_id=None,
+        channel_id=None,
+        name=payload.name.strip(),
+        description=payload.role.strip() or payload.appearance.strip(),
+        image_path="",
+        is_host=True,
+        ai_tag=payload.code.strip(),
+        code=payload.code.strip(),
+        role=payload.role.strip(),
+        appearance=payload.appearance.strip(),
+        negative_prompt=payload.negative.strip(),
+        identity_prompt=payload.identity_prompt.strip(),
+        face_lock=payload.face_lock,
+        outfit_lock=payload.outfit_lock,
+        seed=payload.seed.strip(),
+    )
+
     db.add(ch)
     db.commit()
     db.refresh(ch)
     return {"character_id": ch.id}
 
 
+@router.patch("/characters-global/{char_id}")
+def update_character_global(char_id: int, payload: CharacterGlobalCreate = Body(...),
+                            db: Session = Depends(get_db)):
+    ch = db.query(Character).filter(Character.id == char_id).first()
+    if not ch:
+        raise HTTPException(404, "Không tìm thấy nhân vật")
+    ch.name = payload.name.strip()
+    ch.code = payload.code.strip()
+    ch.ai_tag = payload.code.strip()
+    ch.role = payload.role.strip()
+    ch.appearance = payload.appearance.strip()
+    ch.negative_prompt = payload.negative.strip()
+    ch.identity_prompt = payload.identity_prompt.strip()
+    ch.face_lock = payload.face_lock
+    ch.outfit_lock = payload.outfit_lock
+    ch.seed = payload.seed.strip()
+    ch.description = payload.role.strip() or payload.appearance.strip()
+    db.commit()
+    db.refresh(ch)
+    return {"ok": True, "character_id": ch.id}
+
+
 @router.post("/characters-global/{char_id}/refs")
 def add_character_ref(char_id: int, payload: dict = Body(...),
+
                       db: Session = Depends(get_db)):
     ch = db.query(Character).filter(Character.id == char_id).first()
     if not ch:
@@ -954,12 +1019,154 @@ def delete_character_global(char_id: int, db: Session = Depends(get_db)):
 @router.get("/flow-connection")
 def get_flow_connection(db: Session = Depends(get_db)):
     fc = db.query(FlowConnection).order_by(FlowConnection.id.desc()).first()
-    if not fc:
-        return {}
-    return FlowConnectionRead.model_validate(fc).model_dump(mode="json")
+    return connection_payload(fc)
+
+
+def _require_flow_bootstrap_token(value: str | None) -> None:
+    if not FLOW_BOOTSTRAP_TOKEN:
+        raise HTTPException(503, "Flow bootstrap token chưa được Electron khởi tạo")
+    if value != FLOW_BOOTSTRAP_TOKEN:
+        raise HTTPException(403, "Flow Connector bootstrap token không hợp lệ")
+
+
+@router.post("/flow-connection/factory/start")
+def start_factory_flow(payload: FactoryStartRequest, db: Session = Depends(get_db)):
+    """Start or resume a project-bound two-stage Flow Factory session."""
+    project = db.query(Project).filter(Project.id == payload.project_id).first()
+    if not project:
+        raise HTTPException(404, "Project không tồn tại")
+    scenes = db.query(Scene).filter(Scene.project_id == payload.project_id).order_by(Scene.order_index.asc()).all()
+    if not scenes:
+        raise HTTPException(409, "Project chưa có scene. Hãy duyệt kịch bản và chạy phân cảnh trước.")
+
+    connection = get_or_create_connection(db)
+    session_id = connection.factory_session_id if (
+        connection.factory_project_id == payload.project_id
+        and connection.factory_state not in {"completed", "failed"}
+        and connection.factory_session_id
+    ) else new_factory_session_id()
+    connection.factory_project_id = payload.project_id
+    connection.factory_session_id = session_id
+    connection.factory_mode = bool(payload.factory_mode)
+    connection.include_video = bool(payload.include_video)
+    connection.factory_stage = "image"
+
+    created = 0
+    skipped = 0
+    missing_prompts = 0
+    for index, scene in enumerate(scenes):
+        prompt = (scene.visual_prompt or "").strip()
+        if not prompt:
+            missing_prompts += 1
+            scene.status = "media_failed"
+            scene.error_message = "Cảnh chưa có visual prompt; cần chạy phân cảnh AI trước khi Factory gửi sang Flow."
+            continue
+        image_file = scene.image_path or (scene.media_path if scene.media_type == "image" else "")
+        video_file = scene.video_path or (scene.media_path if scene.media_type == "video" else "")
+        image_ready = bool(image_file and os.path.isfile(image_file) and os.path.getsize(image_file) > 0)
+        video_ready = bool(video_file and os.path.isfile(video_file) and os.path.getsize(video_file) > 0)
+        if video_ready or (image_ready and not payload.include_video):
+            skipped += 1
+            continue
+        stage = "video" if image_ready and payload.include_video else "image"
+        existing = db.query(ConnectorTask).filter(
+            ConnectorTask.project_id == payload.project_id,
+            ConnectorTask.scene_id == scene.id,
+            ConnectorTask.stage == stage,
+            ConnectorTask.status.in_(["pending", "assigned", "in_progress", "retrying"]),
+        ).first()
+        if existing:
+            existing.factory_session_id = session_id
+            skipped += 1
+            continue
+        db.add(ConnectorTask(
+            task_id=__import__("uuid").uuid4().hex,
+            project_id=payload.project_id,
+            scene_id=scene.id,
+            scene_order=index,
+            status="pending",
+            stage=stage,
+            attempts=0,
+            prompt=prompt,
+            media_type="video" if stage == "video" else "image",
+            aspect=payload.aspect or project.aspect_ratio or "16:9",
+            model=payload.model or ("Veo 3.1 Lite" if stage == "video" else "Nano Banana 2"),
+            factory_session_id=session_id,
+        ))
+        scene.status = "media_pending"
+        created += 1
+        if stage == "video":
+            connection.factory_stage = "video"
+
+    if missing_prompts and created == 0 and skipped == 0:
+        connection.factory_state = "failed"
+        connection.last_error = "Không có visual prompt hợp lệ cho các cảnh."
+        connection.last_state_at = datetime.utcnow()
+        db.commit()
+        raise HTTPException(409, connection.last_error)
+
+    heartbeat_fresh = bool(connection.heartbeat_at and (datetime.utcnow() - connection.heartbeat_at).total_seconds() < 120)
+    connection.factory_state = "ready" if connection.status == "paired" and heartbeat_fresh else "waiting_login"
+    connection.last_error = ""
+    connection.last_state_at = datetime.utcnow()
+    project.status = "rendering" if created or skipped else project.status
+    db.commit()
+    return {
+        "ok": True,
+        "project_id": payload.project_id,
+        "factory_session_id": session_id,
+        "factory_state": connection.factory_state,
+        "requires_login": connection.factory_state == "waiting_login",
+        "include_video": payload.include_video,
+        "factory_stage": connection.factory_stage,
+        "created": created,
+        "skipped": skipped,
+        "missing_prompts": missing_prompts,
+    }
+
+
+@router.post("/flow-connection/factory/state")
+def update_factory_flow_state(
+    payload: dict = Body(...),
+    x_viu_flow_token: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    """Authenticated extension heartbeat/state report for auto-resume."""
+    _require_flow_bootstrap_token(x_viu_flow_token)
+    extension_id = str(payload.get("extension_id") or "").strip()
+    session_id = str(payload.get("factory_session_id") or "").strip()
+    connection = get_or_create_connection(db)
+    if connection.factory_session_id and session_id and connection.factory_session_id != session_id:
+        raise HTTPException(409, "Flow Factory session không còn là session đang chạy")
+    if extension_id:
+        connection.extension_id = extension_id
+    connection.extension_version = str(payload.get("extension_version") or connection.extension_version or "")
+    connection.extension_name = str(payload.get("extension_name") or connection.extension_name or "Viu Flow Connector")
+    connection.google_account = str(payload.get("google_account") or connection.google_account or "")
+    connection.profile_name = str(payload.get("profile_name") or connection.profile_name or "")
+    connection.heartbeat_at = datetime.utcnow()
+    logged_in = bool(payload.get("logged_in"))
+    ready = bool(payload.get("ready"))
+    if logged_in:
+        connection.status = "paired"
+        connection.paired_at = connection.paired_at or datetime.utcnow()
+    else:
+        connection.status = "unpaired"
+    if ready:
+        if connection.factory_state not in {"processing", "generate_image", "generate_video", "completed", "failed"}:
+            connection.factory_state = "ready"
+        connection.last_error = ""
+    else:
+        connection.factory_state = "waiting_login"
+    if session_id:
+        connection.factory_session_id = session_id
+    connection.last_state_at = datetime.utcnow()
+    db.commit()
+    return connection_payload(connection)
 
 
 @router.post("/flow-connection/pair")
+
 def pair_flow_connection(payload: FlowPairRequest = Body(...),
                          db: Session = Depends(get_db)):
     """Extension gửi mã ghép một lần → cập nhật trạng thái ghép (heartbeat)."""
@@ -982,9 +1189,16 @@ def pair_flow_connection(payload: FlowPairRequest = Body(...),
 
 
 @router.post("/flow-connection/heartbeat")
-def flow_heartbeat(payload: dict = Body(...), db: Session = Depends(get_db)):
+def flow_heartbeat(
+    payload: dict = Body(...),
+    x_viu_flow_token: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+
+    _require_flow_bootstrap_token(x_viu_flow_token)
     ext_id = payload.get("extension_id", "")
     fc = db.query(FlowConnection).filter(FlowConnection.extension_id == ext_id).first()
+
     if not fc or fc.status != "paired":
         raise HTTPException(403, "Extension chưa được ghép bằng mã một lần")
     fc.heartbeat_at = datetime.utcnow()
@@ -992,8 +1206,17 @@ def flow_heartbeat(payload: dict = Body(...), db: Session = Depends(get_db)):
     fc.extension_name = payload.get("extension_name", fc.extension_name)
     fc.google_account = payload.get("google_account", fc.google_account)
     fc.profile_name = payload.get("profile_name", fc.profile_name)
+
+    if payload.get("logged_in"):
+        fc.status = "paired"
+        fc.paired_at = fc.paired_at or datetime.utcnow()
+        if payload.get("ready"):
+            if fc.factory_state not in {"processing", "generate_image", "generate_video", "completed", "failed"}:
+                fc.factory_state = "ready"
+            fc.last_error = ""
+    fc.last_state_at = datetime.utcnow()
     db.commit()
-    return {"ok": True}
+    return connection_payload(fc)
 
 
 @router.post("/flow-connection/new-pairing-code")
@@ -1298,7 +1521,10 @@ def system_diagnose():
     items["ram_gb"] = round(vm.total / (1024 ** 3), 1)
     items["write_permission_app_data"] = os.access(LOG_DIR, os.W_OK)
     items["write_permission_projects"] = os.access(PROJECTS_DIR, os.W_OK)
+    items["demucs_available"] = bool(shutil.which("demucs"))
+    items["yt_dlp_available"] = bool(shutil.which("yt-dlp"))
     disk = shutil.disk_usage(PROJECTS_DIR)
+
     items["disk_free_gb"] = round(disk.free / (1024 ** 3), 1)
     return items
 

@@ -27,6 +27,7 @@ export const APP_NAV_ITEMS = [
   { to: "/characters", label: "Nhân vật", icon: Users },
   { to: "/flow", label: "Flow", icon: Link2 },
   { to: "/analytics", label: "Phân tích", icon: BarChart3 },
+  { to: "/skills", label: "Skill Lab", icon: Sparkles },
   { to: "/settings", label: "Cài đặt", icon: Settings },
 ] as const
 

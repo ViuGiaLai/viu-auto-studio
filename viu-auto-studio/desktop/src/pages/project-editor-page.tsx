@@ -7,7 +7,8 @@ import {
   FileVideo, Clapperboard, AlertCircle, ListChecks, Sparkles, FolderOpen, Settings, Zap,
   ShieldCheck, ClipboardPaste, Download,
 } from "lucide-react"
-import { api, openExternalUrl, outputVideoUrl, selectDirectory } from "@/services/api"
+import { api, outputVideoUrl, selectDirectory, startFlowBrowser } from "@/services/api"
+
 import { toast } from "@/hooks/use-toast"
 import { useEditorStore } from "@/stores/editor-store"
 import { useAppStore } from "@/stores/app-store"
@@ -252,6 +253,8 @@ function ScriptCreator({ project, onDone }: { project: Project; onDone: () => vo
   const [outline, setOutline] = useState("")
   const [style, setStyle] = useState("")
   const [audience, setAudience] = useState("")
+  const [niche, setNiche] = useState("")
+
   const [thumbConcept, setThumbConcept] = useState("")
   const [thumbPrompt, setThumbPrompt] = useState("")
 
@@ -276,7 +279,9 @@ function ScriptCreator({ project, onDone }: { project: Project; onDone: () => vo
         outline: outline.trim() ? outline.split("\n").filter(Boolean) : undefined,
         writing_style: style.trim() || undefined,
         audience: audience.trim() || undefined,
+        niche: niche || undefined,
         thumbnail_concept: thumbConcept.trim() || undefined,
+
         thumbnail_prompt_en: thumbPrompt.trim() || undefined,
       })
       setAiResult(result)
@@ -344,9 +349,21 @@ function ScriptCreator({ project, onDone }: { project: Project; onDone: () => vo
                 <Input value={style} onChange={(e) => setStyle(e.target.value)} placeholder="VD: hài hước, trang trọng" />
               </div>
               <div className="space-y-1.5">
+                <Label>Niche profile</Label>
+                <select value={niche} onChange={(e) => setNiche(e.target.value)} className="h-10 w-full rounded-md border border-white/10 bg-white/[0.03] px-3 text-sm text-slate-200">
+                  <option value="">Tổng quát</option>
+                  <option value="tech">Công nghệ và AI</option>
+                  <option value="education">Giáo dục và giải thích</option>
+                  <option value="finance">Tài chính phổ thông</option>
+                  <option value="cooking">Ẩm thực</option>
+                  <option value="entertainment">Giải trí và bình luận</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
                 <Label>Độ dài mục tiêu (giây)</Label>
                 <Input type="number" value={targetDuration} onChange={(e) => setTargetDuration(Number(e.target.value))} />
               </div>
+
               <div className="col-span-2 space-y-1.5">
                 <Label>Dàn ý (mỗi dòng một mục)</Label>
                 <Textarea value={outline} onChange={(e) => setOutline(e.target.value)} placeholder="Mở đầu&#10;Phần chính 1&#10;Phần chính 2&#10;Kết luận" rows={4} />
@@ -645,8 +662,11 @@ function Storyboard({ project }: { project: Project }) {
   const [analyzingScene, setAnalyzingScene] = useState<number | null>(null)
   const [splittingScene, setSplittingScene] = useState<number | null>(null)
   const [regeneratingMedia, setRegeneratingMedia] = useState<number | null>(null)
+  const [factoryStarting, setFactoryStarting] = useState(false)
+  const [flowConnection, setFlowConnection] = useState<{ factory_state?: string; status?: string; last_error?: string } | null>(null)
 
   // Flow Connector task queue state
+
   const [taskState, setTaskState] = useState<{
     state: string
     paused: boolean
@@ -665,7 +685,9 @@ function Storyboard({ project }: { project: Project }) {
   useEffect(() => {
     const poll = () => {
       api.mediaTasksState(project.id).then(setTaskState).catch(() => undefined)
+      api.flowConnection().then(setFlowConnection).catch(() => undefined)
       api.connectorWorkerStatus().then((w) => setWorkerOnline(Boolean(w.registered))).catch(() => undefined)
+
     }
     poll()
     const interval = setInterval(poll, 3000)
@@ -722,10 +744,10 @@ function Storyboard({ project }: { project: Project }) {
 
   // Stats computed from scenes
   const totalDuration = scenes.reduce((sum, s) => sum + (s.duration || 0), 0)
-  const mediaCount = scenes.filter((s) => s.media_path && s.media_type === "image").length
-  const clipCount = scenes.filter((s) => s.media_path && s.media_type === "video").length
-  const missingMedia = scenes.filter((s) => !s.media_path).length
-  const completedScenes = scenes.filter((s) => s.media_path && s.audio_path).length
+  const mediaCount = scenes.filter((s) => Boolean(s.image_path || (s.media_path && s.media_type === "image"))).length
+  const clipCount = scenes.filter((s) => Boolean(s.video_path || (s.media_path && s.media_type === "video"))).length
+  const missingMedia = scenes.filter((s) => !s.image_path && !s.video_path && !s.media_path).length
+  const completedScenes = scenes.filter((s) => Boolean((s.video_path || s.image_path || s.media_path) && s.audio_path)).length
 
   const formatDur = (sec: number) => {
     const m = Math.floor(sec / 60)
@@ -733,7 +755,33 @@ function Storyboard({ project }: { project: Project }) {
     return `${m}:${String(s).padStart(2, "0")}`
   }
 
+  const startFactory = async () => {
+    setFactoryStarting(true)
+    try {
+      const res = await api.factoryStart(project.id, {
+        media_type: "image",
+        aspect: project.aspect_ratio || "16:9",
+        include_video: true,
+        factory_mode: true,
+      })
+      const browser = await startFlowBrowser(project.id, res.factory_session_id)
+      if (!browser.ok) {
+        toast({ title: "Không khởi động được Chrome Flow", description: browser.message, variant: "destructive" })
+      } else if (res.requires_login) {
+        toast({ title: "Đang chờ đăng nhập Google Flow", description: "Chrome profile riêng đã mở. Đăng nhập một lần; hệ thống sẽ tự tiếp tục Factory khi Flow sẵn sàng." })
+      } else {
+        toast({ title: "Factory Mode đã chạy", description: `Đã xếp ${res.created} task và tự kết nối Flow Connector.` })
+      }
+      load()
+    } catch (e) {
+      toast({ title: "Khởi động Factory thất bại", description: String(e), variant: "destructive" })
+    } finally {
+      setFactoryStarting(false)
+    }
+  }
+
   return (
+
     <div className="space-y-4">
       {/* Stats row */}
       {scenes.length > 0 && (
@@ -781,68 +829,30 @@ function Storyboard({ project }: { project: Project }) {
             {analyzing ? "Đang phân tích…" : "Phân cảnh AI thông minh"}
           </Button>
 
-          {/* Tải lại cảnh thiếu media */}
+          {/* Chạy lại Factory cho cảnh còn thiếu */}
           {missingMedia > 0 && (
             <Button
               size="sm"
               variant="outline"
+              disabled={factoryStarting}
               className="gap-1.5 border-amber-500/30 text-amber-300 hover:bg-amber-500/10"
-              onClick={async () => {
-                try {
-                  const res = await api.createMediaTasks(project.id, {})
-                  toast({
-                    title: `Đã tạo task cho ${res.created} cảnh thiếu`,
-                    description: "Flow Connector sẽ tự tạo media cho các cảnh chưa có.",
-                  })
-                  load()
-                } catch (e) {
-                  toast({ title: "Tạo task thất bại", description: String(e), variant: "destructive" })
-                }
-              }}
+              onClick={startFactory}
             >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Tải lại {missingMedia} cảnh thiếu
+              <RefreshCw className={cn("h-3.5 w-3.5", factoryStarting && "animate-spin")} />
+              Chạy lại Factory ({missingMedia})
             </Button>
           )}
 
           <Button
             size="sm"
+            disabled={factoryStarting}
             className="gap-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-orange-500/20 hover:brightness-110"
-            onClick={async () => {
-              try {
-                const res = await api.createMediaTasks(project.id, {})
-                toast({
-                  title: "Đã tạo task tạo media cho " + res.created + " cảnh",
-                  description: "Extension Flow Connector sẽ tự mở Google Flow, tạo media và tải file thật về từng cảnh. Mở tab Flow để theo dõi tiến trình — cảnh đã có media không bị chạy lại.",
-                })
-                load()
-              } catch (e) {
-                toast({ title: "Tạo task Flow Connector thất bại", description: String(e), variant: "destructive" })
-              }
-            }}
+            onClick={startFactory}
           >
-            <Zap className="h-3.5 w-3.5" />
-            Sinh media tự động (Flow Connector)
+            <Zap className={cn("h-3.5 w-3.5", factoryStarting && "animate-pulse")} />
+            {factoryStarting ? "Đang khởi động Factory…" : "Chạy Factory Mode (Flow)"}
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-1.5 border-amber-500/30 text-amber-300 hover:bg-amber-500/10"
-            onClick={async () => {
-              try {
-                const res = await fetch(`/api/flow/project-url?project_id=${project.id}`)
-                const data = (await res.json()) as { url: string }
-                const url = data.url || `https://labs.google/fx/vi/tools/flow/project/${project.id}`
-                openExternalUrl(url)
-                toast({ title: "Đã mở Google Flow (Labs) trong trình duyệt", description: "Tạo ảnh/clip ở đó, rồi chọn media cho từng cảnh ở dưới." })
-              } catch (e) {
-                toast({ title: "Mở Google Flow thất bại", description: String(e), variant: "destructive" })
-              }
-            }}
-          >
-            <Sparkles className="h-3.5 w-3.5" />
-            Mở Google Flow (Labs) để tạo media
-          </Button>
+
           {selected.size > 0 && (
             <Button size="sm" variant="outline" onClick={setSelected.bind(null, new Set())}>
               Bỏ chọn ({selected.size})
@@ -869,8 +879,12 @@ function Storyboard({ project }: { project: Project }) {
               <Badge variant="destructive">{(taskState.counts.failed ?? 0)} cảnh lỗi (tự thử lại)</Badge>
             )}
             <Badge variant={workerOnline ? "success" : "secondary"}>
-              <Zap className="mr-1 h-3 w-3" /> Extension {workerOnline ? "đang kết nối" : "chưa kết nối"}
+              <Zap className="mr-1 h-3 w-3" /> Extension {workerOnline ? "đang kết nối" : "đang khởi tạo"}
             </Badge>
+            <Badge variant={flowConnection?.factory_state === "failed" ? "destructive" : flowConnection?.factory_state === "completed" ? "success" : "secondary"}>
+              Flow: {({ waiting_login: "Waiting Login", ready: "Ready", processing: "Processing", generate_image: "Generate Image", generate_video: "Generate Video", completed: "Completed", failed: "Failed" } as Record<string, string>)[flowConnection?.factory_state || "waiting_login"] || flowConnection?.factory_state || "Waiting Login"}
+            </Badge>
+
             <div className="ml-auto flex items-center gap-2">
               {taskState.state === "running" && (
                 <Button size="sm" variant="outline" className="border-amber-500/40 text-amber-300 hover:bg-amber-500/10" onClick={async () => {
@@ -914,11 +928,15 @@ function Storyboard({ project }: { project: Project }) {
           <div className="mt-3">
             <Progress value={taskState.total > 0 ? Math.round((taskState.completed / taskState.total) * 100) : 0} className="h-1.5" />
           </div>
-          {!workerOnline && (
+          {flowConnection?.factory_state === "waiting_login" && (
             <p className="mt-3 text-xs text-amber-300/80">
-              Extension Flow Connector chưa kết nối. Hãy cài extension vào Chrome, mở tab Google Flow một lần và đảm bảo extension đang bật — các task sẽ tự chạy khi extension kết nối.
+              Chrome profile riêng của Viu đang chờ đăng nhập Google Flow. Đăng nhập một lần trong cửa sổ Chrome được mở tự động; sau khi Flow có prompt editor, queue sẽ tự tiếp tục.
             </p>
           )}
+          {flowConnection?.last_error && (
+            <p className="mt-3 text-xs text-red-300/90">{flowConnection.last_error}</p>
+          )}
+
         </div>
       )}
 
@@ -993,14 +1011,25 @@ function Storyboard({ project }: { project: Project }) {
                         🎨 {scene.style_prompt}
                       </p>
                     ) : null}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-slate-500">Chuyển động / camera / chuyển cảnh</Label>
+                      <Textarea
+                        value={scene.transition_description || ""}
+                        onChange={(e) => updateScene(scene, { transition_description: e.target.value })}
+                        rows={2}
+                        className="text-sm"
+                        placeholder="Ví dụ: slow push-in, subject turns toward camera, gentle dissolve..."
+                      />
+                    </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
                     <label className={cn(
                       "inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition-colors hover:bg-white/[0.04]",
-                      scene.media_path ? "border-white/10" : "border-amber-500/40 bg-amber-500/[0.06] text-amber-200",
+                                            (scene.image_path || scene.video_path || scene.media_path) ? "border-white/10" : "border-amber-500/40 bg-amber-500/[0.06] text-amber-200",
                     )}>
                       <Upload className="h-3.5 w-3.5" />
-                      {scene.media_path ? "Thay media" : "Upload ảnh/video"}
+                      {(scene.image_path || scene.video_path || scene.media_path) ? "Thay media" : "Upload ảnh/video"}
+
                       <input
                         type="file"
                         accept="image/*,video/*"
@@ -1012,9 +1041,13 @@ function Storyboard({ project }: { project: Project }) {
                         }}
                       />
                     </label>
-                    {scene.media_path && (
-                      <Badge variant="success"><FileVideo className="mr-1 h-3 w-3" /> Đã có media</Badge>
+                                        {(scene.image_path || scene.media_path) && (
+                      <Badge variant="success"><FileVideo className="mr-1 h-3 w-3" /> Đã có ảnh</Badge>
                     )}
+                    {scene.video_path && (
+                      <Badge variant="success"><FileVideo className="mr-1 h-3 w-3" /> Đã có video</Badge>
+                    )}
+
                     {scene.audio_path && (
                       <Badge variant="secondary"><Mic className="mr-1 h-3 w-3" /> Đã có giọng</Badge>
                     )}
@@ -1035,24 +1068,28 @@ function Storyboard({ project }: { project: Project }) {
                       <Badge variant="destructive">Lỗi: {scene.error_message.slice(0, 60)}</Badge>
                     )}
                   </div>
-                  {scene.media_path && (
+                                    {(scene.image_path || (scene.media_type === "image" && scene.media_path)) && (
                     <div className="overflow-hidden rounded-lg border bg-white/[0.03]/50">
-                      {scene.media_type === "image" ? (
-                        <img
-                          src={`/api/media/file?path=${encodeURIComponent(scene.media_path)}`}
-                          alt="scene media"
-                          className="max-h-48 w-full object-contain"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <video
-                          src={`/api/media/file?path=${encodeURIComponent(scene.media_path)}`}
-                          controls
-                          className="max-h-48 w-full"
-                        />
-                      )}
+                      <div className="border-b border-white/5 px-3 py-1.5 text-[10px] uppercase tracking-wide text-slate-500">Ảnh tham chiếu / image stage</div>
+                      <img
+                        src={`/api/media/file?path=${encodeURIComponent(scene.image_path || scene.media_path || "")}`}
+                        alt="scene reference image"
+                        className="max-h-48 w-full object-contain"
+                        loading="lazy"
+                      />
                     </div>
                   )}
+                  {(scene.video_path || (scene.media_type === "video" && scene.media_path)) && (
+                    <div className="overflow-hidden rounded-lg border bg-white/[0.03]/50">
+                      <div className="border-b border-white/5 px-3 py-1.5 text-[10px] uppercase tracking-wide text-slate-500">Video cuối / video stage</div>
+                      <video
+                        src={`/api/media/file?path=${encodeURIComponent(scene.video_path || scene.media_path || "")}`}
+                        controls
+                        className="max-h-48 w-full"
+                      />
+                    </div>
+                  )}
+
                 </div>
                 <div className="flex shrink-0 flex-col gap-1">
                   <Button size="icon" variant="ghost" title="Chia cảnh (AI theo ngữ nghĩa)" disabled={splittingScene === scene.id} onClick={async () => {

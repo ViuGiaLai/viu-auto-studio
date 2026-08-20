@@ -1,33 +1,33 @@
-# Viu Auto Studio — Full Test Results
+# Viu Auto Studio â€” Full Test Results
 
-## ✅ Dashboard (/) — PASS
-- Header: "Dashboard" + subtitle "Báo cáo hiệu năng và tiến trình sản xuất video" ✅
-- Stat cards: TỔNG (5), HOÀN TẤT (2), ĐANG XỬ LÝ (0), LỖI KẾT XUẤT (1) ✅
-- Table "Hiệu năng theo bước sản xuất" with BƯỚC/TB/LƯỢT/TỈ LỆ LỖI ✅
-- CHI PHÍ ELEVENLABS: 0 ký tự ✅
-- XUẤT/24H: 0 ✅
-- HIỆU NĂNG HỆ THỐNG: CPU 42%, GPU N/A, RAM 88% ✅
-- TRẠNG THÁI DỊCH VỤ: Sidecar Engine OK, GPU CPU only, Queue idle, Backend 8000 ✅
-- HOẠT ĐỘNG RENDER LIVE: "Không có hoạt động kết xuất nào đang chạy" ✅
-- Hoạt động gần đây: 5 projects listed with status pills ✅
+## âœ… Dashboard (/) â€” PASS
+- Header: "Dashboard" + subtitle "BÃ¡o cÃ¡o hiá»‡u nÄƒng vÃ  tiáº¿n trÃ¬nh sáº£n xuáº¥t video" âœ…
+- Stat cards: Tá»”NG (5), HOÃ€N Táº¤T (2), Ä�ANG Xá»¬ LÃ� (0), Lá»–I Káº¾T XUáº¤T (1) âœ…
+- Table "Hiá»‡u nÄƒng theo bÆ°á»›c sáº£n xuáº¥t" with BÆ¯á»šC/TB/LÆ¯á»¢T/Tá»ˆ Lá»† Lá»–I âœ…
+- CHI PHÃ� ELEVENLABS: 0 kÃ½ tá»± âœ…
+- XUáº¤T/24H: 0 âœ…
+- HIá»†U NÄ‚NG Há»† THá»�NG: CPU 42%, GPU N/A, RAM 88% âœ…
+- TRáº NG THÃ�I Dá»ŠCH Vá»¤: Sidecar Engine OK, GPU CPU only, Queue idle, Backend 8000 âœ…
+- HOáº T Ä�á»˜NG RENDER LIVE: "KhÃ´ng cÃ³ hoáº¡t Ä‘á»™ng káº¿t xuáº¥t nÃ o Ä‘ang cháº¡y" âœ…
+- Hoáº¡t Ä‘á»™ng gáº§n Ä‘Ã¢y: 5 projects listed with status pills âœ…
 
-## ✅ Projects (/projects) — PASS
-- Search bar + Sort dropdown + Loại chips + Trạng thái chips ✅
-- Project cards with thumbnails, badges, footer buttons ✅
+## âœ… Projects (/projects) â€” PASS
+- Search bar + Sort dropdown + Loáº¡i chips + Tráº¡ng thÃ¡i chips âœ…
+- Project cards with thumbnails, badges, footer buttons âœ…
 
-## ✅ Workspace (/workspace) — PASS
-- Channel selector, video type select, Sinh button ✅
-- Tabs: Kịch bản & Giọng, Phân cảnh Visual, Nhân vật ✅
-- Pipeline steps: Kịch bản & Giọng, Phân cảnh Visual, Nhân vật ✅
+## âœ… Workspace (/workspace) â€” PASS
+- Channel selector, video type select, Sinh button âœ…
+- Tabs: Ká»‹ch báº£n & Giá»�ng, PhÃ¢n cáº£nh Visual, NhÃ¢n váº­t âœ…
+- Pipeline steps: Ká»‹ch báº£n & Giá»�ng, PhÃ¢n cáº£nh Visual, NhÃ¢n váº­t âœ…
 
-## ✅ TTS (/tts) — PASS
-- Provider tabs: Revo Voice, OmniVoice, Google Cloud, Gemini TTS, ElevenLabs, CapCut, Vbee ✅
-- Voice list with Nghe thử/Tải 64MB buttons ✅
-- Config section with provider, voice, speed/volume, preview ✅
+## âœ… TTS (/tts) â€” PASS
+- Provider tabs: Revo Voice, OmniVoice, Google Cloud, Gemini TTS, ElevenLabs, CapCut, Vbee âœ…
+- Voice list with Nghe thá»­/Táº£i 64MB buttons âœ…
+- Config section with provider, voice, speed/volume, preview âœ…
 
-## ✅ Settings (/settings) — PASS
-- All 7 tabs: Chung, Engine & Công cụ, AI Dịch & Ảnh, Giọng nói, Telegram, Đăng bài & Lập lịch, Hiệu năng ✅
-- Voice config with preview audio ✅
+## âœ… Settings (/settings) â€” PASS
+- All 7 tabs: Chung, Engine & CÃ´ng cá»¥, AI Dá»‹ch & áº¢nh, Giá»�ng nÃ³i, Telegram, Ä�Äƒng bÃ i & Láº­p lá»‹ch, Hiá»‡u nÄƒng âœ…
+- Voice config with preview audio âœ…
 
 ## Remaining to test:
 - Queue (/queue)
@@ -36,47 +36,124 @@
 - Channel Config Dialog
 - Workspace pipeline production flow
 
-## ✅ Queue (/queue) — PASS
-- Header: "Hàng đợi" + "Quản lý các lệnh render đang chạy, chờ và hoàn tất" ✅
-- Filter chips: Tất cả (3), Đang chạy (0), Đang chờ (0), Hoàn tất (2), Lỗi (1) ✅
-- Table: ID | Dự án | Bước hiện tại | Trạng thái | Tiến độ | Thời gian | Thao tác ✅
-- Human-readable step labels: "Hoàn tất", "Lỗi" (not raw values) ✅
-- Status pills: Hoàn thành (green), Lỗi (red) ✅
-- Thử lại button for failed jobs ✅
+## âœ… Queue (/queue) â€” PASS
+- Header: "HÃ ng Ä‘á»£i" + "Quáº£n lÃ½ cÃ¡c lá»‡nh render Ä‘ang cháº¡y, chá»� vÃ  hoÃ n táº¥t" âœ…
+- Filter chips: Táº¥t cáº£ (3), Ä�ang cháº¡y (0), Ä�ang chá»� (0), HoÃ n táº¥t (2), Lá»—i (1) âœ…
+- Table: ID | Dá»± Ã¡n | BÆ°á»›c hiá»‡n táº¡i | Tráº¡ng thÃ¡i | Tiáº¿n Ä‘á»™ | Thá»�i gian | Thao tÃ¡c âœ…
+- Human-readable step labels: "HoÃ n táº¥t", "Lá»—i" (not raw values) âœ…
+- Status pills: HoÃ n thÃ nh (green), Lá»—i (red) âœ…
+- Thá»­ láº¡i button for failed jobs âœ…
 
-## ✅ Library (/library) — PASS
-- Header: "Thư viện" + subtitle ✅
-- "Tải lên media" button (top right) ✅
-- Search input "🔍 Tìm kiếm media..." ✅
-- Media grid with thumbnail, filename, size, date ✅
-- test_img.png uploaded and displayed correctly ✅
+## âœ… Library (/library) â€” PASS
+- Header: "ThÆ° viá»‡n" + subtitle âœ…
+- "Táº£i lÃªn media" button (top right) âœ…
+- Search input "ðŸ”� TÃ¬m kiáº¿m media..." âœ…
+- Media grid with thumbnail, filename, size, date âœ…
+- test_img.png uploaded and displayed correctly âœ…
 
-## ✅ Settings (/settings) — PASS
-- All 7 tabs: 📁 Chung, 🔧 Engine & Công cụ, ✨ AI Dịch & Ảnh, 🎙 Giọng nói, ✈ Telegram, ▶ Đăng bài & Lập lịch, ⚡ Hiệu năng ✅
-- Huỷ + Lưu cài đặt buttons (top right) ✅
-- Giọng nói tab: Provider dropdown, Voice dropdown, Status indicator ✅
-- Nghe thử section with textarea, Tốc độ/Âm lượng sliders, ▶ Nghe thử button ✅
-- Danh sách giọng with 3 voices and "Dùng giọng này" buttons ✅
+## âœ… Settings (/settings) â€” PASS
+- All 7 tabs: ðŸ“� Chung, ðŸ”§ Engine & CÃ´ng cá»¥, âœ¨ AI Dá»‹ch & áº¢nh, ðŸŽ™ Giá»�ng nÃ³i, âœˆ Telegram, â–¶ Ä�Äƒng bÃ i & Láº­p lá»‹ch, âš¡ Hiá»‡u nÄƒng âœ…
+- Huá»· + LÆ°u cÃ i Ä‘áº·t buttons (top right) âœ…
+- Giá»�ng nÃ³i tab: Provider dropdown, Voice dropdown, Status indicator âœ…
+- Nghe thá»­ section with textarea, Tá»‘c Ä‘á»™/Ã‚m lÆ°á»£ng sliders, â–¶ Nghe thá»­ button âœ…
+- Danh sÃ¡ch giá»�ng with 3 voices and "DÃ¹ng giá»�ng nÃ y" buttons âœ…
 
-## ✅ Project Editor (/projects/5) — PASS
-- Header: "Tập #1 — Kênh Test" with 🦌 Kênh Test badge ✅
-- Status pills: 16:9 · Bản nháp · 240s mục tiêu ✅
-- ⚙️ Cấu hình kênh button visible ✅
-- Thư mục dự án button ✅
-- 5 tabs: Ý tưởng & Kịch bản, Trình soạn thảo, Storyboard, Phụ đề, Preview & Render ✅
-- Tab 1 (Ý tưởng & Kịch bản): Chế độ tạo kịch bản, Định hướng cho AI form ✅
+## âœ… Project Editor (/projects/5) â€” PASS
+- Header: "Táº­p #1 â€” KÃªnh Test" with ðŸ¦Œ KÃªnh Test badge âœ…
+- Status pills: 16:9 Â· Báº£n nhÃ¡p Â· 240s má»¥c tiÃªu âœ…
+- âš™ï¸� Cáº¥u hÃ¬nh kÃªnh button visible âœ…
+- ThÆ° má»¥c dá»± Ã¡n button âœ…
+- 5 tabs: Ã� tÆ°á»Ÿng & Ká»‹ch báº£n, TrÃ¬nh soáº¡n tháº£o, Storyboard, Phá»¥ Ä‘á»�, Preview & Render âœ…
+- Tab 1 (Ã� tÆ°á»Ÿng & Ká»‹ch báº£n): Cháº¿ Ä‘á»™ táº¡o ká»‹ch báº£n, Ä�á»‹nh hÆ°á»›ng cho AI form âœ…
 
-## ✅ Channel Config Dialog — PASS
-- Opens when clicking ⚙️ button ✅
-- Title: "⚙️ Cấu hình kênh — Kênh Test" ✅
-- Sections: 🧠 Nội dung & Bộ não, 📝 Cách viết để AI thật sự rõ giọng, 🎙 Giọng & Hình, ⏰ Tự động & Lịch ✅
-- All dropdowns, inputs, buttons visible ✅
-- Đóng + 💾 Lưu cấu hình buttons ✅
+## âœ… Channel Config Dialog â€” PASS
+- Opens when clicking âš™ï¸� button âœ…
+- Title: "âš™ï¸� Cáº¥u hÃ¬nh kÃªnh â€” KÃªnh Test" âœ…
+- Sections: ðŸ§  Ná»™i dung & Bá»™ nÃ£o, ðŸ“� CÃ¡ch viáº¿t Ä‘á»ƒ AI tháº­t sá»± rÃµ giá»�ng, ðŸŽ™ Giá»�ng & HÃ¬nh, â�° Tá»± Ä‘á»™ng & Lá»‹ch âœ…
+- All dropdowns, inputs, buttons visible âœ…
+- Ä�Ã³ng + ðŸ’¾ LÆ°u cáº¥u hÃ¬nh buttons âœ…
 
-## ✅ Workspace (/workspace) — PASS
-- Header: "Kênh Kênh Test — dây chuyền sản xuất tập mới — chưa có ý tưởng chờ — bấm Sinh ý tưởng" ✅
-- 💡 Ý tưởng card with 🎬 Video dài (16:9) dropdown + ✨ Sinh button ✅
-- Episode card: "Tập #1 — Kênh Test" with 16:9 badge, tech topic, draft status ✅
-- Tabs: Kịch bản & Giọng, Phân cảnh Visual, Nhân vật ✅
-- Kịch bản & Giọng section: Giọng đọc (voiceover) info + Kịch bản placeholder ✅
-- Tiến độ sản xuất: "Trạng thái: idle" + "Chọn một tập để xem tiến độ." ✅
+## âœ… Workspace (/workspace) â€” PASS
+- Header: "KÃªnh KÃªnh Test â€” dÃ¢y chuyá»�n sáº£n xuáº¥t táº­p má»›i â€” chÆ°a cÃ³ Ã½ tÆ°á»Ÿng chá»� â€” báº¥m Sinh Ã½ tÆ°á»Ÿng" âœ…
+- ðŸ’¡ Ã� tÆ°á»Ÿng card with ðŸŽ¬ Video dÃ i (16:9) dropdown + âœ¨ Sinh button âœ…
+- Episode card: "Táº­p #1 â€” KÃªnh Test" with 16:9 badge, tech topic, draft status âœ…
+- Tabs: Ká»‹ch báº£n & Giá»�ng, PhÃ¢n cáº£nh Visual, NhÃ¢n váº­t âœ…
+- Ká»‹ch báº£n & Giá»�ng section: Giá»�ng Ä‘á»�c (voiceover) info + Ká»‹ch báº£n placeholder âœ…
+- Tiáº¿n Ä‘á»™ sáº£n xuáº¥t: "Tráº¡ng thÃ¡i: idle" + "Chá»�n má»™t táº­p Ä‘á»ƒ xem tiáº¿n Ä‘á»™." âœ…
+
+
+## Audit implementation pass â€” 2026-08-20
+
+### Checks completed
+
+| Check | Result | Notes |
+|---|---|---|
+| Python backend compile | PASS | `python -m compileall -q backend` |
+| Frontend TypeScript | PASS | `pnpm exec tsc --noEmit` |
+| Frontend production build | PASS | `pnpm build`; Vite and Electron bundles generated |
+| Git workspace safety | PASS | Changes remain local; no commit/push performed |
+| FastAPI TestClient smoke test | NOT COMPLETED | The isolated TestClient process did not return within the timeout; this needs a live Desktop/backend smoke pass rather than being reported as passed |
+
+### Implemented behavior verified by code review
+
+- Settings now persists engine mode, AI model/key state, language, refresh/theme flags and Telegram configuration through the backend contract.
+- Settings Engine controls use real diagnostics and apply the selected profile to FFmpeg defaults (`basic`, `balanced`, `high`).
+- Telegram has a real bot validation endpoint and an explicit send-test action.
+- Characters support real create/update/delete, JSON profile import and reference-image upload linked to `CharacterRef`.
+- Library supports upload/search and safe deletion of unreferenced assets.
+- Workspace episode creation opens the created project editor instead of stopping at a toast.
+
+### Desktop-only validation still required
+
+Start the Electron Desktop app with `pnpm dev`, create or open a test project, verify Settings save/reload, run the Telegram validation only with intentional credentials, create/edit/delete a character, upload a reference image, upload/delete a library asset, and start a non-destructive render smoke flow. Do not use the standalone Vite browser page as the source of truth for runtime configuration.
+
+
+## Skill integration pass â€” 2026-08-20
+
+| Skill | Integration in Viu Studio | Runtime behavior |
+|---|---|---|
+| `video-generator` | Skill Lab local prompt builder; blueprint enforces 16:9/9:16, 3â€“10 second clips, transition description and reference-image step | Generates a reproducible production blueprint; does not claim video generation completed |
+| `tts-prompter` | Skill Lab local prompt builder | Separates English style instructions from spoken text and returns a real prompt for the configured TTS pipeline |
+| `music-prompter` | Skill Lab local prompt builder | Returns duration/BPM/key/instrumentation/arrangement prompt; does not fabricate an audio file |
+| `youtube-video-research` | Optional Manus API task runner with forced skill and polling | Requires `MANUS_API_KEY`; without it the run fails explicitly |
+| `seo-audit` | Optional Manus API task runner with data-limitation instructions | Requires `MANUS_API_KEY` and supplied evidence; no metrics are fabricated |
+| `seo-competitor-analysis-will` | Optional Manus API task runner with target-first instructions | Requires `MANUS_API_KEY` and source exports; no competitor claims are fabricated |
+| `skill-creator` | Cataloged as advisory only | Correctly not exposed as a fake runtime action; it is a guide for creating Manus skills |
+
+### Skill Lab checks
+
+- Backend compile: PASS.
+- Frontend TypeScript typecheck: PASS.
+- Desktop production build: PASS.
+- SkillRun records are persisted in SQLite through an idempotent `create_all` startup path.
+- Manus-backed runs remain `pending` after task creation and can be refreshed through `task.listMessages`; no synchronous completion is fabricated.
+
+### Storyboard motion metadata pass — 2026-08-20
+
+- `transition_description` is now generated by semantic scene analysis, persisted on `Scene`, exposed by Scene schemas, editable in Project Editor, copied on project duplication, and available to the connector pipeline.
+- An idempotent SQLite compatibility migration adds the column for existing installations before queries run.
+- Backend compile: PASS.
+- Frontend TypeScript typecheck: PASS.
+
+### Remaining page audit pass — 2026-08-20
+
+- Voice Config bulk regeneration now loads real projects/scenes and calls the existing per-scene regenerate-voice endpoint sequentially; it no longer calls build-scenes or reports a false success.
+- Flow page now reads recent ConnectorTask records through a read-only endpoint that never leases work; it displays status, progress, project/scene and errors.
+- Flow aspect-ratio options are limited to 16:9 and 9:16.
+- Guide page resolves the latest real project ID and falls back to Workspace when no project exists; no /projects/1 links remain.
+- Backend compile: PASS.
+- Frontend TypeScript typecheck: PASS.
+- Desktop production build: PASS.
+
+
+### GitHub topic integration pass — 2026-08-20
+
+GitHub Topic pages for all 13 user-provided topics were reviewed, and repository metadata was collected through GitHub's public API. Research notes and source URLs are in `GITHUB_TOPIC_RESEARCH.md`.
+
+The project now includes `youtube-transcript-api>=1.0,<2`; version 1.2.4 was installed in the local Desktop virtualenv. Skill Lab has a real `youtube-transcript` local action that validates a YouTube URL/video ID, fetches preferred-language transcript snippets, returns timestamps/source metadata, and records the result in `SkillRun`. It does not download video and does not fabricate output. Built-in niche profiles (`general`, `tech`, `education`, `finance`, `cooking`, `entertainment`) are also passed into cloud and offline script generation.
+
+Topic integration smoke test: PASS. Backend compile: PASS. Frontend TypeScript typecheck: PASS. Desktop production build: PASS; Vite/Electron bundles were generated. Existing build tooling emitted a non-fatal `platform` input warning during the Electron phase. No commit or push was performed.
+Live verification bổ sung: YouTube Transcript API đã fetch thành công video công khai `dQw4w9WgXcQ` trên Windows virtualenv, trả về English transcript với 61 snippets. Live test file đã được xóa sau khi kiểm tra để test suite không phụ thuộc mạng YouTube.
+
+
+Final topic-integration validation: backend compile PASS; deterministic topic smoke PASS; frontend TypeScript PASS; Desktop production build exit code 0. The existing Electron build tooling still prints `Unknown input options: platform` as a non-fatal warning after the Electron bundle is generated.

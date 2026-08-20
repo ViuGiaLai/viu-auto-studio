@@ -14,6 +14,7 @@ import FlowPage from "@/pages/flow-page"
 import AnalyticsPage from "@/pages/analytics-page"
 import WizardPage from "@/pages/wizard-page"
 import WorkspacePage from "@/pages/workspace-page"
+import SkillLabPage from "@/pages/skill-lab-page"
 
 export default function App() {
   return (
@@ -34,6 +35,7 @@ export default function App() {
           <Route path="flow" element={<FlowPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />
           <Route path="settings" element={<SettingsPage />} />
+          <Route path="skills" element={<SkillLabPage />} />
           <Route path="guide" element={<GuidePage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

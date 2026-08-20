@@ -174,6 +174,7 @@ class ScriptGenerateRequest(BaseModel):
     outline: List[str] = []
     writing_style: str = ""
     audience: str = ""
+    niche: str = ""
     thumbnail_concept: str = ""
     thumbnail_prompt_en: str = ""
 
@@ -195,6 +196,7 @@ class SceneCreate(BaseModel):
     visual_prompt: str = ""
     negative_prompt: str = ""
     style_prompt: str = ""
+    transition_description: str = ""
     media_path: str = ""
     media_type: str = "none"
     audio_path: str = ""
@@ -209,6 +211,7 @@ class SceneUpdate(BaseModel):
     visual_prompt: Optional[str] = None
     negative_prompt: Optional[str] = None
     style_prompt: Optional[str] = None
+    transition_description: Optional[str] = None
     media_path: Optional[str] = None
     media_type: Optional[str] = None
     audio_path: Optional[str] = None
@@ -226,7 +229,10 @@ class SceneRead(BaseModel):
     visual_prompt: Optional[str] = None
     negative_prompt: Optional[str] = None
     style_prompt: Optional[str] = None
+    transition_description: Optional[str] = None
     media_path: Optional[str] = None
+    image_path: Optional[str] = None
+    video_path: Optional[str] = None
     media_type: Optional[str] = None
     audio_path: Optional[str] = None
     subtitle_text: Optional[str] = None
@@ -477,24 +483,40 @@ class StudioSettingsRead(BaseModel):
     engine_mode: str = "balanced"
     engine_installed: bool = False
     ai_provider: str = "gemini"
+    ai_model: str = ""
+    ai_api_key_set: bool = False
     deepseek_api_key: str = ""
+    deepseek_api_key_set: bool = False
     gemini_model: str = "3.5 Flash"
     tts_provider: str = "edge"
     tts_voice: str = "vi-VN-HoaiMyNeural"
     output_folder: str = ""
     display_language: str = "vi"
+    production_language: str = "vi"
+    auto_refresh: bool = True
+    dark_mode: bool = True
+    telegram_enabled: bool = False
+    telegram_configured: bool = False
     flow_logged_in: bool = False
 
 
 class StudioSettingsUpdate(BaseModel):
     engine_mode: Optional[str] = None
     ai_provider: Optional[str] = None
+    ai_model: Optional[str] = None
+    ai_api_key: Optional[str] = None
     deepseek_api_key: Optional[str] = None
     gemini_model: Optional[str] = None
     tts_provider: Optional[str] = None
     tts_voice: Optional[str] = None
     output_folder: Optional[str] = None
     display_language: Optional[str] = None
+    production_language: Optional[str] = None
+    auto_refresh: Optional[bool] = None
+    dark_mode: Optional[bool] = None
+    telegram_bot_token: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+    telegram_enabled: Optional[bool] = None
 
 
 class IdeaCreateRequest(BaseModel):
@@ -517,3 +539,37 @@ class ProjectCreateV2(BaseModel):
     language: str = "vi"
     target_duration: int = Field(default=720, ge=5, le=3600)
     output_folder: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Skill Lab
+# ---------------------------------------------------------------------------
+class SkillCatalogItem(BaseModel):
+    id: str
+    name: str
+    category: str
+    execution: str
+    description: str
+    requires_manus_api: bool = False
+
+
+class SkillRunCreate(BaseModel):
+    skill_id: str = Field(min_length=2, max_length=128)
+    prompt: str = ""
+    project_id: Optional[int] = None
+    input: Dict[str, Any] = Field(default_factory=dict)
+    use_manus: bool = True
+
+
+class SkillRunRead(BaseModel):
+    id: int
+    project_id: Optional[int] = None
+    skill_id: str
+    mode: str
+    status: str
+    input_json: str
+    output_text: str
+    external_task_id: str
+    error_message: str
+    created_at: datetime
+    updated_at: datetime

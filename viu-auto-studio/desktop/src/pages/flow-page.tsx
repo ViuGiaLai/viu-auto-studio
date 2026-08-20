@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { api, openExternalUrl, resolveApiBaseUrl } from "@/services/api"
+import { api, resolveApiBaseUrl } from "@/services/api"
 import {
   Link2, RefreshCw, Copy, CheckCircle2, XCircle, Eye, ExternalLink, Loader2,
 } from "lucide-react"
-import { flowApi, globalApi, type FlowConnectionRead } from "@/services/pages-api"
+import { flowApi, globalApi, type FlowConnectionRead, type FlowTaskRead } from "@/services/pages-api"
+
 import { toast } from "@/hooks/use-toast"
 import { Button } from "@/components/design-system"
 import { Input } from "@/components/design-system"
@@ -38,9 +39,10 @@ export default function FlowPage() {
   const navigate = useNavigate()
   const runtimeBase = useRuntimeApiBase()
   const [conn, setConn] = useState<FlowConnectionRead | null>(null)
+  const [recentTasks, setRecentTasks] = useState<FlowTaskRead[]>([])
   const [loading, setLoading] = useState(true)
-  const [pairCode, setPairCode] = useState("")
-  const [extensionId, setExtensionId] = useState("")
+
+  
   const [mode, setMode] = useState("image")
   const [ratio, setRatio] = useState("16:9")
   const [imageModel, setImageModel] = useState("Nano Banana 2")
@@ -56,9 +58,15 @@ export default function FlowPage() {
   const load = async () => {
     try {
       setLoading(true)
-      const [c, global] = await Promise.all([flowApi.get(), globalApi.getSettings()])
+      const [c, global, tasks] = await Promise.all([
+        flowApi.get(),
+        globalApi.getSettings(),
+        flowApi.recentTasks().catch(() => [] as FlowTaskRead[]),
+      ])
       setConn(c)
-      setExtensionId(c.extension_id || "")
+      setRecentTasks(tasks)
+
+      
       const saved = global.settings || {}
       setMode(String(saved.flow_mode || "image"))
       setRatio(String(saved.flow_ratio || "16:9"))
@@ -86,48 +94,6 @@ export default function FlowPage() {
 
   const masked = (s: string) => (s.length > 8 ? s.slice(0, 4) + "••••" + s.slice(-4) : "••••")
 
-  const doPair = async () => {
-    if (!pairCode.trim() || !extensionId.trim()) {
-      toast({ title: "Nhập mã ghép một lần do Extension cung cấp", variant: "destructive" })
-      return
-    }
-    try {
-      await flowApi.pair(pairCode.trim(), extensionId.trim())
-      toast({ title: "Đã ghép nối Extension thành công" })
-      load()
-    } catch (e) {
-      toast({ title: "Lỗi", description: String(e), variant: "destructive" })
-    }
-  }
-
-  const genCode = async () => {
-    try {
-      const c = await flowApi.newPairingCode()
-      setConn(c)
-      toast({ title: "Đã tạo mã ghép mới" })
-    } catch (e) {
-      toast({ title: "Lỗi", description: String(e), variant: "destructive" })
-    }
-  }
-
-  const sendHeartbeat = async () => {
-    if (!extensionId.trim()) {
-      toast({ title: "Nhập Extension ID (như trong flow-connector manifest)", variant: "destructive" })
-      return
-    }
-    try {
-      await flowApi.heartbeat({
-        extension_id: extensionId.trim(),
-        extension_name: "Flow Connector",
-        profile_name: "Viu Auto Studio",
-        google_account: "",
-      })
-      toast({ title: "Heartbeat OK — Extension đã được ghi nhận" })
-      load()
-    } catch (e) {
-      toast({ title: "Lỗi", description: String(e), variant: "destructive" })
-    }
-  }
 
   const saveFlowDefaults = async () => {
     setSavingDefaults(true)
@@ -150,7 +116,10 @@ export default function FlowPage() {
       let selected: { id: number } | null = null
       for (const project of projects) {
         const scenes = await api.listScenes(project.id)
-        if (scenes.some((scene) => Boolean(scene.visual_prompt) && !scene.media_path)) { selected = project; break }
+        const needsMedia = (scene: typeof scenes[number]) => mode === "video"
+          ? !(scene.video_path || scene.media_path)
+          : !(scene.image_path || scene.media_path)
+        if (scenes.some((scene) => Boolean(scene.visual_prompt) && needsMedia(scene))) { selected = project; break }
       }
       if (!selected) throw new Error("Không có cảnh thật đang thiếu media. Hãy tạo phân cảnh có visual prompt trước.")
       const result = await api.createMediaTasks(selected.id, { media_type: mode, aspect: ratio, model: mode === "video" ? videoModel : imageModel })
@@ -217,70 +186,36 @@ export default function FlowPage() {
                   )}
                 </span>
               </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-400">Extension ID</span>
-                <Input
-                  value={extensionId}
-                  onChange={(e) => setExtensionId(e.target.value)}
-                  placeholder="extension_id…"
-                  className="h-7 w-44 bg-[#0c1318] border-white/10 text-xs"
-                />
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500" onClick={sendHeartbeat}>
-                  <RefreshCw className="h-3.5 w-3.5" />
-                </Button>
+                            <div className="flex items-center justify-between">
+                <span className="text-slate-400">Flow runtime</span>
+                <span className="text-right text-xs text-slate-200">Chrome profile riêng + Extension bundled</span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400">Mã ghép cập</span>
-                {paired ? (
-                  <Badge className="bg-emerald-500/15 text-emerald-400">✓ Một lần</Badge>
-                ) : (
-                  <Badge variant="outline" className="border-amber-500/30 text-amber-400">Chưa cập</Badge>
-                )}
+
+                            <div className="flex items-center justify-between">
+                <span className="text-slate-400">Factory state</span>
+                <Badge variant="outline" className={conn?.factory_state === "failed" ? "border-red-500/30 text-red-400" : "border-blue-500/30 text-blue-300"}>
+                  {conn?.factory_state || "waiting_login"}
+                </Badge>
               </div>
+
               <div className="flex items-center justify-between">
                 <span className="text-slate-400">Môi trường</span>
                 <span className="text-slate-200">Production</span>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2 pt-2">
-              <Button variant="outline" size="sm" className="border-amber-500/40 text-amber-300 hover:bg-amber-500/10" onClick={() => openExternalUrl("https://labs.google/fx/")}>
-                Mở Google Flow
-              </Button>
-              <Button variant="outline" size="sm" className="border-white/10 text-slate-300" onClick={genCode}>
-                Ghép lại Extension
-              </Button>
-            </div>
+                        <p className="pt-2 text-xs leading-relaxed text-slate-500">
+              Không cần cài Extension, copy prompt hoặc mở Labs thủ công. Hãy chạy Factory Mode trong Project Editor; Chrome sẽ tự mở/reuse và tiếp tục sau khi đăng nhập một lần.
+            </p>
+
           </div>
 
-          {/* Ghép lần đầu */}
-          <div className="rounded-xl border border-amber-500/20 bg-[#141d22] p-5 space-y-3">
-            <h2 className="text-sm font-semibold text-slate-200">Ghép lần đầu (pairing)</h2>
-            <p className="text-xs text-slate-400">
-              Mở Extension → nhập mã ghép một lần dưới đây, hoặc dán mã do Extension sinh và bấm "Ghép Extension".
+                    <div className="rounded-xl border border-blue-500/20 bg-[#141d22] p-5 space-y-2">
+            <h2 className="text-sm font-semibold text-slate-200">Factory connection</h2>
+            <p className="text-xs leading-relaxed text-slate-400">
+              Session được khởi tạo an toàn trong Electron với bootstrap token theo từng phiên. Extension chỉ nhận task của Factory project đang chạy và heartbeat tự động báo login/readiness về backend.
             </p>
-            {conn?.pairing_code ? (
-              <div className="rounded-lg border border-white/10 bg-[#0c1318] p-3">
-                <div className="text-[11px] text-slate-500">Mã ghép một lần (Extension nhập vào app)</div>
-                <div className="flex items-center justify-between">
-                  <code className="text-lg font-mono font-bold text-amber-400">{conn.pairing_code}</code>
-                  <Copy className="h-4 w-4 cursor-pointer text-slate-500" onClick={() => copyText(conn.pairing_code || "")} />
-                </div>
-                {conn.pairing_expires_at && (
-                  <div className="text-[11px] text-slate-500">Hết hạn: {conn.pairing_expires_at}</div>
-                )}
-              </div>
-            ) : (
-              <Input
-                placeholder="Dán mã ghép do Extension cung cấp…"
-                value={pairCode}
-                onChange={(e) => setPairCode(e.target.value)}
-                className="bg-[#0c1318] border-white/10"
-              />
-            )}
-            <Button className="w-full bg-gradient-to-r from-[#d9940a] to-[#faaa02] text-white hover:opacity-90" onClick={conn?.pairing_code ? () => copyText(conn.pairing_code || "") : doPair}>
-              {conn?.pairing_code ? <>Sao chép mã ghép <Copy className="ml-2 h-4 w-4" /></> : "Ghép Extension"}
-            </Button>
           </div>
+
         </div>
 
         {/* Giữa: cấu hình mặc định */}
@@ -305,7 +240,7 @@ export default function FlowPage() {
                   <SelectContent>
                     <SelectItem value="16:9">16:9</SelectItem>
                     <SelectItem value="9:16">9:16</SelectItem>
-                    <SelectItem value="1:1">1:1</SelectItem>
+                    
                   </SelectContent>
                 </Select>
               </div>
@@ -382,15 +317,40 @@ export default function FlowPage() {
         {/* Phải: tác vụ gần đây + E2E test */}
         <div className="space-y-4">
           <div className="rounded-xl border border-white/5 bg-[#141d22] p-5 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-slate-200">Tác vụ Flow gần đây</h2>
-              <Button variant="outline" size="sm" className="h-7 border-white/10 text-xs text-slate-300" onClick={() => navigate("/queue")}>
-                Xem hàng đợi <ExternalLink className="ml-1 h-3 w-3" />
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400" title="Tải lại task" onClick={() => void load()}>
+                  <RefreshCw className="h-3.5 w-3.5" />
+                </Button>
+                <Button variant="outline" size="sm" className="h-7 border-white/10 text-xs text-slate-300" onClick={() => navigate("/queue")}>
+                  Xem hàng đợi <ExternalLink className="ml-1 h-3 w-3" />
+                </Button>
+              </div>
             </div>
-            <p className="text-xs text-slate-400">
-              Tác vụ Flow xuất hiện trong Hàng đợi (menu Hàng đợi) khi backend tạo task per scene. Extension tự nhận task qua heartbeat/polling và cập nhật trạng thái.
-            </p>
+            {recentTasks.length === 0 ? (
+              <p className="rounded-lg border border-white/10 bg-[#0c1318] p-4 text-xs text-slate-500">
+                Chưa có ConnectorTask. Hãy chạy Auto Production hoặc kiểm tra end-to-end để tạo task thật.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {recentTasks.map((task) => (
+                  <div key={task.task_id} className="rounded-lg border border-white/10 bg-[#0c1318] p-3 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono text-slate-300">{task.task_id.slice(0, 10)}…</span>
+                      <Badge variant="outline" className="border-white/10 text-slate-300">{task.status}</Badge>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
+                      <span>Project #{task.project_id} · Cảnh #{(task.scene_order ?? 0) + 1}</span>
+                      <span>{task.progress ?? 0}%</span>
+                    </div>
+                    {task.progress_message && <p className="mt-1 truncate text-[11px] text-slate-500">{task.progress_message}</p>}
+                    {task.error && <p className="mt-1 truncate text-[11px] text-rose-300" title={task.error}>{task.error}</p>}
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="rounded-lg border border-white/10 bg-[#0c1318] p-4">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-slate-200">Kiểm tra end-to-end</span>
@@ -399,7 +359,8 @@ export default function FlowPage() {
                 </Badge>
               </div>
               <p className="mt-1.5 text-[11px] text-slate-500">
-                Tạo tác vụ E2E gồm 10 bước (Mở Flow → FFprobe xác minh). Khi Extension online, task tự thực hiện; nếu offline, task chờ và tiếp tục sau khi ghép lại.
+                                Tạo một queue test thật để kiểm tra task assignment, DOM automation và xác minh media. Factory runtime sẽ tự xử lý khi Chrome/Extension online; không cần pairing thủ công.
+
               </p>
               <Button
                 size="sm"
@@ -419,7 +380,8 @@ export default function FlowPage() {
               <li>• Extension thực hiện hoàn toàn DOM automation trên labs.google/fx — app không điều khiển Flow từ backend.</li>
               <li>• File media tải về được Extension gửi kèm file/path về FastAPI, FFprobe xác minh rồi gắn đúng scene_id.</li>
               <li>• Scene lỗi được retry riêng, không chạy lại scene đã hoàn thành (idempotency).</li>
-              <li>• Heartbeat mỗi 3 giây giữ trạng thái ghép sau khi Chrome khởi động lại.</li>
+                            <li>• Heartbeat tự động báo trạng thái đăng nhập/readiness; Chrome profile riêng được reuse sau lần đăng nhập đầu tiên.</li>
+
             </ul>
           </div>
         </div>

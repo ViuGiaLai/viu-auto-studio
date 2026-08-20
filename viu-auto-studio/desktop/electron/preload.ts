@@ -9,4 +9,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getRuntimeConfig: (): Promise<RuntimeConfig | null> => ipcRenderer.invoke("getRuntimeConfig"),
   getUserDataDir: (): Promise<string> => ipcRenderer.invoke("getUserDataDir"),
   selectDirectory: (): Promise<string | null> => ipcRenderer.invoke("dialog:select-directory"),
+  startFlow: (input: { projectId: number; factorySessionId: string }): Promise<{ ok: boolean; status: string; message: string; profilePath?: string }> => ipcRenderer.invoke("flow:start", input),
+  stopFlow: (): Promise<{ ok: boolean }> => ipcRenderer.invoke("flow:stop"),
 })

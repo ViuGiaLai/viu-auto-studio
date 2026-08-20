@@ -17,17 +17,56 @@ import subprocess
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
+
 from sqlalchemy.orm import Session
 
-from backend.core.config import DATA_DIR, PROJECTS_DIR as _CFG_PROJECTS_DIR, FFPROBE_BIN
+from backend.core.config import DATA_DIR, FLOW_BOOTSTRAP_TOKEN, HOST, PORT, PROJECTS_DIR as _CFG_PROJECTS_DIR, FFPROBE_BIN
 from backend.core.database import get_db
-from backend.models import ConnectorTask, Project, Scene
+from backend.models import ConnectorTask, FlowConnection, PipelineState, Project, Scene
+from backend.services.flow_factory import refresh_task_state, set_factory_state
 
 router = APIRouter(prefix="/connector", tags=["flow-connector"])
 
 PROJECTS_DIR = str(_CFG_PROJECTS_DIR)
 WORKER_STATE_PATH = os.path.join(DATA_DIR, "connector_workers.json")
+
+
+def _require_connector_token(value: str | None) -> None:
+    if FLOW_BOOTSTRAP_TOKEN and value != FLOW_BOOTSTRAP_TOKEN:
+        raise HTTPException(403, "Flow Connector token không hợp lệ")
+
+
+def _sync_pipeline_state(db: Session, project_id: int) -> None:
+    state = db.query(PipelineState).filter(PipelineState.project_id == project_id).first()
+    if not state:
+        return
+    scenes = db.query(Scene).filter(Scene.project_id == project_id).all()
+    if not scenes:
+        return
+    tasks = db.query(ConnectorTask).filter(ConnectorTask.project_id == project_id).all()
+    total = len(tasks) if tasks else len(scenes)
+    ready = sum(1 for task in tasks if task.status == "completed") if tasks else sum(1 for scene in scenes if scene.media_path and os.path.isfile(scene.media_path))
+    failed = sum(1 for task in tasks if task.status == "failed") + sum(1 for scene in scenes if scene.status == "media_failed" and not any(task.scene_id == scene.id for task in tasks))
+    steps = json.loads(state.step_data_json or "{}")
+    if failed:
+        state.status = "failed"
+        state.error_step = "Ảnh/Video"
+        state.last_log = f"{failed} task/cảnh media lỗi; có thể retry riêng từng task."
+        steps["Ảnh/Video"] = "failed"
+    elif ready >= total:
+        state.status = "media_ready"
+        state.error_step = ""
+        state.last_log = f"Đã xác minh media thật cho {ready}/{total} task media."
+        steps["Ảnh/Video"] = "success"
+    else:
+        state.status = "processing"
+        state.error_step = ""
+        state.last_log = f"Đã xác minh media thật cho {ready}/{total} task media."
+        steps["Ảnh/Video"] = f"{round(ready * 100 / total)}%"
+    state.step_data_json = json.dumps(steps, ensure_ascii=False)
+    db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -162,8 +201,13 @@ def _save_workers(workers: dict) -> None:
 
 
 @router.post("/register")
-def connector_register(payload: dict, db: Session = Depends(get_db)):
+def connector_register(
+    payload: dict,
+    x_viu_flow_token: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
     """Extension đăng ký worker với backend."""
+    _require_connector_token(x_viu_flow_token)
     worker_id = str(payload.get("worker_id") or "").strip()
     if not worker_id:
         raise HTTPException(400, "worker_id bắt buộc")
@@ -195,13 +239,53 @@ def connector_worker_status(db: Session = Depends(get_db)):
 LEASE_SECONDS = 120  # Worker mất kết nối > 2 phút → task được trả về hàng đợi
 
 
+@router.get("/tasks/recent")
+def recent_connector_tasks(
+    limit: int = Query(8, ge=1, le=50),
+    project_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Read-only task history for the Desktop UI; never assigns or leases work."""
+    query = db.query(ConnectorTask).order_by(ConnectorTask.updated_at.desc(), ConnectorTask.id.desc())
+    if project_id is not None:
+        query = query.filter(ConnectorTask.project_id == project_id)
+    tasks = query.limit(limit).all()
+    return [
+        {
+            "task_id": task.task_id,
+            "project_id": task.project_id,
+            "scene_id": task.scene_id,
+            "scene_order": task.scene_order,
+            "status": task.status,
+            "phase": task.phase,
+            "progress": task.progress or 0,
+            "progress_message": task.progress_message or "",
+            "media_type": task.media_type or "image",
+            "aspect": task.aspect or "16:9",
+            "model": task.model or "",
+            "attempts": task.attempts or 0,
+            "error": task.error or "",
+            "created_at": task.created_at.isoformat() if task.created_at else None,
+            "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+        }
+        for task in tasks
+    ]
+
+
 @router.get("/tasks")
-def connector_tasks(worker_id: str, project_id: int, db: Session = Depends(get_db)):
+def connector_tasks(
+    worker_id: str,
+    project_id: int,
+    x_viu_flow_token: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+
     """Extension poll task chưa hoàn thành cho một project.
     - Project đang PAUSED → trả [].
     - Task assigned/in_progress mà worker chủ nhận CHƯA heartbeat trong LEASE_SECONDS →
       lease hết hạn, task được trả về pending cho worker khác/worker tái kết nối.
     - completed/cancelled task KHÔNG trả lại; failed hết attempts cũng không."""
+    _require_connector_token(x_viu_flow_token)
     project = db.query(Project).get(project_id)
     if not project:
         raise HTTPException(404, "project không tồn tại")
@@ -256,33 +340,44 @@ def connector_tasks(worker_id: str, project_id: int, db: Session = Depends(get_d
             "scene_id": t.scene_id,
             "scene_order": t.scene_order,
             "project_id": t.project_id,
+            "project_name": project.name,
             "prompt": t.prompt,
             "style_prompt": (scene.style_prompt if scene else None),
+            "transition_description": (scene.transition_description if scene else None),
             "media_type": t.media_type or "image",
             "aspect": t.aspect or getattr(project, "aspect_ratio", None) or "16:9",
             "model": t.model or "Nano Banana 2",
             "attempts": t.attempts or 0,
             "max_attempts": MAX_ATTEMPTS,
+            "factory_session_id": t.factory_session_id or "",
+            "stage": t.stage or "image",
+            "reference_url": f"http://{HOST}:{PORT}/api/connector/tasks/{t.task_id}/reference" if (t.stage == "video" and scene and (scene.image_path or scene.media_path)) else None,
         })
     db.commit()
     return result
 
 
 @router.get("/tasks/next")
-def connector_next_task(worker_id: str, db: Session = Depends(get_db)):
-    """Trả một task kế tiếp trên mọi project cho Extension.
-
-    Extension không giữ project_id riêng; backend là nguồn sự thật và chọn task
-    theo thứ tự cập nhật. Lease/idempotency vẫn dùng chung với /tasks.
-    """
+def connector_next_task(
+    worker_id: str,
+    x_viu_flow_token: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    """Trả task kế tiếp của project Factory active cho Extension."""
+    _require_connector_token(x_viu_flow_token)
+    active = db.query(FlowConnection).order_by(FlowConnection.id.desc()).first()
+    if not active or active.factory_state not in {"ready", "processing", "generate_image", "generate_video"} or not active.factory_project_id:
+        return {}
     project_ids = [
         row[0]
         for row in (
             db.query(ConnectorTask.project_id)
             .filter(
+                ConnectorTask.project_id == active.factory_project_id,
                 ConnectorTask.status.in_(["pending", "assigned", "in_progress", "retrying"]),
                 ConnectorTask.attempts < 3,
             )
+
             .order_by(ConnectorTask.updated_at.asc(), ConnectorTask.id.asc())
             .distinct()
             .all()
@@ -356,20 +451,36 @@ def media_tasks_state(project_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/tasks/{task_id}/progress")
-def connector_task_progress(task_id: str, payload: dict, db: Session = Depends(get_db)):
+def connector_task_progress(
+    task_id: str,
+    payload: dict,
+    x_viu_flow_token: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    _require_connector_token(x_viu_flow_token)
     t = db.query(ConnectorTask).filter(ConnectorTask.task_id == task_id).first()
     if not t:
         raise HTTPException(404, "task không tồn tại")
+    t.status = "in_progress"
     t.phase = str(payload.get("phase") or "")
     t.progress = int(payload.get("percent") or 0)
     t.progress_message = str(payload.get("message") or "")
     t.updated_at = datetime.utcnow()
+    phase = t.phase.lower()
+    factory_state = "generate_video" if "video" in phase else "generate_image" if "image" in phase else "processing"
+    set_factory_state(db, factory_state, project_id=t.project_id, session_id=t.factory_session_id or None, commit=False)
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "factory_state": factory_state}
 
 
 @router.post("/tasks/{task_id}/complete")
-def connector_task_complete(task_id: str, payload: dict, db: Session = Depends(get_db)):
+def connector_task_complete(
+    task_id: str,
+    payload: dict,
+    x_viu_flow_token: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    _require_connector_token(x_viu_flow_token)
     """Extension báo hoàn thành + file thật (hoặc đường dẫn file đã tải).
     Backend xác minh file bằng FFprobe/kiểm tra header, chép vào thư mục scene,
     gắn media_path đúng scene_id. Cảnh lỗi KHÔNG bị chạy lại."""
@@ -380,7 +491,7 @@ def connector_task_complete(task_id: str, payload: dict, db: Session = Depends(g
         raise HTTPException(400, "task không gắn scene")
 
     local_path = str(payload.get("local_path") or "").strip()
-    media_type_hint = str(payload.get("media_type") or "image").lower()
+    media_type_hint = str(payload.get("media_type") or t.media_type or "image").lower()
     bytes_size = int(payload.get("bytes") or 0)
 
     # 1. Xác minh file THẬT — phát hiện định dạng qua ffprobe/magic bytes,
@@ -406,14 +517,14 @@ def connector_task_complete(task_id: str, payload: dict, db: Session = Depends(g
     os.makedirs(proj_dir, exist_ok=True)
     if media_type == "video":
         ext = "mp4"
-        dest_name = f"scene_{t.scene_id:03d}_flow.mp4"
+        dest_name = f"scene_{t.scene_id:03d}_flow_video.mp4"
         dest = os.path.join(proj_dir, dest_name)
         if os.path.isfile(dest):
             shutil.copy2(dest, dest + ".bak")
         shutil.copy2(local_path, dest)
     else:
         real_ext = info.get("real_ext", ".png")
-        dest_name = f"scene_{t.scene_id:03d}_flow" + real_ext
+        dest_name = f"scene_{t.scene_id:03d}_flow_image" + real_ext
         dest = os.path.join(proj_dir, dest_name)
         if os.path.isfile(dest):
             shutil.copy2(dest, dest + ".bak")
@@ -426,16 +537,42 @@ def connector_task_complete(task_id: str, payload: dict, db: Session = Depends(g
         else:
             shutil.copy2(local_path, dest)
 
-    # 3. Gắn vào scene
+    # 3. Gắn asset vào scene; media_path luôn trỏ asset mới nhất để UI/library dùng ngay.
     scene.media_path = dest
     scene.media_type = media_type
+    if media_type == "image":
+        scene.image_path = dest
+    else:
+        scene.video_path = dest
     scene.status = "media_ready"
     scene.error_message = None
     t.status = "completed"
     t.file_path = dest
-    t.result_json = json.dumps({"source": "flow", "verified": info, "attempts": t.attempts}, ensure_ascii=False)
+    t.result_json = json.dumps({"source": "flow", "stage": t.stage or media_type, "verified": info, "attempts": t.attempts}, ensure_ascii=False)
     t.updated_at = datetime.utcnow()
+
+    # Factory Mode nối ảnh → video theo cùng scene và session, tuần tự để prompt video có ảnh tham chiếu thật.
+    connection = db.query(FlowConnection).order_by(FlowConnection.id.desc()).first()
+    if media_type == "image" and t.stage == "image" and connection and connection.factory_session_id == t.factory_session_id and connection.factory_mode and connection.include_video:
+        connection.factory_stage = "video"
+        connection.factory_state = "ready"
+        db.add(ConnectorTask(
+            task_id=str(uuid.uuid4()),
+            project_id=t.project_id,
+            scene_id=t.scene_id,
+            scene_order=t.scene_order,
+            status="pending",
+            stage="video",
+            attempts=0,
+            prompt=t.prompt,
+            media_type="video",
+            aspect=t.aspect,
+            model="Veo 3.1 Lite",
+            factory_session_id=t.factory_session_id,
+        ))
     db.commit()
+    _sync_pipeline_state(db, t.project_id)
+    refresh_task_state(db, t.project_id)
     return {
         "ok": True,
         "scene_id": t.scene_id,
@@ -447,7 +584,13 @@ def connector_task_complete(task_id: str, payload: dict, db: Session = Depends(g
 
 
 @router.post("/tasks/{task_id}/fail")
-def connector_task_fail(task_id: str, payload: dict, db: Session = Depends(get_db)):
+def connector_task_fail(
+    task_id: str,
+    payload: dict,
+    x_viu_flow_token: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    _require_connector_token(x_viu_flow_token)
     """Extension báo task lỗi — cảnh sẽ được retry riêng khi backend tạo lại task,
     KHÔNG chạy lại cảnh đã hoàn thành."""
     t = db.query(ConnectorTask).filter(ConnectorTask.task_id == task_id).first()
@@ -468,15 +611,37 @@ def connector_task_fail(task_id: str, payload: dict, db: Session = Depends(get_d
             scene.error_message = t.error
             scene.status = "media_failed"
     db.commit()
+    _sync_pipeline_state(db, t.project_id)
+    refresh_task_state(db, t.project_id)
     return {"ok": True, "task_id": task_id, "attempts": t.attempts}
 
 
-from fastapi import UploadFile
+@router.get("/tasks/{task_id}/reference")
+def connector_task_reference(
+    task_id: str,
+    x_viu_flow_token: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    _require_connector_token(x_viu_flow_token)
+    task = db.query(ConnectorTask).filter(ConnectorTask.task_id == task_id).first()
+    if not task or not task.scene_id:
+        raise HTTPException(404, "task không tồn tại hoặc không gắn scene")
+    scene = db.query(Scene).get(task.scene_id)
+    reference = (scene.image_path if scene else "") or (scene.media_path if scene else "")
+    if not reference or not os.path.isfile(reference):
+        raise HTTPException(404, "Chưa có ảnh tham chiếu đã xác minh cho video stage")
+    media_type = "image/jpeg" if reference.lower().endswith((".jpg", ".jpeg")) else "image/webp" if reference.lower().endswith(".webp") else "image/png"
+    return FileResponse(reference, media_type=media_type, filename=os.path.basename(reference))
 
 
 @router.post("/tasks/{task_id}/ingest")
-async def connector_task_ingest(task_id: str, file: UploadFile,
-                                db: Session = Depends(get_db)):
+async def connector_task_ingest(
+    task_id: str,
+    file: UploadFile,
+    x_viu_flow_token: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    _require_connector_token(x_viu_flow_token)
     """Extension upload file THẬT dạng multipart (vd: file trong
     Downloads/ViuAutoStudio/{task_id}/ hoặc Blob). Backend xác minh bằng
     ffprobe/magic bytes → lưu vào thư mục project → gắn đúng scene_id.
@@ -526,6 +691,8 @@ async def connector_task_ingest(task_id: str, file: UploadFile,
         t.result_json = json.dumps({"source": "flow", "verified": info, "attempts": t.attempts}, ensure_ascii=False)
         t.updated_at = datetime.utcnow()
         db.commit()
+        _sync_pipeline_state(db, t.project_id)
+        refresh_task_state(db, t.project_id)
         return {
             "ok": True,
             "scene_id": t.scene_id,

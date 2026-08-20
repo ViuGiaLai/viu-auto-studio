@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Image as ImageIcon, Video, Plus } from "lucide-react"
+import { Image as ImageIcon, Video, Plus, Trash2 } from "lucide-react"
 import { api, mediaUrl } from "@/services/api"
 import { toast } from "@/hooks/use-toast"
 import { Button } from "@/components/design-system"
@@ -18,6 +18,7 @@ export default function LibraryPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [fileInput, setFileInput] = useState<HTMLInputElement | null>(null)
+  const [deletingPath, setDeletingPath] = useState<string | null>(null)
 
   const load = (q?: string) => {
     api
@@ -54,6 +55,20 @@ export default function LibraryPage() {
   const kbStr = (kb: number) =>
     kb > 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`
 
+  const remove = async (item: LibraryItem) => {
+    if (!window.confirm(`Xóa file ${item.name} khỏi thư viện? File đang được scene/project sử dụng sẽ bị backend từ chối.`)) return
+    setDeletingPath(item.path)
+    try {
+      await api.libraryDelete(item.path)
+      toast({ title: "Đã xóa media", description: item.name })
+      load(search)
+    } catch (e) {
+      toast({ title: "Không thể xóa media", description: String(e), variant: "destructive" })
+    } finally {
+      setDeletingPath(null)
+    }
+  }
+
   return (
     <div className="min-h-full space-y-6 p-8">
       <div className="flex items-end justify-between">
@@ -85,7 +100,10 @@ export default function LibraryPage() {
         accept="image/*,video/*,audio/*"
         multiple
         className="hidden"
-        onChange={(e) => upload(e.target.files)}
+        onChange={(e) => {
+          void upload(e.target.files)
+          e.currentTarget.value = ""
+        }}
       />
 
       {loading ? (
@@ -111,10 +129,21 @@ export default function LibraryPage() {
       ) : (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-6">
           {items.map((item) => (
-            <div
-              key={item.path}
-              className="group relative overflow-hidden rounded-xl border border-white/[0.06] bg-[#141d22] transition-all duration-200 hover:border-amber-500/30 hover:shadow-lg hover:shadow-amber-500/10"
-            >
+                          <div
+                key={item.path}
+                className="group relative overflow-hidden rounded-xl border border-white/[0.06] bg-[#141d22] transition-all duration-200 hover:border-amber-500/30 hover:shadow-lg hover:shadow-amber-500/10"
+              >
+                <button
+                  type="button"
+                  aria-label={`Xóa ${item.name}`}
+                  title="Xóa khỏi thư viện"
+                  disabled={deletingPath === item.path}
+                  onClick={() => void remove(item)}
+                  className="absolute right-2 top-2 z-10 rounded-md bg-black/70 p-1.5 text-slate-300 opacity-0 transition-opacity hover:bg-red-500/80 hover:text-white group-hover:opacity-100 disabled:opacity-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+
               {item.media_type === "video" ? (
                 <video src={mediaUrl(item.path)} className="aspect-video w-full object-cover" muted />
               ) : (

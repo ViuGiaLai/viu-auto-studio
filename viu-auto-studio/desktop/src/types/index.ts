@@ -41,12 +41,23 @@ export interface StudioSettings {
   engine_mode: string
   engine_installed: boolean
   ai_provider: string
+  ai_model: string
+  ai_api_key_set: boolean
+  ai_api_key?: string
   deepseek_api_key: string
+  deepseek_api_key_set: boolean
   gemini_model: string
   tts_provider: string
   tts_voice: string
   output_folder: string
   display_language: string
+  production_language: string
+  auto_refresh: boolean
+  dark_mode: boolean
+  telegram_enabled: boolean
+  telegram_configured: boolean
+  telegram_bot_token?: string
+  telegram_chat_id?: string
   flow_logged_in: boolean
 }
 
@@ -130,8 +141,11 @@ export interface Scene {
   narration: string
   visual_prompt: string
   style_prompt: string
+  transition_description: string
   negative_prompt: string
   media_path: string
+  image_path?: string | null
+  video_path?: string | null
   media_type: string
   audio_path: string
   subtitle_text: string

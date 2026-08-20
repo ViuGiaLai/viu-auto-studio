@@ -169,12 +169,18 @@ export const publishApi = {
 // ---------------------------------------------------------------------------
 export const charactersGlobalApi = {
   list: () => req<CharacterGlobalRead[]>(`/characters-global`),
-  create: (payload: { name: string; code?: string; role?: string; appearance?: string; negative_prompt?: string; identity_prompt?: string; face_lock?: number; outfit_lock?: number; seed?: number | null }) =>
+    create: (payload: { name: string; code?: string; role?: string; appearance?: string; negative?: string; identity_prompt?: string; face_lock?: number; outfit_lock?: number; seed?: number | null }) =>
     req<{ character_id: number }>(`/characters-global`, {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  update: (charId: number, payload: { name: string; code?: string; role?: string; appearance?: string; negative?: string; identity_prompt?: string; face_lock?: number; outfit_lock?: number; seed?: string }) =>
+    req<{ ok: boolean; character_id: number }>(`/characters-global/${charId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
   get: (charId: number) => req<CharacterGlobalRead>(`/characters-global/${charId}`),
+
   addRef: (charId: number, file_path: string, ref_kind: string) =>
     req(`/characters-global/${charId}/refs`, {
       method: "POST",
@@ -197,6 +203,7 @@ export const flowApi = {
     req(`/flow-connection/heartbeat`, { method: "POST", body: JSON.stringify(payload) }),
   newPairingCode: () =>
     req<FlowConnectionRead>(`/flow-connection/new-pairing-code`, { method: "POST" }),
+  recentTasks: (limit = 8) => req<FlowTaskRead[]>(`/connector/tasks/recent?limit=${limit}`),
 }
 
 // ---------------------------------------------------------------------------
@@ -384,13 +391,44 @@ export interface FlowConnectionRead {
   google_account?: string
   profile_name?: string
   status: string
+  factory_state?: "waiting_login" | "ready" | "processing" | "generate_image" | "generate_video" | "completed" | "failed" | string
+  factory_mode?: boolean
+  include_video?: boolean
+  factory_stage?: "image" | "video" | string
+  factory_project_id?: number | null
+  factory_session_id?: string
+  browser_profile_path?: string
+  last_error?: string
+  last_state_at?: string
   paired_at?: string
   pairing_code?: string
   pairing_expires_at?: string
   heartbeat_at?: string
+
+}
+
+export interface FlowTaskRead {
+  task_id: string
+  project_id: number
+  scene_id?: number | null
+  scene_order?: number
+  status: string
+  phase?: string
+  progress?: number
+  progress_message?: string
+  media_type?: string
+  aspect?: string
+  model?: string
+  factory_session_id?: string
+  transition_description?: string
+  attempts?: number
+  error?: string
+  created_at?: string | null
+  updated_at?: string | null
 }
 
 export interface AnalyticsRead {
+
   range_days?: number
   projects: { total: number; completed: number; in_progress: number; failed: number }
   scenes: { total: number; media_ready: number }

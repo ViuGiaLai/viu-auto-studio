@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
-import { Settings as SettingsIcon, Mic, Play, RefreshCw, AlertTriangle, CheckCircle2, KeyRound, Image, Zap, ExternalLink } from "lucide-react"
-import { api, openExternalUrl } from "@/services/api"
+import { Settings as SettingsIcon, Play, RefreshCw, AlertTriangle, CheckCircle2, KeyRound, Image, Zap, ExternalLink, FolderOpen, Send, ShieldCheck } from "lucide-react"
+import { api, openExternalUrl, selectDirectory } from "@/services/api"
+
 import { globalApi } from "@/services/pages-api"
 import { toast } from "@/hooks/use-toast"
 import type { TTSConfig, TTSVoice } from "@/types"
@@ -65,7 +66,11 @@ export default function SettingsPage() {
   const [settingsDraft, setSettingsDraft] = useState<Record<string, unknown>>({})
   const [settingsSaved, setSettingsSaved] = useState(false)
   const [engineStatus, setEngineStatus] = useState<"installed" | "missing">("installed")
+  const [diagnostics, setDiagnostics] = useState<Awaited<ReturnType<typeof api.systemDiagnose>> | null>(null)
+  const [telegramTesting, setTelegramTesting] = useState(false)
+  const [telegramSending, setTelegramSending] = useState(false)
   const [sysStats, setSysStats] = useState<{
+
     cpu_percent: number
     ram_total_gb: number
     ram_percent: number
@@ -92,12 +97,17 @@ export default function SettingsPage() {
       const vs = await api.ttsListVoices(cfg?.provider)
       const global = await globalApi.getSettings().catch(() => ({ settings: {} as Record<string, unknown> }))
       setGlobalSettings(global.settings || {})
+
       api.ffmpegCheck()
-        .then((c) => setEngineStatus(c.ffmpeg ? "installed" : "missing"))
-        .catch(() => {})
+        .then((c) => setEngineStatus(c.ffmpeg && c.ffprobe ? "installed" : "missing"))
+        .catch(() => setEngineStatus("missing"))
+      api.systemDiagnose()
+        .then(setDiagnostics)
+        .catch(() => setDiagnostics(null))
       api.systemStats()
         .then(setSysStats)
         .catch(() => {})
+
       api.labsGetConfig()
         .then((c) => {
           setLabsEnabled(Boolean(c.labs_enabled ?? c.enabled))
@@ -237,8 +247,49 @@ export default function SettingsPage() {
     }
   }
 
+  const chooseOutputFolder = async () => {
+    const folder = await selectDirectory()
+    if (!folder) return
+    setDirty(true)
+    setSettingsDraft((current) => ({ ...current, output_folder: folder }))
+  }
+
+  const selectEngineMode = (mode: string) => {
+    setDirty(true)
+    setSettingsDraft((current) => ({ ...current, engine_mode: mode }))
+  }
+
+  const testTelegram = async (sendMessage: boolean) => {
+    const botToken = String(settingsDraft.telegram_bot_token ?? "").trim()
+    const chatId = String(settingsDraft.telegram_chat_id ?? "").trim()
+    if (!botToken || !chatId) {
+      toast({ title: "Thiếu thông tin Telegram", description: "Cần nhập Bot Token và Chat ID trước.", variant: "destructive" })
+      return
+    }
+    if (sendMessage) setTelegramSending(true)
+    else setTelegramTesting(true)
+    try {
+      const res = await api.settingsTelegramTest({
+        bot_token: botToken,
+        chat_id: chatId,
+        send_message: sendMessage,
+        message: "Viu Auto Studio: kết nối Telegram hoạt động.",
+      })
+      toast({
+        title: sendMessage ? "Đã gửi tin nhắn thử" : "Bot Telegram hợp lệ",
+        description: res.bot?.username ? `@${res.bot.username}` : "Kết nối Telegram đã được xác nhận.",
+      })
+    } catch (e) {
+      toast({ title: "Telegram chưa sẵn sàng", description: String(e), variant: "destructive" })
+    } finally {
+      setTelegramTesting(false)
+      setTelegramSending(false)
+    }
+  }
+
   const preview = async () => {
     if (!config) return
+
     setPreviewing(true)
     try {
       const res = await api.ttsPreview(customText, { speed: config.speed, volume: config.volume })
@@ -263,11 +314,14 @@ export default function SettingsPage() {
         ...globalSettings,
         operator_name: String(globalSettings.operator_name || ""),
         operator_email: String(globalSettings.operator_email || ""),
-        language: settingsDraft.language,
+        language: settingsDraft.display_language ?? settingsDraft.language,
         production_language: settingsDraft.production_language,
         auto_refresh: settingsDraft.auto_refresh,
+
+
         dark_mode: settingsDraft.dark_mode,
       }
+
       await globalApi.updateSettings(mergedGlobal)
       setGlobalSettings(mergedGlobal)
       setOperatorProfile(String(mergedGlobal.operator_name || ""), String(mergedGlobal.operator_email || ""))
@@ -282,9 +336,9 @@ export default function SettingsPage() {
   }
 
   const discard = () => {
-    setSettingsDraft(settings)
+    void loadAll()
     setDirty(false)
-    toast({ title: "Đã hoàn tác thay đổi" })
+    toast({ title: "Đã tải lại cấu hình đã lưu" })
   }
 
   if (loading) {
@@ -360,8 +414,9 @@ export default function SettingsPage() {
               <div className="space-y-1.5">
                 <Label>Ngôn ngữ giao diện</Label>
                 <Select
-                  value={String(settingsDraft.language ?? "vi")}
-                  onValueChange={(v) => { setDirty(true); setSettingsDraft((s) => ({ ...s, language: v })) }}
+                  value={String(settingsDraft.display_language ?? "vi")}
+                  onValueChange={(v) => { setDirty(true); setSettingsDraft((s) => ({ ...s, display_language: v })) }}
+
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue />
@@ -387,9 +442,21 @@ export default function SettingsPage() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2 rounded-md border p-3 sm:col-span-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium">Thư mục dữ liệu/output</div>
+                    <div className="truncate text-xs text-muted-foreground">{String(settingsDraft.output_folder ?? "Chưa chọn thư mục")}</div>
+                  </div>
+                  <Button type="button" variant="outline" size="sm" className="shrink-0 gap-1.5" onClick={chooseOutputFolder}>
+                    <FolderOpen className="h-3.5 w-3.5" /> Chọn thư mục
+                  </Button>
+                </div>
+              </div>
               <div className="flex items-center justify-between rounded-md border p-3">
                 <div>
                   <div className="text-sm font-medium">Tự động cập nhật danh sách việc</div>
+
                   <div className="text-xs text-muted-foreground">Tự làm mới hàng đợi mỗi 5 giây</div>
                 </div>
                 <Switch
@@ -419,39 +486,73 @@ export default function SettingsPage() {
                 <h3 className="text-base font-semibold text-slate-100">🔧 Bộ Công cụ Viu Studio</h3>
                 <span className="text-xs text-slate-500">{engineStatus === "installed" ? "Đã cài đặt" : "Chưa cài đặt"}</span>
               </div>
-              <p className="mb-5 text-sm text-slate-500">Tải trọn bộ công cụ cần thiết để xử lý video, âm thanh và phụ đề trên máy của bạn.</p>
+              <p className="mb-5 text-sm text-slate-500">Chọn profile FFmpeg thật cho các lần render tiếp theo. Công cụ được kiểm tra tại máy; ứng dụng không tải gói hệ thống ngầm.</p>
+
               <div className="grid gap-4 sm:grid-cols-3">
-                <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
-                  <div className="text-sm font-semibold text-slate-100">Cơ bản</div>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={String(settingsDraft.engine_mode ?? "balanced") === "basic"}
+                  onClick={() => selectEngineMode("basic")}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") selectEngineMode("basic") }}
+                  className={cn("cursor-pointer rounded-xl border p-4 transition-colors", String(settingsDraft.engine_mode ?? "balanced") === "basic" ? "border-amber-500/50 bg-amber-500/[0.08]" : "border-white/[0.06] bg-white/[0.02] hover:border-white/20")}
+                >
+                  <div className="flex items-center justify-between gap-2"><div className="text-sm font-semibold text-slate-100">Cơ bản</div>{String(settingsDraft.engine_mode ?? "balanced") === "basic" && <span className="text-[10px] font-semibold text-amber-300">Đang chọn</span>}</div>
+
                   <div className="mb-2 text-xs text-amber-400">Máy yếu / laptop CPU</div>
                   <p className="mb-4 text-xs text-slate-400">Phù hợp máy cấu hình thấp, ưu tiên nhẹ và hoạt động ổn định.</p>
-                  <div className="text-xs text-slate-500">Dung lượng: <span className="font-semibold text-slate-300">Nhỏ (~175 MB)</span></div>
+                  <div className="text-xs text-slate-500">FFmpeg: <span className="font-semibold text-slate-300">veryfast · CRF 24</span></div>
+
                 </div>
-                <div className="relative rounded-xl border border-amber-500/40 bg-amber-500/[0.06] p-4">
+                <div
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={String(settingsDraft.engine_mode ?? "balanced") === "balanced"}
+                  onClick={() => selectEngineMode("balanced")}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") selectEngineMode("balanced") }}
+                  className={cn("relative cursor-pointer rounded-xl border p-4 transition-colors", String(settingsDraft.engine_mode ?? "balanced") === "balanced" ? "border-amber-500/50 bg-amber-500/[0.08]" : "border-white/[0.06] bg-white/[0.02] hover:border-white/20")}
+                >
                   <span className="absolute right-3 top-3 rounded-md bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold tracking-wider text-amber-300">KHUYẾN NGHỊ</span>
-                  <div className="text-sm font-semibold text-slate-100">Cân bằng</div>
+                  <div className="flex items-center justify-between gap-2"><div className="text-sm font-semibold text-slate-100">Cân bằng</div>{String(settingsDraft.engine_mode ?? "balanced") === "balanced" && <span className="mr-24 text-[10px] font-semibold text-amber-300">Đang chọn</span>}</div>
+
                   <div className="mb-2 text-xs text-amber-400">Máy trung bình / Đa số</div>
                   <p className="mb-4 text-xs text-slate-400">Cân bằng tốt nhất giữa tốc độ nhận diện, chất lượng phụ đề và dung lượng bộ nhớ.</p>
-                  <div className="text-xs text-slate-500">Dung lượng: <span className="font-semibold text-slate-300">Vừa (~500 MB)</span></div>
+                  <div className="text-xs text-slate-500">FFmpeg: <span className="font-semibold text-slate-300">medium · CRF 21</span></div>
+
                 </div>
-                <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
-                  <div className="text-sm font-semibold text-slate-100">Hiệu năng cao</div>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={String(settingsDraft.engine_mode ?? "balanced") === "high"}
+                  onClick={() => selectEngineMode("high")}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") selectEngineMode("high") }}
+                  className={cn("cursor-pointer rounded-xl border p-4 transition-colors", String(settingsDraft.engine_mode ?? "balanced") === "high" ? "border-amber-500/50 bg-amber-500/[0.08]" : "border-white/[0.06] bg-white/[0.02] hover:border-white/20")}
+                >
+                  <div className="flex items-center justify-between gap-2"><div className="text-sm font-semibold text-slate-100">Hiệu năng cao</div>{String(settingsDraft.engine_mode ?? "balanced") === "high" && <span className="text-[10px] font-semibold text-amber-300">Đang chọn</span>}</div>
+
                   <div className="mb-2 text-xs text-amber-400">Máy khỏe / RAM lớn</div>
                   <p className="mb-4 text-xs text-slate-400">Tận dụng tối đa phần cứng mạnh để đạt chất lượng xử lý âm thanh và phụ đề cao nhất.</p>
-                  <div className="text-xs text-slate-500">Dung lượng: <span className="font-semibold text-slate-300">Lớn (~1.5 GB)</span></div>
+                  <div className="text-xs text-slate-500">FFmpeg: <span className="font-semibold text-slate-300">slow · CRF 18</span></div>
+
                 </div>
               </div>
               <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-                <div className="text-xs text-slate-400">ℹ Sử dụng chế độ tương thích cao (chạy trên CPU)</div>
+                <div className="text-xs text-slate-400">ℹ {diagnostics ? `${diagnostics.cpu} · ${diagnostics.ram_gb} GB RAM` : "Đang đọc thông số máy…"}</div>
+
                 <div className="flex items-center gap-2">
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={async () => {
-                      const res = await api.ffmpegCheck().catch(() => null)
-                      if (res?.ffmpeg) {
+                      const [res] = await Promise.all([
+                        api.ffmpegCheck().catch(() => null),
+                        api.systemDiagnose().then(setDiagnostics).catch(() => null),
+                      ])
+                      if (res?.ffmpeg && res?.ffprobe) {
+
                         setEngineStatus("installed")
-                        toast({ title: "FFmpeg đã cài đặt và sẵn sàng", description: res.version || "" })
+                        toast({ title: "FFmpeg và FFprobe đã sẵn sàng", description: res.version || "" })
+
                       } else {
                         setEngineStatus("missing")
                         toast({ title: "FFmpeg chưa tìm thấy", variant: "destructive" })
@@ -460,9 +561,16 @@ export default function SettingsPage() {
                   >
                     Kiểm tra lại
                   </Button>
-                  <Button size="sm" disabled className="bg-gradient-action">
-                    {engineStatus === "installed" ? "Tải lại Bộ Công Cụ" : "Tải Bộ Công Cụ"}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5"
+                    onClick={() => openExternalUrl("https://ffmpeg.org/download.html")}
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" /> Hướng dẫn FFmpeg
                   </Button>
+
                 </div>
               </div>
             </div>
@@ -471,23 +579,55 @@ export default function SettingsPage() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
                   <div className="mb-1 flex items-center justify-between">
-                    <div className="text-sm font-semibold text-slate-100">▷ Nhịp video được phép sử dụng</div>
-                    <span className="text-xs font-semibold text-emerald-400">Sẵn sàng ✔</span>
+                    <div className="text-sm font-semibold text-slate-100">Nhập video từ nguồn được hỗ trợ</div>
+                    <span className={cn("text-xs font-semibold", diagnostics?.yt_dlp_available ? "text-emerald-400" : "text-amber-400")}>
+                      {diagnostics ? (diagnostics.yt_dlp_available ? "Sẵn sàng" : "Chưa cài") : "Đang kiểm tra"}
+                    </span>
+
                   </div>
                   <p className="mb-4 text-xs text-slate-400">Công cụ nhập video từ nguồn được hỗ trợ. Chỉ dùng với video bạn sở hữu, quản lý hoặc có giấy phép phù hợp; tuân thủ điều khoản của nền tảng nguồn.</p>
-                  <Button variant="outline" disabled title="Công cụ đã sẵn sàng" className="w-full text-sm text-emerald-400 border-emerald-400/30">Đã Cài Đặt ✔</Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full gap-1.5 text-sm"
+                    onClick={() => openExternalUrl("https://github.com/yt-dlp/yt-dlp#installation")}
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" /> Hướng dẫn yt-dlp
+                  </Button>
+
                 </div>
                 <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
-                  <div className="mb-1 text-sm font-semibold text-slate-100">♫ Demucs — tách giọng / nhạc nền</div>
-                  <p className="mb-4 text-xs text-slate-400">Tách giọng &amp; nhạc nền gốc (cho AI Movie Recap). <span className="text-amber-400">NẶNG</span> (kéo theo PyTorch ~2GB). Dùng lại PyTorch của OmniVoice nếu đã cài.</p>
-                  <Button className="w-full text-sm" disabled title="Demucs chưa được đóng gói trong bản này">Demucs chưa khả dụng</Button>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <div className="text-sm font-semibold text-slate-100">♫ Demucs — tách giọng / nhạc nền</div>
+                    <span className={cn("text-xs font-semibold", diagnostics?.demucs_available ? "text-emerald-400" : "text-amber-400")}>
+                      {diagnostics ? (diagnostics.demucs_available ? "Sẵn sàng" : "Chưa cài") : "Đang kiểm tra"}
+                    </span>
+                  </div>
+                  <p className="mb-4 text-xs text-slate-400">Tách giọng và nhạc nền thật bằng Demucs. Công cụ cần PyTorch và có thể chiếm nhiều dung lượng.</p>
+                  <Button type="button" variant="outline" className="w-full gap-1.5 text-sm" onClick={() => openExternalUrl("https://github.com/facebookresearch/demucs#installation")}>
+                    <ExternalLink className="h-3.5 w-3.5" /> Hướng dẫn cài Demucs
+                  </Button>
+
                 </div>
               </div>
             </div>
             <div className="vas-card p-5">
               <h3 className="mb-4 text-base font-semibold text-slate-100">Trạng thái công cụ hiện tại</h3>
               <EngineCheckRow />
+              {diagnostics && (
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <DiagnosticItem label="Python" value={diagnostics.python_runtime} ok />
+                  <DiagnosticItem label="FFmpeg" value={diagnostics.ffmpeg_version || "Chưa có"} ok={Boolean(diagnostics.ffmpeg_version)} />
+                  <DiagnosticItem label="FFprobe" value={diagnostics.ffprobe_version || "Chưa có"} ok={Boolean(diagnostics.ffprobe_version)} />
+                  <DiagnosticItem label="Ổ đĩa trống" value={`${diagnostics.disk_free_gb} GB`} ok={diagnostics.disk_free_gb > 2} />
+                  <DiagnosticItem label="Thư mục dự án" value={diagnostics.write_permission_projects ? "Có quyền ghi" : "Không ghi được"} ok={diagnostics.write_permission_projects} />
+                  <DiagnosticItem label="App data" value={diagnostics.write_permission_app_data ? "Có quyền ghi" : "Không ghi được"} ok={diagnostics.write_permission_app_data} />
+                  <DiagnosticItem label="Demucs" value={diagnostics.demucs_available ? "Sẵn sàng" : "Chưa cài"} ok={diagnostics.demucs_available} />
+                  <DiagnosticItem label="yt-dlp" value={diagnostics.yt_dlp_available ? "Sẵn sàng" : "Chưa cài"} ok={diagnostics.yt_dlp_available} />
+                </div>
+              )}
               <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-slate-300">
+
                 💡 FFmpeg được dùng thật cho toàn bộ pipeline: dựng video, lồng tiếng, nhúng phụ đề ASS và xuất H.264/AAC.
               </div>
             </div>
@@ -525,14 +665,21 @@ export default function SettingsPage() {
                 />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
-                <Label>API Key</Label>
+                                <div className="flex items-center justify-between gap-2">
+                  <Label>API Key</Label>
+                  <span className={cn("text-xs", Boolean(settings.ai_api_key_set) ? "text-emerald-400" : "text-slate-500")}>
+                    {Boolean(settings.ai_api_key_set) ? "Đã có key đã lưu" : "Chưa cấu hình"}
+                  </span>
+                </div>
                 <Input
+
                   type="password"
                   placeholder="Nhập API key mới (để trống nếu giữ nguyên)"
                   value={String(settingsDraft.ai_api_key ?? "")}
                   onChange={(e) => { setDirty(true); setSettingsDraft((s) => ({ ...s, ai_api_key: e.target.value })) }}
                 />
-                <p className="text-xs text-muted-foreground">Key đã lưu sẽ được che khi hiển thị.</p>
+                                <p className="text-xs text-muted-foreground">Key đã lưu không được trả về frontend. Nhập key mới chỉ khi muốn thay thế.</p>
+
               </div>
             </div>
           </div>
@@ -851,8 +998,23 @@ export default function SettingsPage() {
                   onCheckedChange={(v) => { setDirty(true); setSettingsDraft((s) => ({ ...s, telegram_enabled: v })) }}
                 />
               </div>
+              <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
+                <Button type="button" variant="outline" size="sm" className="gap-1.5" disabled={telegramTesting || telegramSending} onClick={() => void testTelegram(false)}>
+                  <ShieldCheck className={cn("h-3.5 w-3.5", telegramTesting && "animate-pulse")} />
+                  {telegramTesting ? "Đang kiểm tra…" : "Kiểm tra bot"}
+                </Button>
+                <Button type="button" size="sm" className="gap-1.5 bg-gradient-to-r from-[#d9940a] to-[#faaa02] text-white" disabled={telegramTesting || telegramSending} onClick={() => void testTelegram(true)}>
+                  <Send className={cn("h-3.5 w-3.5", telegramSending && "animate-pulse")} />
+                  {telegramSending ? "Đang gửi…" : "Gửi tin nhắn thử"}
+                </Button>
+                <span className={cn("text-xs", Boolean(settings.telegram_configured) ? "text-emerald-400" : "text-slate-500")}>
+                  {Boolean(settings.telegram_configured) ? "Đã lưu cấu hình Telegram" : "Chưa có cấu hình đã lưu"}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground sm:col-span-2">Kiểm tra bot chỉ gọi Telegram getMe; nút gửi tin nhắn thử là thao tác gửi thật đến Chat ID đã nhập.</p>
             </div>
           </div>
+
         </TabsContent>
 
         {/* Đăng bài & Lập lịch */}
@@ -1007,7 +1169,20 @@ function EngineCheckRow() {
   )
 }
 
+function DiagnosticItem({ label, value, ok }: { label: string; value: string; ok: boolean }) {
+  return (
+    <div className="rounded-md border border-white/[0.06] bg-white/[0.02] p-3">
+      <div className="text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="mt-1 flex items-center gap-1.5 text-xs font-medium text-slate-200">
+        <span className={cn("h-1.5 w-1.5 rounded-full", ok ? "bg-emerald-400" : "bg-amber-400")} />
+        <span className="truncate" title={value}>{value}</span>
+      </div>
+    </div>
+  )
+}
+
 function ToolStatus({ name, ok }: { name: string; ok: boolean }) {
+
   return (
     <div className="flex items-center gap-3 rounded-md border p-3">
       {ok ? (

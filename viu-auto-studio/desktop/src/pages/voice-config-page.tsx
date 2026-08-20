@@ -20,6 +20,7 @@ export default function VoiceConfigPage() {
   const [loading, setLoading] = useState(true)
   const [testing, setTesting] = useState(false)
   const [testingConn, setTestingConn] = useState(false)
+  const [regenerating, setRegenerating] = useState(false)
   const [previewing, setPreviewing] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [customText, setCustomText] = useState(SAMPLE_TEXT_VI)
@@ -107,21 +108,50 @@ export default function VoiceConfigPage() {
   }
 
   const regenerateAllVoices = async () => {
+    if (!config || regenerating) return
+    setRegenerating(true)
+    let regenerated = 0
+    let skipped = 0
+    const failures: string[] = []
     try {
       const projects = await api.listProjects()
-      const approved = projects.filter((p) =>
+      const candidates = projects.filter((p) =>
         ["script_ready", "script_approved", "voice_ready", "media_ready", "subtitle_ready", "completed", "failed"].includes(p.status),
       )
-      for (const p of approved) {
+      for (const project of candidates) {
         try {
-          await api.buildScenes(p.id)
-          toast({ title: `Đã tạo lại giọng cho "${p.name}"` })
-        } catch {
-          toast({ title: `Bỏ qua "${p.name}" (chưa có kịch bản)`, variant: "destructive" })
+          const scenes = await api.listScenes(project.id)
+          const narratedScenes = scenes.filter((scene) => scene.narration?.trim())
+          if (narratedScenes.length === 0) {
+            skipped += 1
+            continue
+          }
+          for (const scene of narratedScenes) {
+            await api.regenerateVoice(project.id, scene.id, {
+              provider: config.provider,
+              voice: config.voice || undefined,
+              speed: config.speed,
+              volume: config.volume,
+            })
+            regenerated += 1
+          }
+        } catch (error) {
+          failures.push(`${project.name}: ${String(error)}`)
         }
+      }
+      if (failures.length > 0) {
+        toast({
+          title: `Đã tạo lại ${regenerated} cảnh, ${failures.length} dự án lỗi`,
+          description: failures.slice(0, 2).join(" | "),
+          variant: "destructive",
+        })
+      } else {
+        toast({ title: `Đã tạo lại audio cho ${regenerated} cảnh`, description: `${skipped} dự án không có cảnh có lời đọc.` })
       }
     } catch (e) {
       toast({ title: "Tạo lại voice thất bại", description: String(e), variant: "destructive" })
+    } finally {
+      setRegenerating(false)
     }
   }
 
@@ -274,9 +304,9 @@ export default function VoiceConfigPage() {
         <p className="mb-4 text-sm text-slate-500">
           Áp dụng cấu hình giọng hiện tại và tạo lại giọng đọc cho mọi cảnh đã duyệt
         </p>
-        <Button variant="outline" onClick={regenerateAllVoices}>
-          <Mic className="h-4 w-4" />
-          Tạo lại audio toàn bộ dự án
+        <Button variant="outline" onClick={regenerateAllVoices} disabled={regenerating}>
+          {regenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
+          {regenerating ? "Đang tạo lại audio..." : "Tạo lại audio toàn bộ dự án"}
         </Button>
       </div>
 

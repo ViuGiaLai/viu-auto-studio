@@ -139,7 +139,7 @@ export default function DashboardPage() {
       const counts = await Promise.all(recent.map(async (p) => {
         try {
           const scenes = await api.listScenes(p.id)
-          return [p.id, { done: scenes.filter((s) => s.media_path || s.status === "completed").length, total: scenes.length }] as const
+          return [p.id, { done: scenes.filter((s) => s.image_path || s.video_path || s.media_path || s.status === "completed").length, total: scenes.length }] as const
         } catch {
           return [p.id, { done: 0, total: 0 }] as const
         }

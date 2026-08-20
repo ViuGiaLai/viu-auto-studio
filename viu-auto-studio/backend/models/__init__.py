@@ -88,8 +88,13 @@ class Scene(Base):  # noqa: ANN001
     visual_prompt = Column(Text, default="")
     negative_prompt = Column(Text, default="")
     style_prompt = Column(Text, default="")  # chuỗi nhất quán phong cách/nhân vật/bối cảnh của cảnh
+    transition_description = Column(Text, default="")  # chuyển động/trạng thái xuyên suốt clip
     media_path = Column(String(512), default="")
+    image_path = Column(String(512), default="")
+    video_path = Column(String(512), default="")
+
     media_type = Column(String(32), default="")  # image | video | none
+
     audio_path = Column(String(512), default="")
     subtitle_text = Column(Text, default="")
     duration = Column(Float, default=0.0)  # seconds
@@ -179,7 +184,9 @@ class ConnectorTask(Base):  # noqa: ANN001
     scene_id = Column(Integer, nullable=True)
     scene_order = Column(Integer, default=0)
     status = Column(String(32), default="pending")  # pending | assigned | in_progress | completed | failed | retrying
+    stage = Column(String(16), default="image")  # image | video
     attempts = Column(Integer, default=0)
+
     prompt = Column(Text, default="")
     media_type = Column(String(32), default="image")
     aspect = Column(String(10), default="16:9")
@@ -191,7 +198,9 @@ class ConnectorTask(Base):  # noqa: ANN001
     file_path = Column(String(512), default="")
     error = Column(Text, default="")
     result_json = Column(Text, default="")
+    factory_session_id = Column(String(64), default="")
     created_at = Column(DateTime, default=datetime.utcnow)
+
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
@@ -381,7 +390,17 @@ class FlowConnection(Base):  # noqa: ANN001
     paired_at = Column(DateTime, nullable=True)
     heartbeat_at = Column(DateTime, nullable=True)
     status = Column(String(32), default="unpaired")  # unpaired pairing paired lost
+    factory_state = Column(String(32), default="waiting_login")  # waiting_login ready processing generate_image generate_video completed failed
+    factory_mode = Column(Boolean, default=True)
+    include_video = Column(Boolean, default=True)
+    factory_stage = Column(String(16), default="image")  # image | video
+    factory_project_id = Column(Integer, nullable=True)
+    factory_session_id = Column(String(64), default="")
+    browser_profile_path = Column(String(512), default="")
+    last_error = Column(Text, default="")
+    last_state_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
@@ -404,4 +423,20 @@ class ProjectSetting(Base):  # noqa: ANN001 — cài đặt riêng từng dự �
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, nullable=False)
     setting_json = Column(Text, default="{}")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SkillRun(Base):  # noqa: ANN001
+    __tablename__ = "skill_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, nullable=True, index=True)
+    skill_id = Column(String(128), nullable=False, index=True)
+    mode = Column(String(32), default="local")  # local_prompt | manus_task
+    status = Column(String(32), default="pending")  # pending | completed | failed
+    input_json = Column(Text, default="{}")
+    output_text = Column(Text, default="")
+    external_task_id = Column(String(255), default="")
+    error_message = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

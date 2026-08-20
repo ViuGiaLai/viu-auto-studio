@@ -4,7 +4,7 @@ import {
   RefreshCw, Settings, BarChart3, Play, RotateCcw, ScrollText, ArrowRight,
   Sparkles, MessageSquare, Clock, AlertTriangle, CheckCircle2,
 } from "lucide-react"
-import { api, openExternalUrl } from "@/services/api"
+import { api } from "@/services/api"
 import { toast } from "@/hooks/use-toast"
 import { cn } from "@/utils/cn"
 import { Progress } from "@/components/ui/progress"
@@ -175,7 +175,7 @@ export default function WorkspacePage() {
     if (!selected) return
     setGenerating(true)
     try {
-      await api.createProject({
+      const created = await api.createProject({
         name: `Tập #${ideas.filter((i) => i.id > 0).length + 1} — ${selected.name}`,
         channel_id: selected.id,
         topic: selected.niche || selected.description || "Chủ đề mới",
@@ -184,19 +184,8 @@ export default function WorkspacePage() {
         language: "vi",
         target_duration: videoType.includes("dài") ? 240 : 90,
       })
-      toast({ title: "Đã tạo tập mới cho kênh", description: "Hãy tiếp tục ở tab Dự án để viết kịch bản." })
-      const list = await api.listProjects()
-      const mine = list
-        .filter((p) => (p as { channel_id?: number | null }).channel_id === selected.id)
-        .map((p) => ({
-          id: p.id,
-          title: p.name,
-          subtitle: p.topic || "",
-          status: p.status,
-          aspect: p.aspect_ratio === "9:16" ? "📱 9:16" : "🖼 16:9",
-        }))
-      setIdeas(mine)
-      setSelectedIdea(mine[0]?.id ?? null)
+      toast({ title: "Đã tạo tập mới cho kênh", description: "Đang mở trình biên tập để tiếp tục sản xuất." })
+      navigate(`/projects/${created.id}`)
     } catch (e) {
       toast({ title: "Không thể sinh tập", description: String(e), variant: "destructive" })
     } finally {
@@ -533,70 +522,30 @@ function statusDot(status: string) {
 }
 
 function FlowLoginButton() {
-  const [open, setOpen] = useState(false)
-  const [flowState, setFlowState] = useState<{ logged_in: boolean } | null>(null)
-  // Flow login state is tracked from the backend settings (flow_logged_in).
+  const [flowState, setFlowState] = useState<{ factory_state?: string; status?: string } | null>(null)
   useEffect(() => {
-    api
-      .settingsGet()
-      .then((s) => setFlowState({ logged_in: (s as unknown as { flow_logged_in?: boolean })?.flow_logged_in === true }))
-      .catch(() => setFlowState({ logged_in: false }))
-  }, [])
-  const doLogin = async () => {
-    try {
-      await api.flowLogin()
-      openExternalUrl("https://labs.google/")
-      toast({ title: "Đã mở Google Labs để đăng nhập Flow", description: "Hoàn tất đăng nhập, sau đó quay lại Workspace." })
-    } catch (e) {
-      toast({ title: "Mở trang đăng nhập Flow thất bại", description: String(e), variant: "destructive" })
+    let cancelled = false
+    const poll = () => {
+      fetch("/api/flow-connection")
+        .then((response) => response.ok ? response.json() : {})
+        .then((value) => { if (!cancelled) setFlowState(value as { factory_state?: string; status?: string }) })
+        .catch(() => undefined)
     }
-  }
+    poll()
+    const timer = setInterval(poll, 5000)
+    return () => { cancelled = true; clearInterval(timer) }
+  }, [])
+  const state = flowState?.factory_state || "waiting_login"
+  const label = ({ waiting_login: "Waiting Login", ready: "Ready", processing: "Processing", generate_image: "Generate Image", generate_video: "Generate Video", completed: "Completed", failed: "Failed" } as Record<string, string>)[state] || state
   return (
-    <>
-      <Button variant="ghost"
-        onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-sm transition-colors hover:bg-white/[0.06]"
-        title="Tài khoản Google Flow"
-      >
-        <span className="text-xs text-slate-400">Flow</span>
-        <span className={cn("h-2 w-2 rounded-full", flowState?.logged_in ? "bg-emerald-400" : "bg-red-400/70")} />
-      </Button>
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 pt-24" onClick={() => setOpen(false)}>
-          <div
-            className="w-full max-w-md rounded-xl border border-white/10 bg-[#0c1318] p-5 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-200">Tài khoản Google Flow</h3>
-                <p className="mt-1 text-xs text-slate-500">Quản lý đăng nhập Flow để tạo ảnh/video từ Labs</p>
-              </div>
-              <Button variant="ghost"
-                onClick={doLogin}
-                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-bold text-white transition-colors hover:bg-emerald-500"
-              >
-                + Thêm
-              </Button>
-            </div>
-            <p className="mb-4 text-sm leading-relaxed text-slate-300">
-              {flowState?.logged_in
-                ? "Đã đăng nhập Flow. Kênh sẽ dùng phiên mặc định khi tạo media."
-                : "Chưa thêm tài khoản nào. Bấm \"+ Thêm\" để đăng nhập, hoặc dùng phiên mặc định:"}
-            </p>
-            <Button variant="ghost"
-              onClick={doLogin}
-              className="w-full rounded-lg border border-white/10 bg-white/[0.03] py-2.5 text-sm font-medium text-slate-200 transition-colors hover:bg-white/[0.06]"
-            >
-              Đăng nhập nhanh (phiên mặc định)
-            </Button>
-            <p className="mt-4 text-xs text-slate-500">
-              Quản lý đầy đủ (bật/tắt, xóa, thử lại) ở Cài đặt → Tài khoản Flow.
-            </p>
-          </div>
-        </div>
-      )}
-    </>
+    <div
+      className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-sm"
+      title="Flow tự kết nối khi chạy Factory Mode"
+    >
+      <span className="text-xs text-slate-400">Flow</span>
+      <span className={cn("h-2 w-2 rounded-full", state === "failed" ? "bg-red-400" : state === "waiting_login" ? "bg-amber-400" : state === "completed" ? "bg-emerald-400" : "bg-blue-400")} />
+      <span className="text-[11px] text-slate-400">{label}</span>
+    </div>
   )
 }
 

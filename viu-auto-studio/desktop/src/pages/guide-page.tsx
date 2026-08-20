@@ -2,7 +2,8 @@
  * Trang Hướng dẫn sử dụng — hướng dẫn người dùng từ A đến Z
  * theo đúng luồng sản xuất video của Viu Auto Studio.
  */
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
+
 import { useNavigate } from "react-router-dom"
 import {
   Clapperboard, FileVideo, Mic, Image as ImageIcon, Captions, Send,
@@ -12,6 +13,7 @@ import {
 import { Button } from "@/components/design-system"
 import { Badge } from "@/components/ui/badge"
 import { useAppStore } from "@/stores/app-store"
+import { api } from "@/services/api"
 
 const STEPS: Array<{
   icon: React.ComponentType<{ className?: string }>
@@ -49,7 +51,7 @@ const STEPS: Array<{
     icon: Lightbulb,
     title: "3. Sinh kịch bản (AI)",
     where: "Editor → tab Ý tưởng",
-    path: "/projects/1",
+    path: "__project__",
     points: [
       "Mở dự án → tab \"1. Ý tưởng & Kịch bản\".",
       "Nhập chủ đề, chọn dàn ý (hoặc để AI tự lên dàn ý), góc tiếp cận, phong cách viết.",
@@ -62,7 +64,7 @@ const STEPS: Array<{
     icon: ListChecks,
     title: "4. Chỉnh sửa & duyệt kịch bản",
     where: "Editor → tab Trình soạn thảo",
-    path: "/projects/1",
+    path: "__project__",
     points: [
       "Sửa trực tiếp kịch bản trong trình soạn thảo — tự động lưu sau 1.5 giây.",
       "Nhấn \"Tách thành câu\" để chia kịch bản thành từng câu độc lập.",
@@ -88,7 +90,7 @@ const STEPS: Array<{
     icon: ImageIcon,
     title: "6. Media cho từng cảnh",
     where: "Editor → tab Storyboard",
-    path: "/projects/1",
+    path: "__project__",
     points: [
       "Mỗi cảnh có nút \"Sinh ảnh AI\" — hệ thống tự tạo ảnh minh họa từ mô tả cảnh.",
       "Bật \"Google Labs\" (Cài đặt → tab AI Dịch & Ảnh) để hệ thống tự mở Google Labs (Flow / Nano Banana 2), điền prompt và tải ảnh thật về cho từng cảnh khi render.",
@@ -104,7 +106,7 @@ const STEPS: Array<{
     icon: Captions,
     title: "7. Phụ đề",
     where: "Editor → tab Phụ đề",
-    path: "/projects/1",
+    path: "__project__",
     points: [
       "Chọn font, cỡ chữ, màu chữ/viền, vị trí hiển thị (trên/giữa/dưới).",
       "Chọn nhịp hiển thị: theo câu hoặc theo cụm từ, và ký tự tối đa mỗi dòng.",
@@ -117,7 +119,7 @@ const STEPS: Array<{
     icon: Send,
     title: "8. Render video",
     where: "Editor → tab Preview & Render",
-    path: "/projects/1",
+    path: "__project__",
     points: [
       "Cấu hình chất lượng: CRF (độ nét), FPS, preset tốc độ.",
       "Bật/tắt phụ đề embed, chỉnh âm lượng nhạc nền, chọn logo nếu có.",
@@ -156,9 +158,16 @@ const STEPS: Array<{
 export default function GuidePage() {
   const navigate = useNavigate()
   const { markOnboarded, onboarded } = useAppStore()
+  const [projectPath, setProjectPath] = useState("/workspace")
 
   useEffect(() => {
     if (!onboarded) markOnboarded()
+    void api.listProjects().then((projects) => {
+      const latest = projects[0]
+      if (latest?.id) setProjectPath(`/projects/${latest.id}`)
+    }).catch(() => {
+      // Workspace remains the safe entry point when no project exists yet.
+    })
   }, [onboarded, markOnboarded])
 
   return (
@@ -193,8 +202,8 @@ export default function GuidePage() {
                 </div>
                 <h2 className="text-base font-semibold text-slate-100">{s.title}</h2>
               </div>
-              <Button size="sm" variant="outline" onClick={() => navigate(s.path)}>
-                Mở trang →
+              <Button size="sm" variant="outline" onClick={() => navigate(s.path === "__project__" ? projectPath : s.path)}>
+                {s.path === "__project__" && projectPath === "/workspace" ? "Mở Workspace →" : "Mở trang →"}
               </Button>
             </div>
             <div className="mb-2 flex items-center gap-2 text-xs text-slate-500">

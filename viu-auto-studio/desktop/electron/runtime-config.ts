@@ -25,6 +25,7 @@ export interface RuntimeConfig {
   logsDir: string
   dbPath: string
   pythonPath: string
+  flowBootstrapToken: string
   updatedAt: string
 }
 

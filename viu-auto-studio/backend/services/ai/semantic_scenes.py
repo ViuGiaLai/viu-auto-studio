@@ -9,7 +9,8 @@ hình ảnh độc lập với ranh giới câu:
     - Một câu dài chứa nhiều sự kiện có thể bị tách thành nhiều đoạn.
     - Chuyển nhân vật / hành động / địa điểm / ý chính → đoạn mới.
     - Mỗi đoạn có: narration (lời đọc ghép), visual_prompt mô tả TOÀN đoạn,
-      style_prompt (nhất quán nhân vật-bối cảnh-trang phục-phong cách), reason.
+      style_prompt (nhất quán nhân vật-bối cảnh-trang phục-phong cách),
+      transition_description (chuyển động/camera/biến đổi trong clip), reason.
 
 Subtitles vẫn được chia theo lời đọc + thời gian phát âm (lớp độc lập) —
 1 cảnh hình ảnh có thể chứa nhiều dòng phụ đề.
@@ -38,6 +39,9 @@ SYSTEM_INSTRUCTION = (
     "- Giữ NHẤT QUÁN: cùng nhân vật phải nhất quán ngoại hình/trang phục giữa "
     "các cảnh liên quan; cùng địa điểm giữ bối cảnh giống nhau. Trả style_prompt "
     "mô tả chuỗi nhất quán đó (được thêm vào cuối mọi visual_prompt).\n"
+    "- transition_description phải viết bằng tiếng Anh, mô tả chuyển động chủ thể, "
+    "chuyển động camera, biến đổi trạng thái hoặc chuyển cảnh phù hợp trong clip; "
+    "không bịa thêm hành động trái với narration.\n"
     "- Trả về JSON đúng định dạng, không thêm ghi chú ngoài JSON."
 )
 
@@ -52,9 +56,10 @@ OUTPUT_SCHEMA = {
                     "narration": {"type": "string", "description": "Toàn bộ lời đọc của cảnh (ghép từ nhiều câu nếu cùng một cảnh)"},
                     "visual_prompt": {"type": "string", "description": "Prompt mô tả nội dung TOÀN cảnh bằng tiếng Anh"},
                     "style_prompt": {"type": "string", "description": "Mô tả ngắn về nhất quán phong cách/nhân vật/bối cảnh áp cho cảnh này"},
+                    "transition_description": {"type": "string", "description": "Mô tả bằng tiếng Anh về chuyển động chủ thể, camera hoặc chuyển cảnh trong clip"},
                     "reason": {"type": "string", "description": "Lý do chia cảnh (bắt đầu nhân vật mới/hành động mới/địa điểm mới hay tiếp nối)"},
                 },
-                "required": ["narration", "visual_prompt", "style_prompt", "reason"],
+                "required": ["narration", "visual_prompt", "style_prompt", "transition_description", "reason"],
             },
         }
     },
@@ -173,6 +178,7 @@ def analyze_semantic_scenes(script: str, existing_narrations: list[str] | None =
         s["narration"] = narration
         s["visual_prompt"] = (s.get("visual_prompt") or "").strip()
         s["style_prompt"] = (s.get("style_prompt") or "").strip()
+        s["transition_description"] = (s.get("transition_description") or "").strip()
     if not scenes:
         return {"scenes": [], "note": "AI không phân tích được — dùng chia theo câu mặc định"}
     return {"scenes": scenes, "note": "Đã phân tích ngữ nghĩa"}

@@ -17,18 +17,22 @@ import logging
 import subprocess
 import threading
 import time
+import uuid
+
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
 
 from backend.core.database import SessionLocal
 from backend.core.config import PROJECTS_DIR, CRF, PRESET
-from backend.models import Project, RenderJob, Scene, Script, PipelineState
+from backend.models import AppSetting, ConnectorTask, Project, RenderJob, Scene, Script, PipelineState
+
 from backend.render.ffmpeg_engine import FFmpegEngine, RenderError, check_ffmpeg
 from backend.schemas import RenderConfig, TTSConfigRequest
 from backend.services.media import get_audio_duration
 from backend.services.subtitles import generate_subtitles
-from backend.services.tts import synthesize as tts_synthesize
+from backend.services.tts import get_tts_config, synthesize as tts_synthesize
+
 from backend.services.script_service import split_into_sentences
 
 log = logging.getLogger("viu.pipeline")
@@ -39,7 +43,22 @@ VALID_STATUSES = [
     "rendering", "completed", "failed", "cancelled",
 ]
 
+ENGINE_PROFILES = {
+    "basic": {"crf": 24, "preset": "veryfast"},
+    "balanced": {"crf": 21, "preset": "medium"},
+    "high": {"crf": 18, "preset": "slow"},
+}
+
+
+def _apply_engine_profile(db, render_config: dict) -> dict:
+    row = db.query(AppSetting).filter(AppSetting.key == "engine_mode").first()
+    mode = (row.value_encrypted if row and row.value_encrypted else "balanced").strip().lower()
+    defaults = ENGINE_PROFILES.get(mode, ENGINE_PROFILES["balanced"])
+    return {**defaults, **(render_config or {})}
+
+
 STEPS = [
+
     ("generating_voice", 10),
     ("voice_ready", 20),
     ("preparing_media", 40),
@@ -93,7 +112,9 @@ class PipelineManager:
                                    "Mỗi thời điểm chỉ một video được xử lý.",
                     }
 
+                render_config = _apply_engine_profile(db, render_config)
                 job = self.job_for_project(db, project_id)
+
                 if job is None or job.status in ("completed", "failed", "cancelled", "draft", "pending"):
                     project_dir = Path(PROJECTS_DIR) / f"project_{project_id}"
                     project_dir.mkdir(parents=True, exist_ok=True)
@@ -182,7 +203,9 @@ class PipelineManager:
                         Path(job.output_path).unlink()
                     except OSError:
                         pass
+                render_config = _apply_engine_profile(db, render_config)
                 # Start from the step after the last completed one
+
                 if job.current_step in ("voice_ready",):
                     next_step = "preparing_media"
                 elif job.current_step in ("media_ready", "subtitle_ready"):
@@ -283,61 +306,96 @@ class PipelineManager:
                 db.close()
 
     def _run_auto_production(self, project_id: int) -> None:
+        """Run the real preparation stages and enqueue media work for Flow.
+
+        This stage never simulates progress or marks a project failed just because
+        an external connector is not available. It leaves an explicit waiting
+        state with an actionable log instead.
+        """
         db = SessionLocal()
+        state = None
         try:
             project = db.query(Project).filter(Project.id == project_id).first()
             state = db.query(PipelineState).filter(PipelineState.project_id == project_id).first()
             script = db.query(Script).filter(Script.project_id == project_id).first()
-            
             if not project or not state or not script:
                 return
 
-            def update_step(step_name, status, progress=0):
-                steps = json.loads(state.step_data_json)
+            def update_step(step_name: str, status: str) -> None:
+                steps = json.loads(state.step_data_json or "{}")
                 steps[step_name] = status
-                state.step_data_json = json.dumps(steps)
+                state.step_data_json = json.dumps(steps, ensure_ascii=False)
                 db.commit()
 
-            # Step: Kịch bản (already skipped/done if approved)
             update_step("Kịch bản", "success")
-            
-            # Step: Lồng tiếng
-            update_step("Lồng tiếng", "50%")
-            # Logic to generate all scene audios...
-            time.sleep(2) # simulate
-            update_step("Lồng tiếng", "success")
-            
-            # Step: Storyboard (Auto Split)
             update_step("Storyboard", "running")
-            if not db.query(Scene).filter(Scene.project_id == project_id).first():
-                sentences = split_into_sentences(script.full_script)
+            scenes = db.query(Scene).filter(Scene.project_id == project_id).order_by(Scene.order_index.asc()).all()
+            if not scenes:
+                sentences = split_into_sentences(script.full_script or "")
                 for i, text in enumerate(sentences):
-                    scene = Scene(
-                        project_id=project_id,
-                        order_index=i,
-                        narration=text,
-                        status="pending"
-                    )
-                    db.add(scene)
+                    db.add(Scene(project_id=project_id, order_index=i, narration=text, subtitle_text=text, status="pending"))
                 db.commit()
+                scenes = db.query(Scene).filter(Scene.project_id == project_id).order_by(Scene.order_index.asc()).all()
+            if not scenes:
+                raise RuntimeError("Không thể tạo phân cảnh từ kịch bản trống")
             update_step("Storyboard", "success")
-            
-            # Step: Ảnh/Video (Google Flow Integration)
-            update_step("Ảnh/Video", "running")
-            # In real app: trigger Google Flow auto-generation
-            # For now, we wait for user to 'Upload' or 'Auto'
-            # We'll set it to 'failed' if no media to match reference UI SS20
-            time.sleep(1)
-            update_step("Ảnh/Video", "failed")
-            state.status = "failed"
-            state.error_step = "Ảnh/Video"
+
+            update_step("Lồng tiếng", "running")
+            tts_config = get_tts_config(db)
+            for scene in scenes:
+                if scene.audio_path and Path(scene.audio_path).exists():
+                    continue
+                audio_path = str(Path(PROJECTS_DIR) / f"project_{project_id}" / f"scene_{scene.order_index:03d}_voice.mp3")
+                Path(audio_path).parent.mkdir(parents=True, exist_ok=True)
+                tts_synthesize(scene.narration or scene.subtitle_text, audio_path, tts_config)
+                scene.audio_path = audio_path
+                scene.status = "voice_ready"
             db.commit()
-            
-        except Exception as e:
+            update_step("Lồng tiếng", "success")
+
+            missing_prompts = [scene for scene in scenes if not (scene.visual_prompt or "").strip()]
+            if missing_prompts:
+                state.status = "waiting_for_review"
+                state.error_step = "Ảnh/Video"
+                state.last_log = "Cần chạy Phân tích phân cảnh AI để tạo visual prompt trước khi gửi task sang Flow."
+                update_step("Ảnh/Video", "waiting_for_review")
+                db.commit()
+                return
+
+            update_step("Ảnh/Video", "running")
+            db.query(ConnectorTask).filter(
+                ConnectorTask.project_id == project_id,
+                ConnectorTask.status.in_(["pending", "assigned", "in_progress", "retrying", "failed"]),
+            ).delete(synchronize_session=False)
+            created = 0
+            for index, scene in enumerate(scenes):
+                if scene.media_path and Path(scene.media_path).is_file() and Path(scene.media_path).stat().st_size > 0:
+                    continue
+                db.add(ConnectorTask(
+                    task_id=str(uuid.uuid4()),
+                    project_id=project_id,
+                    scene_id=scene.id,
+                    scene_order=index,
+                    status="pending",
+                    attempts=0,
+                    prompt=scene.visual_prompt.strip(),
+                    media_type="image",
+                    aspect=project.aspect_ratio or "16:9",
+                    model="Nano Banana 2",
+                ))
+                scene.status = "media_pending"
+                created += 1
+            state.status = "processing" if created else "waiting_for_review"
+            state.error_step = ""
+            state.last_log = f"Đã xếp {created} media task cho Flow Connector." if created else "Media đã sẵn sàng; có thể chạy render."
+            update_step("Ảnh/Video", "waiting_for_review" if created else "success")
+            db.commit()
+        except Exception as exc:  # noqa: BLE001
             log.exception("Auto production failed")
             if state:
                 state.status = "failed"
-                state.last_log = str(e)
+                state.error_step = state.error_step or "Lồng tiếng"
+                state.last_log = str(exc)
                 db.commit()
         finally:
             db.close()

@@ -18,6 +18,7 @@ from backend.db import init_db
 from backend.api.routes import router
 from backend.api.connector_routes import router as connector_router
 from backend.api.pages_routes import router as pages_router
+from backend.api.skill_routes import router as skill_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -55,6 +56,7 @@ app.add_middleware(
 app.include_router(router, prefix="/api")
 app.include_router(connector_router, prefix="/api")
 app.include_router(pages_router, prefix="/api")
+app.include_router(skill_router, prefix="/api")
 
 app.mount("/vas", StaticFiles(directory=str(VAS_STATIC_DIR)), name="vas_static")
 

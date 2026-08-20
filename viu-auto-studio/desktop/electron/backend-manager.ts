@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto"
 import { ChildProcess, spawn } from "node:child_process"
 import { existsSync } from "node:fs"
 import fs from "node:fs"
@@ -115,13 +116,13 @@ async function waitForBackend(host: string, port: number, timeoutMs = 90_000): P
 let backendProcess: ChildProcess | null = null
 let currentPort = 0
 
-export async function startBackend(): Promise<{ port: number; apiBaseUrl: string }> {
+export async function startBackend(): Promise<{ port: number; apiBaseUrl: string; flowBootstrapToken: string }> {
   // 1) Nếu đã có cấu hình runtime hợp lệ từ lần chạy trước, thử dùng lại cùng port
   const saved = readRuntimeConfig()
-  if (saved && (await checkHealth(BACKEND_HOST, saved.backendPort))) {
+  if (saved?.flowBootstrapToken && (await checkHealth(BACKEND_HOST, saved.backendPort))) {
     console.log("[BackendManager] Backend đã chạy ở port", saved.backendPort, "— tái sử dụng.")
     currentPort = saved.backendPort
-    return { port: currentPort, apiBaseUrl: `http://${BACKEND_HOST}:${currentPort}` }
+    return { port: currentPort, apiBaseUrl: `http://${BACKEND_HOST}:${currentPort}`, flowBootstrapToken: saved.flowBootstrapToken }
   }
 
   // 2) Tìm port còn trống
@@ -134,6 +135,7 @@ export async function startBackend(): Promise<{ port: number; apiBaseUrl: string
   const ff = resolveFFmpeg()
   const { dataDir, projectsDir, logsDir } = ensureUserDataDirs()
 
+  const flowBootstrapToken = randomBytes(32).toString("hex")
   const logFile = path.join(logsDir, `backend-${port}.log`)
   const logStream = fs.createWriteStream(logFile, { flags: "a" })
 
@@ -162,6 +164,7 @@ export async function startBackend(): Promise<{ port: number; apiBaseUrl: string
     VIU_FFMPEG_BIN: ff.ffmpegPath,
     VIU_FFPROBE_BIN: ff.ffprobePath,
     VIU_LOG_DIR: logsDir,
+    VIU_FLOW_BOOTSTRAP_TOKEN: flowBootstrapToken,
   }
 
   const args = [
@@ -225,6 +228,7 @@ export async function startBackend(): Promise<{ port: number; apiBaseUrl: string
     logsDir,
     dbPath: path.join(dataDir, "app.db"),
     pythonPath: py.python,
+    flowBootstrapToken,
     updatedAt: new Date().toISOString(),
   }
   writeRuntimeConfig(cfg)
@@ -234,7 +238,7 @@ export async function startBackend(): Promise<{ port: number; apiBaseUrl: string
     const extCfgFile = path.join(getUserDataDir(), "extension-config.json")
     fs.writeFileSync(
       extCfgFile,
-      JSON.stringify({ apiBaseUrl: cfg.apiBaseUrl, backendPort: port, updatedAt: new Date().toISOString() }, null, 2),
+      JSON.stringify({ apiBaseUrl: cfg.apiBaseUrl, backendPort: port, flowBootstrapToken, updatedAt: new Date().toISOString() }, null, 2),
     )
     console.log("[BackendManager] extension-config.json đã ghi:", extCfgFile)
   } catch (err) {
@@ -242,7 +246,7 @@ export async function startBackend(): Promise<{ port: number; apiBaseUrl: string
   }
 
   console.log("[BackendManager] Backend sẵn sàng tại", cfg.apiBaseUrl, "| runtime.json đã ghi.")
-  return { port, apiBaseUrl: cfg.apiBaseUrl }
+  return { port, apiBaseUrl: cfg.apiBaseUrl, flowBootstrapToken }
 }
 
 export function stopBackend(): void {

@@ -62,6 +62,7 @@ else:
 # Extension config file (được đọc bởi Flow Connector Extension qua options page)
 # ---------------------------------------------------------------------------
 EXTENSION_CONFIG_FILE = Path(_env("VIU_EXTENSION_CONFIG_FILE", "")) if _env("VIU_EXTENSION_CONFIG_FILE", "") else _default_user_data_dir() / "extension-config.json"
+FLOW_BOOTSTRAP_TOKEN = _env("VIU_FLOW_BOOTSTRAP_TOKEN", "")
 
 # ---------------------------------------------------------------------------
 # AI providers
