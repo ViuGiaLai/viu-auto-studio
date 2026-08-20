@@ -4,6 +4,7 @@ import { Plus, Search, Trash2, FolderOpen, Play, ChevronDown } from "lucide-reac
 import { api, mediaUrl } from "@/services/api"
 import { toast } from "@/hooks/use-toast"
 import type { Project } from "@/types"
+import { useAppStore } from "@/stores/app-store"
 import { STATUS_LABELS } from "@/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/design-system"
@@ -84,15 +85,22 @@ export default function ProjectsPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all")
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
-  const [sort, setSort] = useState<SortKey>("newest")
+  const { projectStatusFilter, projectSort, setProjectStatusFilter, setProjectSort } = useAppStore()
+  const mappedStatus: StatusFilter =
+    projectStatusFilter === "producing" ? "running"
+      : projectStatusFilter === "waiting" ? "queued"
+        : projectStatusFilter === "completed" || projectStatusFilter === "failed"
+          ? projectStatusFilter
+          : "all"
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(mappedStatus)
+  const [sort, setSort] = useState<SortKey>(projectSort)
   const [sortOpen, setSortOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null)
 
   const load = () => {
     setLoading(true)
     api
-      .listProjects(search || undefined, statusFilter === "all" ? undefined : statusFilter)
+      .listProjects(search || undefined)
       .then(setProjects)
       .catch(() => toast({ title: "Không thể tải danh sách dự án", variant: "destructive" }))
       .finally(() => setLoading(false))
@@ -104,9 +112,11 @@ export default function ProjectsPage() {
   }, [statusFilter])
 
   const listForFilters = useMemo(() => {
-    if (statusFilter !== "all") return projects
     return projects.filter(
-      (p) => matchesTypeFilter(p, typeFilter) && (!search || p.name.toLowerCase().includes(search.toLowerCase())),
+      (p) =>
+        matchesStatusFilter(p, statusFilter) &&
+        matchesTypeFilter(p, typeFilter) &&
+        (!search || p.name.toLowerCase().includes(search.toLowerCase())),
     )
   }, [projects, typeFilter, search, statusFilter])
 
@@ -199,7 +209,7 @@ export default function ProjectsPage() {
                   {SORT_OPTIONS.map((s) => (
                     <Button variant="ghost"
                       key={s.value}
-                      onClick={() => { setSort(s.value); setSortOpen(false) }}
+                      onClick={() => { setSort(s.value); setProjectSort(s.value); setSortOpen(false) }}
                       className={`block w-full px-3 py-2 text-left text-sm transition-colors ${
                         sort === s.value ? "bg-amber-500/15 text-amber-300 font-medium" : "text-slate-300 hover:bg-white/5"
                       }`}
@@ -235,7 +245,10 @@ export default function ProjectsPage() {
               {STATUS_FILTERS.map((f) => (
                 <Button variant="ghost"
                   key={f.value}
-                  onClick={() => setStatusFilter(f.value)}
+                  onClick={() => {
+                    setStatusFilter(f.value)
+                    setProjectStatusFilter(f.value === "running" ? "producing" : f.value === "queued" ? "waiting" : f.value)
+                  }}
                   className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200 ${
                     statusFilter === f.value
                       ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"

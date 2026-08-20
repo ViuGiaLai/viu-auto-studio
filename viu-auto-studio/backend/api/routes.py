@@ -53,6 +53,54 @@ def health():
     return {"status": "ok", "app": "viu-auto-studio", "time": datetime.utcnow().isoformat()}
 
 
+@router.get("/system/stats")
+def system_stats(db: Session = Depends(get_db)):
+    """Return real-time system resource usage and service statuses."""
+    try:
+        import psutil
+        cpu_pct = psutil.cpu_percent(interval=0.2)
+        vm = psutil.virtual_memory()
+        ram_total_gb = round(vm.total / (1024 ** 3), 1)
+        ram_pct = vm.percent
+        import sys as _sys
+        _disk_path = _sys.executable[:3] if _sys.platform == "win32" else "/"
+        disk = psutil.disk_usage(_disk_path)
+        disk_free_gb = round(disk.free / (1024 ** 3), 1)
+    except Exception:
+        cpu_pct = 0.0
+        ram_total_gb = 0.0
+        ram_pct = 0.0
+        disk_free_gb = 0.0
+
+    # Count active render jobs
+    from backend.models import RenderJob as RenderJobModel
+    active_statuses = ["generating_voice", "preparing_media", "rendering", "building_scenes"]
+    try:
+        active_jobs = db.query(RenderJobModel).filter(RenderJobModel.status.in_(active_statuses)).count()
+    except Exception:
+        active_jobs = 0
+
+    # FFmpeg check
+    ffmpeg_ok = False
+    try:
+        import subprocess
+        r = subprocess.run(["ffmpeg", "-version"], capture_output=True, timeout=5)
+        ffmpeg_ok = r.returncode == 0
+    except Exception:
+        pass
+
+    return {
+        "cpu_percent": cpu_pct,
+        "ram_total_gb": ram_total_gb,
+        "ram_percent": ram_pct,
+        "disk_free_gb": disk_free_gb,
+        "active_jobs": active_jobs,
+        "ffmpeg_ok": ffmpeg_ok,
+    }
+
+
+
+
 # ===========================================================================
 # Dashboard
 # ===========================================================================

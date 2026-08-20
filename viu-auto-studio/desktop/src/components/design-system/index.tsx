@@ -48,8 +48,9 @@ export function AppShell({ sidebar, children }: { sidebar: React.ReactNode; chil
   return <div className="flex h-screen min-h-[720px] overflow-hidden bg-[#0B0F12] text-[#E7EDF1]">{sidebar}<main className="min-w-0 flex-1 overflow-y-auto bg-[#0B0F12]">{children}</main></div>
 }
 
-export function Sidebar({ collapsed, onToggle, backendOnline, version }: {
+export function Sidebar({ collapsed, onToggle, backendOnline, version, operatorName = "", operatorEmail = "" }: {
   collapsed: boolean; onToggle: () => void; backendOnline: boolean | null; version: string
+  operatorName?: string; operatorEmail?: string
 }) {
   const location = useLocation()
   const isActive = (to: string, exact?: boolean) => {
@@ -72,7 +73,36 @@ export function Sidebar({ collapsed, onToggle, backendOnline, version }: {
         })}
       </nav>
       <div className="mt-auto border-t border-[#24313A] p-3">
-        {!collapsed && <div className="mb-2 rounded-lg border border-[#24313A] bg-[#101A20] p-2.5"><div className="flex items-center gap-2 text-[11px] font-medium">{backendOnline ? <Wifi className="h-3.5 w-3.5 text-emerald-400" /> : <WifiOff className="h-3.5 w-3.5 text-red-400" />}<span className={backendOnline ? "text-emerald-300" : "text-red-300"}>{backendOnline === null ? "Đang kết nối" : backendOnline ? "Backend Online" : "Backend Offline"}</span></div></div>}
+        {!collapsed && (
+          <div className="mb-2 rounded-xl border border-[#24313A] bg-[#101A20] p-2.5">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold text-white">
+                {(operatorName || "U").split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("") || "U"}
+              </div>
+              <div className="min-w-0">
+                <div className="truncate text-[13px] font-semibold text-white">{operatorName || "Chưa đặt tên"}</div>
+                <div className="truncate text-[11px] text-[#8395A1]">{operatorEmail || "Chưa đặt email"}</div>
+              </div>
+            </div>
+            <div className="mt-2.5 flex items-center justify-between rounded-lg border border-[#24313A] bg-[#0C1419] px-2.5 py-1.5">
+              <span className="flex items-center gap-1.5 text-[11px] font-medium">
+                {backendOnline ? <Wifi className="h-3.5 w-3.5 text-emerald-400" /> : <WifiOff className="h-3.5 w-3.5 text-red-400" />}
+                <span className={backendOnline ? "text-emerald-300" : "text-red-300"}>
+                  {backendOnline === null ? "Backend: …" : backendOnline ? "Backend: Online" : "Backend: Offline"}
+                </span>
+              </span>
+              <span className="text-[10px] font-semibold text-[#6F8290]">v{version}</span>
+            </div>
+          </div>
+        )}
+        {collapsed && (
+          <div className="mb-2 flex flex-col items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold text-white">
+              {(operatorName || "U")[0]?.toUpperCase() || "U"}
+            </div>
+            <span className={cn("h-2 w-2 rounded-full", backendOnline ? "bg-emerald-400" : "bg-red-400")} />
+          </div>
+        )}
         <button type="button" onClick={onToggle} className="flex h-9 w-full items-center justify-center gap-2 rounded-md text-xs font-medium text-[#81929D] hover:bg-white/[0.04] hover:text-white">{collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}{!collapsed && "Thu gọn"}</button>
       </div>
     </aside>

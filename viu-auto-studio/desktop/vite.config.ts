@@ -1,7 +1,8 @@
-import { defineConfig } from "vite"
+import { defineConfig, type Plugin } from "vite"
 import react from "@vitejs/plugin-react"
 import electron from "vite-plugin-electron"
 import path from "path"
+import fs from "node:fs"
 import { fileURLToPath } from "node:url"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -35,11 +36,78 @@ function stripUnsupportedPlatformOption() {
   }
 }
 
+/**
+ * package.json "type":"module" khiến Vite nhét `import` vào preload.cjs.
+ * Electron nạp .cjs như CommonJS → SyntaxError, mất electronAPI, UI hiện Offline.
+ * Ghi file require() thuần và ghi đè lại nếu bundler xen vào.
+ */
+const PRELOAD_CJS = `const { contextBridge, ipcRenderer } = require("electron")
+
+contextBridge.exposeInMainWorld("electronAPI", {
+  ping: () => ipcRenderer.invoke("ping"),
+  openExternal: (url) => ipcRenderer.invoke("open:external", url),
+  getRuntimeConfig: () => ipcRenderer.invoke("getRuntimeConfig"),
+  getUserDataDir: () => ipcRenderer.invoke("getUserDataDir"),
+  selectDirectory: () => ipcRenderer.invoke("dialog:select-directory"),
+})
+`
+
+function preloadDest() {
+  return path.resolve(__dirname, "dist-electron/preload.cjs")
+}
+
+function writePreloadCjs() {
+  const dest = preloadDest()
+  fs.mkdirSync(path.dirname(dest), { recursive: true })
+  fs.writeFileSync(dest, PRELOAD_CJS, "utf8")
+}
+
+function preloadIsEsm(file: string) {
+  try {
+    const text = fs.readFileSync(file, "utf8")
+    return /\bimport\s+/.test(text) || /\bexport\s+/.test(text)
+  } catch {
+    return true
+  }
+}
+
+function preloadCjsPlugin(): Plugin {
+  let writing = false
+  const ensure = () => {
+    if (writing) return
+    writing = true
+    try {
+      writePreloadCjs()
+    } finally {
+      writing = false
+    }
+  }
+  return {
+    name: "write-cjs-preload",
+    buildStart() {
+      ensure()
+    },
+    configureServer() {
+      ensure()
+      const dest = preloadDest()
+      fs.watch(path.dirname(dest), { persistent: false }, (_event, filename) => {
+        if (filename !== "preload.cjs") return
+        setTimeout(() => {
+          if (preloadIsEsm(dest)) ensure()
+        }, 30)
+      })
+    },
+    closeBundle() {
+      ensure()
+    },
+  }
+}
+
 export default defineConfig({
   plugins: [
     react(),
     stripCrossoriginPlugin(),
-    // Build electron main + preload vào dist-electron (cho `electron .` và electron-builder)
+    preloadCjsPlugin(),
     electron([
       {
         entry: "electron/main.ts",
@@ -47,24 +115,11 @@ export default defineConfig({
         vite: {
           build: {
             outDir: "dist-electron",
+            emptyOutDir: false,
             rollupOptions: {
               external: ["electron", "node:child_process", "node:fs", "node:net", "node:path", "node:os"],
               output: { format: "es", entryFileNames: "main.mjs" },
             },
-            plugins: [stripUnsupportedPlatformOption()],
-          },
-        },
-      },
-      {
-        entry: "electron/preload.ts",
-        format: "cjs",
-        onstart(options) {
-          options.reload()
-        },
-        vite: {
-          build: {
-            outDir: "dist-electron",
-            rollupOptions: { external: ["electron"], output: { format: "cjs", entryFileNames: "[name].cjs" } },
             plugins: [stripUnsupportedPlatformOption()],
           },
         },

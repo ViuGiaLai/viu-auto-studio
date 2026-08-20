@@ -1,9 +1,8 @@
 import { contextBridge, ipcRenderer } from "electron"
 import type { RuntimeConfig } from "./runtime-config"
 
-// Expose a minimal, safe API surface to the renderer.
-// Electron khởi động FastAPI backend và ghi runtime.json (API URL + đường dẫn).
-// Renderer đọc cấu hình đó qua bridge này — không hardcode port/URL.
+// Bundled to dist-electron/preload.cjs as CommonJS (see vite.config.ts).
+// Electron cannot load ESM `import` inside a .cjs preload file.
 contextBridge.exposeInMainWorld("electronAPI", {
   ping: () => ipcRenderer.invoke("ping"),
   openExternal: (url: string) => ipcRenderer.invoke("open:external", url),

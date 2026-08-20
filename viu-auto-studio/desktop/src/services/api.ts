@@ -132,6 +132,7 @@ export const api = {
     aspect_ratio?: string
     language?: string
     target_duration?: number
+    project_type?: string
   }) => post<Project>(`/projects`, data),
   updateProject: (id: number, data: Partial<Project>) =>
     request<Project>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
@@ -443,6 +444,17 @@ export const api = {
     post<{ ok: boolean; message: string }>(`/render/jobs/${jobId}/retry`, { config }),
   getJobLog: (jobId: number, lines = 100) =>
     request<{ ok: boolean; lines: string[] }>(`/render/jobs/${jobId}/log?lines=${lines}`),
+
+  // System stats
+  systemStats: () =>
+    request<{
+      cpu_percent: number
+      ram_total_gb: number
+      ram_percent: number
+      disk_free_gb: number
+      active_jobs: number
+      ffmpeg_ok: boolean
+    }>(`/system/stats`),
 }
 
 export const mediaUrl = (path: string) => `${API_BASE}/media/file?path=${encodeURIComponent(path)}`

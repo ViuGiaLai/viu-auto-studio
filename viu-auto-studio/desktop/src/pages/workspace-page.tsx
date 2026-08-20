@@ -103,9 +103,6 @@ export default function WorkspacePage() {
           status: p.status,
           aspect: p.aspect_ratio === "9:16" ? "📱 9:16" : "🖼 16:9",
         }))
-        if (ideasList.length === 0) {
-          ideasList.push({ id: -1, title: "Chưa có tập nào", subtitle: "Bấm \"Sinh\" để tạo tập đầu tiên", status: "empty", aspect: "🖼 16:9" })
-        }
         setIdeas(ideasList)
         setSelectedIdea(ideasList[0]?.id ?? null)
 
@@ -198,7 +195,7 @@ export default function WorkspacePage() {
           status: p.status,
           aspect: p.aspect_ratio === "9:16" ? "📱 9:16" : "🖼 16:9",
         }))
-      setIdeas(mine.length ? mine : [{ id: -1, title: "Chưa có tập nào", subtitle: "", status: "empty", aspect: "🖼 16:9" }])
+      setIdeas(mine)
       setSelectedIdea(mine[0]?.id ?? null)
     } catch (e) {
       toast({ title: "Không thể sinh tập", description: String(e), variant: "destructive" })
@@ -292,6 +289,11 @@ export default function WorkspacePage() {
           </Button>
 
           <div className="space-y-2">
+            {ideas.length === 0 && (
+              <div className="rounded-lg border border-dashed border-white/10 px-3 py-6 text-center text-xs text-slate-500">
+                Chưa có tập thật. Bấm Sinh để tạo dự án mới trên kênh này.
+              </div>
+            )}
             {ideas.map((i) => (
               <Button variant="ghost"
                 key={i.id}

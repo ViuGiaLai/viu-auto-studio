@@ -209,8 +209,22 @@ export const globalApi = {
       method: "PATCH",
       body: JSON.stringify({ settings }),
     }),
-  analytics: () => req<AnalyticsRead>(`/analytics`),
+  analytics: (days = 0) => req<AnalyticsRead>(`/analytics?days=${days}`),
   diagnose: () => req<DiagnoseRead>(`/system/diagnose`),
+  overview: () => req<{
+    counts: { producing: number; waiting: number; completed: number; failed: number; total: number }
+    delta: { producing: number; waiting: number; completed: number; failed: number }
+    snapshot_date: string
+  }>(`/dashboard/overview`),
+}
+
+export const notificationsApi = {
+  list: () => req<{ items: AppNotification[]; unread: number }>(`/notifications`),
+  markRead: (keys: string[]) =>
+    req<{ ok: boolean }>(`/notifications/read`, {
+      method: "POST",
+      body: JSON.stringify({ keys }),
+    }),
 }
 
 // ---------------------------------------------------------------------------
@@ -377,11 +391,22 @@ export interface FlowConnectionRead {
 }
 
 export interface AnalyticsRead {
+  range_days?: number
   projects: { total: number; completed: number; in_progress: number; failed: number }
   scenes: { total: number; media_ready: number }
-  jobs: { total: number; completed: number; failed: number }
-  render: { avg_minutes: number; total_seconds: number }
+  jobs: { total: number; completed: number; failed: number; by_status?: Record<string, number> }
+  render: { avg_minutes: number; total_seconds: number; completed?: number }
   flow: { total_tasks: number; failed_tasks: number; success_rate: number }
+  providers?: Array<{ name: string; total: number; failed: number; rate: number }>
+}
+
+export interface AppNotification {
+  key: string
+  title: string
+  message: string
+  href: string
+  created_at: string
+  read: boolean
 }
 
 export interface DiagnoseRead {

@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from "react"
 import { Settings as SettingsIcon, Mic, Play, RefreshCw, AlertTriangle, CheckCircle2, KeyRound, Image, Zap, ExternalLink } from "lucide-react"
 import { api, openExternalUrl } from "@/services/api"
+import { globalApi } from "@/services/pages-api"
 import { toast } from "@/hooks/use-toast"
 import type { TTSConfig, TTSVoice } from "@/types"
 import { Button } from "@/components/design-system"
 import { Input } from "@/components/design-system"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
+import { useAppStore } from "@/stores/app-store"
 
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
@@ -63,7 +65,17 @@ export default function SettingsPage() {
   const [settingsDraft, setSettingsDraft] = useState<Record<string, unknown>>({})
   const [settingsSaved, setSettingsSaved] = useState(false)
   const [engineStatus, setEngineStatus] = useState<"installed" | "missing">("installed")
+  const [sysStats, setSysStats] = useState<{
+    cpu_percent: number
+    ram_total_gb: number
+    ram_percent: number
+    disk_free_gb: number
+    active_jobs: number
+    ffmpeg_ok: boolean
+  } | null>(null)
 
+  const setOperatorProfile = useAppStore((s) => s.setOperatorProfile)
+  const [globalSettings, setGlobalSettings] = useState<Record<string, unknown>>({})
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
   const loadAll = async () => {
@@ -78,8 +90,13 @@ export default function SettingsPage() {
         })(),
       ])
       const vs = await api.ttsListVoices(cfg?.provider)
+      const global = await globalApi.getSettings().catch(() => ({ settings: {} as Record<string, unknown> }))
+      setGlobalSettings(global.settings || {})
       api.ffmpegCheck()
         .then((c) => setEngineStatus(c.ffmpeg ? "installed" : "missing"))
+        .catch(() => {})
+      api.systemStats()
+        .then(setSysStats)
         .catch(() => {})
       api.labsGetConfig()
         .then((c) => {
@@ -242,6 +259,18 @@ export default function SettingsPage() {
   const saveSettings = async () => {
     try {
       await api.settingsSave(settingsDraft)
+      const mergedGlobal = {
+        ...globalSettings,
+        operator_name: String(globalSettings.operator_name || ""),
+        operator_email: String(globalSettings.operator_email || ""),
+        language: settingsDraft.language,
+        production_language: settingsDraft.production_language,
+        auto_refresh: settingsDraft.auto_refresh,
+        dark_mode: settingsDraft.dark_mode,
+      }
+      await globalApi.updateSettings(mergedGlobal)
+      setGlobalSettings(mergedGlobal)
+      setOperatorProfile(String(mergedGlobal.operator_name || ""), String(mergedGlobal.operator_email || ""))
       setSettings(settingsDraft)
       setSettingsSaved(true)
       setDirty(false)
@@ -304,8 +333,30 @@ export default function SettingsPage() {
         <TabsContent value="chung">
           <div className="vas-card p-5">
             <h3 className="mb-4 text-base font-semibold text-slate-100">Cài đặt chung</h3>
-<p className="mb-4 text-sm text-slate-500">Thư mục dữ liệu, ngôn ngữ mặc định và hành vi hệ thống</p>
+            <p className="mb-4 text-sm text-slate-500">Thư mục dữ liệu, người vận hành và hành vi hệ thống</p>
             <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>Tên người vận hành</Label>
+                <Input
+                  value={String(globalSettings.operator_name ?? globalSettings.operator_name_suggested ?? "")}
+                  onChange={(e) => {
+                    setDirty(true)
+                    setGlobalSettings((s) => ({ ...s, operator_name: e.target.value }))
+                  }}
+                  placeholder="Tên hiển thị trên sidebar"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Email người vận hành</Label>
+                <Input
+                  value={String(globalSettings.operator_email ?? "")}
+                  onChange={(e) => {
+                    setDirty(true)
+                    setGlobalSettings((s) => ({ ...s, operator_email: e.target.value }))
+                  }}
+                  placeholder="Để trống nếu chưa có"
+                />
+              </div>
               <div className="space-y-1.5">
                 <Label>Ngôn ngữ giao diện</Label>
                 <Select
@@ -393,7 +444,22 @@ export default function SettingsPage() {
               <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
                 <div className="text-xs text-slate-400">ℹ Sử dụng chế độ tương thích cao (chạy trên CPU)</div>
                 <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={() => toast({ title: "Đã kiểm tra công cụ", description: "FFmpeg và FFprobe đã sẵn sàng." })}>Kiểm tra lại</Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      const res = await api.ffmpegCheck().catch(() => null)
+                      if (res?.ffmpeg) {
+                        setEngineStatus("installed")
+                        toast({ title: "FFmpeg đã cài đặt và sẵn sàng", description: res.version || "" })
+                      } else {
+                        setEngineStatus("missing")
+                        toast({ title: "FFmpeg chưa tìm thấy", variant: "destructive" })
+                      }
+                    }}
+                  >
+                    Kiểm tra lại
+                  </Button>
                   <Button size="sm" disabled className="bg-gradient-action">
                     {engineStatus === "installed" ? "Tải lại Bộ Công Cụ" : "Tải Bộ Công Cụ"}
                   </Button>
@@ -808,30 +874,65 @@ export default function SettingsPage() {
         {/* Hiệu năng */}
         <TabsContent value="performance">
           <div className="vas-card p-5">
-            <h3 className="mb-4 text-base font-semibold text-slate-100">⚡ Hiệu năng hệ thống</h3>
-<p className="mb-4 text-sm text-slate-500">Trạng thái tài nguyên máy tính</p>
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-base font-semibold text-slate-100">⚡ Hiệu năng hệ thống</h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 text-slate-400 hover:text-slate-200"
+                onClick={() => api.systemStats().then(setSysStats).catch(() => {})}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Làm mới
+              </Button>
+            </div>
+            <p className="mb-4 text-sm text-slate-500">Trạng thái tài nguyên máy tính (cập nhật thực tế)</p>
             <div className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="rounded-md border p-4">
                   <div className="text-xs text-muted-foreground">CPU</div>
-                  <div className="text-2xl font-bold">~2.4 GHz</div>
-                  <div className="mt-2 h-2 rounded-full bg-muted">
-                    <div className="h-2 w-[65%] rounded-full bg-primary" />
+                  <div className="text-2xl font-bold">
+                    {sysStats ? `${sysStats.cpu_percent.toFixed(1)}%` : "—"}
                   </div>
-                  <div className="mt-1 text-xs text-muted-foreground">65% sử dụng</div>
+                  <div className="mt-2 h-2 rounded-full bg-muted">
+                    <div
+                      className="h-2 rounded-full bg-primary transition-all"
+                      style={{ width: sysStats ? `${Math.min(sysStats.cpu_percent, 100)}%` : "0%" }}
+                    />
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {sysStats ? `${sysStats.cpu_percent.toFixed(1)}% sử dụng` : "Đang tải..."}
+                  </div>
                 </div>
+                {/* RAM */}
                 <div className="rounded-md border p-4">
                   <div className="text-xs text-muted-foreground">RAM</div>
-                  <div className="text-2xl font-bold">16 GB</div>
-                  <div className="mt-2 h-2 rounded-full bg-muted">
-                    <div className="h-2 w-[48%] rounded-full bg-primary" />
+                  <div className="text-2xl font-bold">
+                    {sysStats ? `${sysStats.ram_total_gb} GB` : "—"}
                   </div>
-                  <div className="mt-1 text-xs text-muted-foreground">48% sử dụng</div>
+                  <div className="mt-2 h-2 rounded-full bg-muted">
+                    <div
+                      className="h-2 rounded-full bg-primary transition-all"
+                      style={{ width: sysStats ? `${Math.min(sysStats.ram_percent, 100)}%` : "0%" }}
+                    />
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {sysStats ? `${sysStats.ram_percent.toFixed(1)}% sử dụng` : "Đang tải..."}
+                  </div>
                 </div>
+                {/* Disk */}
                 <div className="rounded-md border p-4">
-                  <div className="text-xs text-muted-foreground">GPU</div>
-                  <div className="text-2xl font-bold">Tích hợp</div>
-                  <div className="mt-2 text-xs text-muted-foreground">Sử dụng CPU để render</div>
+                  <div className="text-xs text-muted-foreground">Disk trống</div>
+                  <div className="text-2xl font-bold">
+                    {sysStats ? `${sysStats.disk_free_gb} GB` : "—"}
+                  </div>
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    {sysStats
+                      ? sysStats.ffmpeg_ok
+                        ? "✔ FFmpeg sẵn sàng"
+                        : "⚠ FFmpeg chưa cài"
+                      : ""}
+                  </div>
                 </div>
               </div>
               <div className="vas-card p-5">
@@ -847,7 +948,29 @@ export default function SettingsPage() {
                   </div>
                   <div className="flex items-center justify-between">
                     <span>Hàng đợi</span>
-                    <span className="rounded bg-blue-500/20 px-2 py-0.5 text-xs text-blue-400">Đang rảnh</span>
+                    <span className={cn(
+                      "rounded px-2 py-0.5 text-xs",
+                      sysStats && sysStats.active_jobs > 0
+                        ? "bg-amber-500/20 text-amber-400"
+                        : "bg-blue-500/20 text-blue-400",
+                    )}>
+                      {sysStats
+                        ? sysStats.active_jobs > 0
+                          ? `Đang xử lý ${sysStats.active_jobs} job`
+                          : "Đang rảnh"
+                        : "Đang tải..."}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>FFmpeg</span>
+                    <span className={cn(
+                      "rounded px-2 py-0.5 text-xs",
+                      sysStats?.ffmpeg_ok
+                        ? "bg-emerald-500/20 text-emerald-400"
+                        : "bg-rose-500/20 text-rose-400",
+                    )}>
+                      {sysStats ? (sysStats.ffmpeg_ok ? "Đã cài" : "Chưa cài") : "—"}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -858,6 +981,8 @@ export default function SettingsPage() {
     </div>
   )
 }
+
+
 
 function EngineCheckRow() {
   const [check, setCheck] = useState<{ ffmpeg: boolean; ffprobe: boolean; guide?: string } | null>(null)

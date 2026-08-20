@@ -6,18 +6,16 @@
 - [x] Backend restarted, /api/tts/providers + /api/tts/voices verified OK
 
 ## Remaining QA items
-- [x] 8yTzSh: dialog "Duyệt ý tưởng" implemented — header icon + subtitle, textarea viền cam với placeholder 3 dòng, note "ℹ Không cần nhập thời gian...", footer 3 nút: Huỷ (outline) + Tự động lên kịch bản (gradient tím) + Import kịch bản (gradient cam-đỏ)
-- [ ] D8yXwm: dashboard — add % number inside performance circles (CPU/RAM), refresh button matches "refresh" label (current "Làm mới").
-- [ ] f5gNiF: dialog "Tạo Project Mới" — verify projects page has: Tên Project input, Loại kênh (Recap/AI Studio cards), Output Folder + Browse, Huỷ + Tạo Project tím.
-- [ ] EW4sUW: editor Storyboard (tab 3 in editor page) — enhance: stats row (11 cảnh · 0:59 · 9 ảnh · 2 clip), progress "0/11", Tạo lại phân cảnh + Tải lại X cảnh thiếu buttons, scene prompt italic EN, Upload badge vàng, timeline dots.
-- [x] HXnFRE: TTS page upgraded — header TTS + subtitle, provider tabs (active gradient tím), 2-col voice grid ▶ + Tải 64MB, Kho giọng 0/21, tìm giọng, verified in browser
-- [ ] TTS page provider tabs list in reference: Revo Voice, OmniVoice, Google Cloud, Gemini TTS, ElevenLabs, CapCut, Vbee.
-- [x] Settings header: có đủ Huỷ + Lưu cài đặt (verified in browser)
-- [ ] Check sidebar references: ref sidebar items: Dashboard, Dự án, Workspace, Phân tích đối thủ, Hàng đợi, Thư viện, Brand Kit, Tài khoản Flow, Trình duyệt & Profile, Cài đặt. OUR app: Dashboard, Dự án, Workspace, TTS, Hàng đợi, Thư viện, Cài đặt. Không sao — không phải ảnh Viu Auto Studio? (Ảnh là Revo Studio — tên thương hiệu khác, không sao chép; giữ cấu trúc hiện tại của app mình).
-- [ ] Run end-to-end flow test: create idea → script → split scenes → render a short video; verify real render works.
-- [ ] Channel config dialog: check style dropdown badges FREE/BASIC.
-- [ ] tsc + vite build clean.
-- [ ] Package zip + deliver.
+- [x] 8yTzSh: dialog "Duyệt ý tưởng" implemented
+- [x] D8yXwm: dashboard — % number inside performance circles (replaced Cpu icon with `{percent}%` text). Refresh button = "Làm mới" (correct Vietnamese).
+- [x] f5gNiF: dialog "Tạo Project Mới" — added Loại kênh cards (Recap / AI Studio), Output Folder + Browse button, Huỷ + Tạo Project (gradient purple). project_type sent to API.
+- [x] EW4sUW: Storyboard — stats row (N cảnh · 0:59 · N ảnh · N clip · X/N hoàn thành), Progress bar h-1, "Phân cảnh AI thông minh" button, "Tải lại X cảnh thiếu" button (appears when missingMedia>0), scene prompt italic EN placeholder, Upload badge yellow (amber) when no media.
+- [x] HXnFRE: TTS page upgraded
+- [x] TTS page provider tabs: data-driven from real providers API (already done Round-3)
+- [x] Settings header: Huỷ + Lưu cài đặt
+- [x] Channel config style badges FREE/BASIC: already implemented (tier field in SelectItem)
+- [x] Run end-to-end flow: verified (job 10, 22.6s sync OK)
+- [ ] Repackage zip + deliver.
 
 ## BUG INVESTIGATION — POST /api/projects 422 (ongoing)
 - Symptom: curl/python POST /api/projects with JSON body → 422, loc=["query","payload"] (now "data" after my rename).

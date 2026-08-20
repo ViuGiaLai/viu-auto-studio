@@ -1,6 +1,6 @@
 import { Table } from "@/components/design-system"
 import { useEffect, useState } from "react"
-import { Link } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import { Hourglass, RotateCcw, Ban, Filter, Loader2, FileText } from "lucide-react"
 import { api } from "@/services/api"
 import { toast } from "@/hooks/use-toast"
@@ -50,9 +50,13 @@ const STEP_LABELS: Record<string, string> = {
 const stepLabel = (step: string) => STEP_LABELS[step] || step || "—"
 
 export default function QueuePage() {
+  const [params, setParams] = useSearchParams()
   const [jobs, setJobs] = useState<RenderJob[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all")
+  const initialFilter = FILTERS.includes(params.get("status") as (typeof FILTERS)[number])
+    ? (params.get("status") as (typeof FILTERS)[number])
+    : "all"
+  const [filter, setFilter] = useState<(typeof FILTERS)[number]>(initialFilter)
   const [logJob, setLogJob] = useState<number | null>(null)
   const [logContent, setLogContent] = useState<string>("")
   const [logOpen, setLogOpen] = useState(false)
@@ -62,18 +66,9 @@ export default function QueuePage() {
     setLogOpen(true)
     setLogContent("Đang tải log…")
     try {
-      const res = await fetch(`/api/render/jobs/${id}/log`)
-      if (res.ok) {
-        const data = await res.json()
-        const text = Array.isArray(data.lines)
-          ? (data.lines as string[]).join("\n")
-          : typeof data.log === "string"
-            ? data.log
-            : JSON.stringify(data)
-        setLogContent(text)
-      } else {
-        setLogContent("Không có log cho lệnh này.")
-      }
+      const res = await api.getJobLog(id)
+      const text = Array.isArray(res.lines) ? res.lines.join("\n") : "Không có log cho lệnh này."
+      setLogContent(text || "Không có log cho lệnh này.")
     } catch {
       setLogContent("Không thể tải log.")
     }
@@ -89,12 +84,29 @@ export default function QueuePage() {
 
   useEffect(() => {
     load()
-    // Cập nhật nhanh hơn (2s) khi có lệnh đang chạy để tiến độ "live"
     const interval = setInterval(load, 2000)
     return () => clearInterval(interval)
   }, [])
 
-  const filtered = filter === "all" ? jobs : jobs.filter((j) => j.status === filter)
+  useEffect(() => {
+    const next = params.get("status")
+    if (next && FILTERS.includes(next as (typeof FILTERS)[number])) setFilter(next as (typeof FILTERS)[number])
+    const jobId = Number(params.get("job") || "")
+    if (jobId) void openLog(jobId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params])
+
+  const filtered =
+    filter === "all"
+      ? jobs
+      : filter === "running"
+        ? jobs.filter((j) =>
+            ["running", "rendering", "generating_voice", "building_scenes", "preparing_media", "generating_subtitles"].includes(j.status),
+          )
+        : filter === "queued"
+          ? jobs.filter((j) => ["queued", "pending"].includes(j.status))
+          : jobs.filter((j) => j.status === filter)
+  const selectedJobId = Number(params.get("job") || "")
 
   const counts = {
     all: jobs.length,
@@ -144,7 +156,13 @@ export default function QueuePage() {
         {FILTERS.map((f) => (
           <Button variant="ghost"
             key={f}
-            onClick={() => setFilter(f)}
+            onClick={() => {
+              setFilter(f)
+              const next = new URLSearchParams(params)
+              if (f === "all") next.delete("status")
+              else next.set("status", f)
+              setParams(next, { replace: true })
+            }}
             className={cn(
               "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors duration-200 border border-transparent",
               filter === f
@@ -198,7 +216,7 @@ export default function QueuePage() {
                 </thead>
                 <tbody>
                   {filtered.map((j) => (
-                    <tr key={j.id} className="border-b border-white/5 last:border-0 hover:bg-white/[0.02]">
+                    <tr key={j.id} className={cn("border-b border-white/5 last:border-0 hover:bg-white/[0.02]", selectedJobId === j.id && "bg-cyan-500/10")}>
                       <td className="py-3 pr-4 font-mono text-xs text-muted-foreground">{j.id}</td>
                       <td className="py-3 pr-4">
                         <Link
@@ -232,7 +250,7 @@ export default function QueuePage() {
                               Thử lại
                             </Button>
                           )}
-                          {j.status === "running" && (
+                          {["running", "rendering", "generating_voice", "preparing_media", "generating_subtitles"].includes(j.status) && (
                             <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => cancel(j.id)}>
                               <Ban className="h-3 w-3" />
                               Hủy

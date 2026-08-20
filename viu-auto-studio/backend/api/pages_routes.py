@@ -237,10 +237,10 @@ class FlowConnectionRead(BaseModel):
     extension_name: str
     google_account: str
     profile_name: str
-    paired_at: Optional[str]
-    heartbeat_at: Optional[str]
+    paired_at: Optional[datetime] = None
+    heartbeat_at: Optional[datetime] = None
     status: str
-    updated_at: Optional[str]
+    updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -306,13 +306,18 @@ def _ffprobe_info(file_path: str) -> dict:
 
 def _get_global_settings(db: Session) -> dict:
     import json
+    data: dict = {}
     try:
         row = db.query(AppSetting).filter(AppSetting.key == "global_ui_settings").first()
         if row and row.value_encrypted:
-            return json.loads(row.value_encrypted)
+            data = json.loads(row.value_encrypted) or {}
     except Exception:
-        pass
-    return {}
+        data = {}
+    if not str(data.get("operator_name") or "").strip():
+        data["operator_name_suggested"] = (
+            os.environ.get("USERNAME") or os.environ.get("USER") or ""
+        ).strip()
+    return data
 
 
 def _save_global_settings(db: Session, data: dict) -> None:
@@ -951,7 +956,7 @@ def get_flow_connection(db: Session = Depends(get_db)):
     fc = db.query(FlowConnection).order_by(FlowConnection.id.desc()).first()
     if not fc:
         return {}
-    return FlowConnectionRead.model_validate(fc).model_dump()
+    return FlowConnectionRead.model_validate(fc).model_dump(mode="json")
 
 
 @router.post("/flow-connection/pair")
@@ -1026,47 +1031,251 @@ def update_global_settings(payload: GlobalSettingsUpdate = Body(...),
     return {"settings": cur}
 
 
+PRODUCING_STATUSES = (
+    "generating_voice", "voice_ready", "preparing_media", "media_ready",
+    "generating_subtitles", "subtitle_ready", "rendering", "processing", "running",
+)
+WAITING_STATUSES = (
+    "waiting_for_review", "pending", "queued", "draft", "script_ready",
+    "script_approved", "idle",
+)
+
+
+def _project_bucket(status: str) -> str:
+    if status in PRODUCING_STATUSES:
+        return "producing"
+    if status in WAITING_STATUSES:
+        return "waiting"
+    if status == "completed":
+        return "completed"
+    if status == "failed":
+        return "failed"
+    return "other"
+
+
+def _project_counts(db: Session) -> dict[str, int]:
+    counts = {"producing": 0, "waiting": 0, "completed": 0, "failed": 0, "other": 0, "total": 0}
+    for project in db.query(Project).all():
+        counts["total"] += 1
+        counts[_project_bucket(project.status)] += 1
+    return counts
+
+
+class NotificationMarkRead(BaseModel):
+    keys: list[str] = []
+
+
+@router.get("/dashboard/overview")
+def dashboard_overview(db: Session = Depends(get_db)):
+    """Đếm dự án thật + delta so với snapshot ngày trước (lưu SQLite)."""
+    counts = _project_counts(db)
+    today = datetime.utcnow().date().isoformat()
+    settings = _get_global_settings(db)
+    snap = settings.get("overview_snapshot") if isinstance(settings.get("overview_snapshot"), dict) else {}
+    if snap.get("date") == today:
+        previous = snap.get("previous") if isinstance(snap.get("previous"), dict) else counts
+    else:
+        previous = snap.get("counts") if isinstance(snap.get("counts"), dict) else counts
+        settings["overview_snapshot"] = {"date": today, "counts": counts, "previous": previous}
+        _save_global_settings(db, settings)
+        db.commit()
+        if snap.get("date") != today:
+            settings["overview_snapshot"] = {"date": today, "counts": counts, "previous": previous}
+    # Cập nhật counts trong ngày để ngày mai có mốc thật, không đổi previous.
+    settings["overview_snapshot"] = {
+        "date": today,
+        "counts": counts,
+        "previous": previous,
+    }
+    _save_global_settings(db, settings)
+    db.commit()
+    keys = ("producing", "waiting", "completed", "failed")
+    delta = {k: int(counts.get(k, 0)) - int(previous.get(k, 0) or 0) for k in keys}
+    return {"counts": counts, "delta": delta, "snapshot_date": today}
+
+
+@router.get("/notifications")
+def list_notifications(db: Session = Depends(get_db)):
+    settings = _get_global_settings(db)
+    read_keys = set(settings.get("notification_read_keys") or [])
+    items: list[dict] = []
+
+    for project in db.query(Project).filter(Project.status == "failed").order_by(Project.updated_at.desc()).limit(20).all():
+        stamp = project.updated_at.isoformat() if project.updated_at else ""
+        key = f"project-fail-{project.id}-{stamp}"
+        items.append({
+            "key": key,
+            "title": "Dự án lỗi",
+            "message": project.error_message or project.name,
+            "href": f"/projects/{project.id}",
+            "created_at": stamp,
+            "read": key in read_keys,
+        })
+
+    for job in db.query(RenderJob).filter(RenderJob.status == "failed").order_by(RenderJob.updated_at.desc()).limit(20).all():
+        stamp = job.updated_at.isoformat() if job.updated_at else ""
+        key = f"render-fail-{job.id}-{stamp}"
+        items.append({
+            "key": key,
+            "title": "Tác vụ render lỗi",
+            "message": job.error_message or f"Job #{job.id}",
+            "href": f"/queue?status=failed&job={job.id}",
+            "created_at": stamp,
+            "read": key in read_keys,
+        })
+
+    for job in db.query(Job).filter(Job.status == "failed").order_by(Job.updated_at.desc()).limit(20).all():
+        stamp = job.updated_at.isoformat() if job.updated_at else ""
+        key = f"queue-fail-{job.id}-{stamp}"
+        items.append({
+            "key": key,
+            "title": "Tác vụ hàng đợi lỗi",
+            "message": job.kind or f"Job #{job.id}",
+            "href": f"/queue?status=failed&job={job.id}",
+            "created_at": stamp,
+            "read": key in read_keys,
+        })
+
+    flow = db.query(FlowConnection).order_by(FlowConnection.id.desc()).first()
+    if flow is None or flow.status in ("unpaired", "lost", "") or not flow.heartbeat_at:
+        key = "flow-offline"
+        items.append({
+            "key": key,
+            "title": "Flow Connector",
+            "message": "Chưa ghép hoặc mất heartbeat",
+            "href": "/flow",
+            "created_at": datetime.utcnow().isoformat(),
+            "read": key in read_keys,
+        })
+    elif flow.heartbeat_at and (datetime.utcnow() - flow.heartbeat_at) > timedelta(minutes=2):
+        key = f"flow-stale-{flow.heartbeat_at.isoformat()}"
+        items.append({
+            "key": key,
+            "title": "Flow Connector",
+            "message": "Heartbeat quá hạn",
+            "href": "/flow",
+            "created_at": flow.heartbeat_at.isoformat(),
+            "read": key in read_keys,
+        })
+
+    items.sort(key=lambda row: row.get("created_at") or "", reverse=True)
+    unread = sum(1 for row in items if not row["read"])
+    return {"items": items[:30], "unread": unread}
+
+
+@router.post("/notifications/read")
+def mark_notifications_read(payload: NotificationMarkRead = Body(...), db: Session = Depends(get_db)):
+    settings = _get_global_settings(db)
+    current = list(settings.get("notification_read_keys") or [])
+    merged = list(dict.fromkeys([*current, *(payload.keys or [])]))
+    settings["notification_read_keys"] = merged[-200:]
+    _save_global_settings(db, settings)
+    db.commit()
+    return {"ok": True, "read": len(settings["notification_read_keys"])}
+
+
 # ---------------------------------------------------------------------------
 # Phân tích KPI (dữ liệu thật từ SQLite)
 # ---------------------------------------------------------------------------
 
 @router.get("/analytics")
-def get_analytics(db: Session = Depends(get_db)):
-    import json
-    total_projects = db.query(Project).count()
-    completed_projects = db.query(Project).filter(
-        Project.status == "completed").count()
-    in_progress = db.query(Project).filter(
-        Project.status == "in_progress").count()
-    failed_projects = db.query(Project).filter(
-        Project.status == "failed").count()
-    total_scenes = db.query(Scene).count()
-    media_ready = db.query(Scene).filter(Scene.status.like("%media_ready%")).count() + \
-        db.query(Scene).filter(Scene.status == "done").count()
-    total_jobs = db.query(Job).count()
-    job_completed = db.query(Job).filter(Job.status == "completed").count()
-    job_failed = db.query(Job).filter(Job.status == "failed").count()
-    total_render_seconds = 0.0
-    for r in db.query(RenderJob).filter(RenderJob.status == "completed").all():
-        if r.completed_at and r.started_at:
-            total_render_seconds += (r.completed_at - r.started_at).total_seconds()
-    avg_render_minutes = (total_render_seconds / 60) / max(1, job_completed)
-    connector_failed = db.query(ConnectorTask).filter(
-        ConnectorTask.status == "failed").count()
-    connector_total = db.query(ConnectorTask).count()
+def get_analytics(days: int = Query(0), db: Session = Depends(get_db)):
+    cutoff = datetime.utcnow() - timedelta(days=days) if days and days > 0 else None
+
+    def _in_range(value) -> bool:
+        if cutoff is None or value is None:
+            return cutoff is None
+        return value >= cutoff
+
+    projects = [p for p in db.query(Project).all() if _in_range(p.updated_at or p.created_at)]
+    scenes = [s for s in db.query(Scene).all() if _in_range(s.updated_at or s.created_at)]
+    jobs = [j for j in db.query(Job).all() if _in_range(j.updated_at or j.created_at)]
+    renders = [r for r in db.query(RenderJob).all() if _in_range(r.updated_at or r.created_at)]
+    connectors = [t for t in db.query(ConnectorTask).all() if _in_range(t.updated_at or t.created_at)]
+    voices = [v for v in db.query(VoiceAsset).all() if cutoff is None or (v.created_at and v.created_at >= cutoff)]
+
+    completed_projects = sum(1 for p in projects if p.status == "completed")
+    failed_projects = sum(1 for p in projects if p.status == "failed")
+    in_progress = sum(1 for p in projects if _project_bucket(p.status) == "producing")
+    media_ready = sum(1 for s in scenes if (s.media_path or "") or s.status in ("media_ready", "done", "completed"))
+
+    job_by_status = {
+        "pending": 0, "running": 0, "waiting_for_review": 0,
+        "completed": 0, "failed": 0, "cancelled": 0,
+    }
+    for job in jobs:
+        if job.status in job_by_status:
+            job_by_status[job.status] += 1
+    for render in renders:
+        mapped = "running" if render.status in PRODUCING_STATUSES else render.status
+        if mapped in job_by_status:
+            job_by_status[mapped] += 1
+
+    completed_renders = [r for r in renders if r.status == "completed" and r.completed_at and r.started_at]
+    total_render_seconds = sum((r.completed_at - r.started_at).total_seconds() for r in completed_renders)
+    avg_render_minutes = (total_render_seconds / 60) / max(1, len(completed_renders))
+
+    connector_failed = sum(1 for t in connectors if t.status == "failed")
+    connector_total = len(connectors)
     flow_success_rate = (
         100.0 * (connector_total - connector_failed) / connector_total
-        if connector_total else 100.0)
+        if connector_total else 0.0
+    )
+
+    tts_verified = sum(1 for v in voices if v.verify_state == "verified")
+    tts_failed = sum(1 for v in voices if v.verify_state == "failed")
+    tts_total = len(voices)
+    render_failed = sum(1 for r in renders if r.status == "failed")
+    render_total = len(renders)
+
+    def _rate(ok: int, total: int) -> float:
+        return round(100.0 * ok / total, 1) if total else 0.0
+
     return {
-        "projects": {"total": total_projects, "completed": completed_projects,
-                     "in_progress": in_progress, "failed": failed_projects},
-        "scenes": {"total": total_scenes, "media_ready": media_ready},
-        "jobs": {"total": total_jobs, "completed": job_completed,
-                 "failed": job_failed},
-        "render": {"avg_minutes": round(avg_render_minutes, 1),
-                   "total_seconds": round(total_render_seconds)},
-        "flow": {"total_tasks": connector_total, "failed_tasks": connector_failed,
-                 "success_rate": round(flow_success_rate, 1)},
+        "range_days": days,
+        "projects": {
+            "total": len(projects),
+            "completed": completed_projects,
+            "in_progress": in_progress,
+            "failed": failed_projects,
+        },
+        "scenes": {"total": len(scenes), "media_ready": media_ready},
+        "jobs": {
+            "total": len(jobs) + len(renders),
+            "completed": job_by_status["completed"],
+            "failed": job_by_status["failed"],
+            "by_status": job_by_status,
+        },
+        "render": {
+            "avg_minutes": round(avg_render_minutes, 1) if completed_renders else 0,
+            "total_seconds": round(total_render_seconds),
+            "completed": len(completed_renders),
+        },
+        "flow": {
+            "total_tasks": connector_total,
+            "failed_tasks": connector_failed,
+            "success_rate": round(flow_success_rate, 1),
+        },
+        "providers": [
+            {
+                "name": "Google Flow",
+                "total": connector_total,
+                "failed": connector_failed,
+                "rate": _rate(connector_total - connector_failed, connector_total),
+            },
+            {
+                "name": "TTS",
+                "total": tts_total,
+                "failed": tts_failed,
+                "rate": _rate(tts_verified, tts_total),
+            },
+            {
+                "name": "FFmpeg / Render",
+                "total": render_total,
+                "failed": render_failed,
+                "rate": _rate(render_total - render_failed, render_total),
+            },
+        ],
     }
 
 

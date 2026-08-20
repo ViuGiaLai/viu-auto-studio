@@ -1,0 +1,28 @@
+stt,nhom,ten_file,man_hinh,muc_dieu_huong
+1,Toan cuc,01_Toan_Cuc/01_Tong_Quan.png,Tổng quan,Tổng quan
+2,Tao du an,02_Tao_Du_An/01_Danh_Sach_Du_An_Va_Buoc_1_Thong_Tin.png,Danh sách dự án và bước 1,Dự án
+3,Tao du an,02_Tao_Du_An/02_Buoc_2_Cau_Hinh_Kenh.png,Bước 2 cấu hình kênh,Dự án
+4,Tao du an,02_Tao_Du_An/03_Buoc_3_Giong_Va_Hinh.png,Bước 3 giọng và hình,Dự án
+5,Tao du an,02_Tao_Du_An/04_Buoc_4_Tu_Dong_Hoa.png,Bước 4 tự động hóa,Dự án
+6,Studio,03_Studio_Quy_Trinh/01_Y_Tuong.png,Ý tưởng,Studio > Ý tưởng
+7,Studio,03_Studio_Quy_Trinh/02_Kich_Ban_Va_Giong.png,Kịch bản và giọng,Studio > Kịch bản & Giọng
+8,Studio,03_Studio_Quy_Trinh/03_Phan_Canh_Visual.png,Phân cảnh Visual,Studio > Phân cảnh Visual
+9,Studio,03_Studio_Quy_Trinh/04_Nhan_Vat_Trong_Du_An.png,Nhân vật trong dự án,Studio > Nhân vật
+10,Studio,03_Studio_Quy_Trinh/05_Media.png,Media,Studio > Media
+11,Studio,03_Studio_Quy_Trinh/06_Dung_Phim_Co_Ban.png,Dựng phim cơ bản,Studio > Dựng phim
+12,Studio,03_Studio_Quy_Trinh/07_Edit_Nang_Cao.png,Edit nâng cao,Studio > Dựng phim > Edit nâng cao
+13,Studio,03_Studio_Quy_Trinh/08_Render_Tien_Do_Va_Khoi_Phuc.png,Render tiến độ và khôi phục,Studio > Dựng phim > Render
+14,Studio,03_Studio_Quy_Trinh/09_Xuat_Ban.png,Xuất bản,Studio > Xuất bản
+15,Van hanh,04_Van_Hanh/01_Hang_Doi_Xu_Ly.png,Hàng đợi xử lý,Hàng đợi
+16,Van hanh,04_Van_Hanh/02_Thu_Vien_Media.png,Thư viện media,Thư viện
+17,Van hanh,04_Van_Hanh/03_Thu_Vien_Giong_Doc.png,Thư viện giọng đọc,Giọng đọc
+18,Van hanh,04_Van_Hanh/04_Thu_Vien_Nhan_Vat.png,Thư viện nhân vật,Nhân vật
+19,Van hanh,04_Van_Hanh/05_Flow_Connector_Trung_Tam.png,Trung tâm Flow Connector,Flow
+20,Van hanh,04_Van_Hanh/06_Flow_Connector_Ghep_Lan_Dau.png,Ghép Flow lần đầu,Flow
+21,Van hanh,04_Van_Hanh/07_Phan_Tich.png,Phân tích,Phân tích
+22,Cai dat,05_Cai_Dat/01_Chung.png,Cài đặt chung,Cài đặt > Chung
+23,Cai dat,05_Cai_Dat/02_Engine_Va_Cong_Cu.png,Engine và công cụ,Cài đặt > Engine & Công cụ
+24,Cai dat,05_Cai_Dat/03_AI_Va_Anh.png,AI và ảnh,Cài đặt > AI & Ảnh
+25,Cai dat,05_Cai_Dat/04_Giong_Noi.png,Giọng nói,Cài đặt > Giọng nói
+26,Cai dat,05_Cai_Dat/05_Flow_Connector.png,Cấu hình Flow Connector,Cài đặt > Flow Connector
+27,Cai dat,05_Cai_Dat/06_Hieu_Nang.png,Hiệu năng,Cài đặt > Hiệu năng

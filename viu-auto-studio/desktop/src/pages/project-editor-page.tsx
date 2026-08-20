@@ -7,7 +7,7 @@ import {
   FileVideo, Clapperboard, AlertCircle, ListChecks, Sparkles, FolderOpen, Settings, Zap,
   ShieldCheck, ClipboardPaste, Download,
 } from "lucide-react"
-import { api, openExternalUrl, outputVideoUrl } from "@/services/api"
+import { api, openExternalUrl, outputVideoUrl, selectDirectory } from "@/services/api"
 import { toast } from "@/hooks/use-toast"
 import { useEditorStore } from "@/stores/editor-store"
 import { useAppStore } from "@/stores/app-store"
@@ -71,10 +71,12 @@ const SUBTITLE_PRESETS: Array<{ name: string; cfg: Partial<SubtitleConfig> }> = 
 function NewProjectForm({ onCreated }: { onCreated: (id: number) => void }) {
   const [name, setName] = useState("")
   const [topic, setTopic] = useState("")
+  const [channelType, setChannelType] = useState<"recap" | "ai_studio">("ai_studio")
   const [videoType, setVideoType] = useState("long")
   const [aspect, setAspect] = useState("16:9")
   const [language, setLanguage] = useState("vi")
   const [duration, setDuration] = useState(120)
+  const [outputFolder, setOutputFolder] = useState("")
   const [loading, setLoading] = useState(false)
 
   const submit = async (e: React.FormEvent) => {
@@ -92,6 +94,7 @@ function NewProjectForm({ onCreated }: { onCreated: (id: number) => void }) {
         aspect_ratio: aspect,
         language,
         target_duration: duration,
+        project_type: channelType === "recap" ? "recap" : "ai_studio",
       })
       toast({ title: "Đã tạo dự án", description: p.name })
       onCreated(p.id)
@@ -106,17 +109,45 @@ function NewProjectForm({ onCreated }: { onCreated: (id: number) => void }) {
     <form onSubmit={submit} className="mx-auto mt-10 max-w-2xl space-y-5 rounded-lg border bg-[#141d22] p-8">
       <div className="text-center">
         <Clapperboard className="mx-auto h-10 w-10 text-amber-400" />
-        <h2 className="mt-2 text-xl font-bold">Dự án mới</h2>
+        <h2 className="mt-2 text-xl font-bold">Tạo Project Mới</h2>
         <p className="mt-1 text-sm text-slate-500">Định nghĩa video bạn muốn tạo</p>
       </div>
       <div className="space-y-1.5">
-        <Label>Tên dự án *</Label>
+        <Label>Tên Project *</Label>
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="VD: Series AI cho người mới" />
       </div>
       <div className="space-y-1.5">
         <Label>Chủ đề video</Label>
         <Input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="VD: Trí tuệ nhân tạo là gì?" />
       </div>
+
+      {/* Channel type selection cards */}
+      <div className="space-y-2">
+        <Label>Loại kênh</Label>
+        <div className="grid grid-cols-2 gap-3">
+          {([
+            { value: "recap" as const, icon: "🎬", title: "Recap", desc: "Tóm tắt nội dung, phim, sự kiện" },
+            { value: "ai_studio" as const, icon: "🤖", title: "AI Studio", desc: "Kịch bản gốc do AI sáng tác" },
+          ] as const).map((card) => (
+            <button
+              key={card.value}
+              type="button"
+              onClick={() => setChannelType(card.value)}
+              className={cn(
+                "flex flex-col items-start gap-1 rounded-xl border p-4 text-left transition-all",
+                channelType === card.value
+                  ? "border-amber-500/60 bg-amber-500/10 shadow-amber-500/10 shadow-lg"
+                  : "border-white/10 bg-white/[0.02] hover:border-white/20",
+              )}
+            >
+              <span className="text-2xl">{card.icon}</span>
+              <span className={cn("text-sm font-semibold", channelType === card.value ? "text-amber-300" : "text-slate-200")}>{card.title}</span>
+              <span className="text-[11px] text-slate-500">{card.desc}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1.5">
           <Label>Loại video</Label>
@@ -156,9 +187,49 @@ function NewProjectForm({ onCreated }: { onCreated: (id: number) => void }) {
           <Input type="number" min={15} max={1800} value={duration} onChange={(e) => setDuration(Number(e.target.value))} />
         </div>
       </div>
-      <Button type="submit" className="w-full" disabled={loading}>
-        {loading ? "Đang tạo..." : "Tạo dự án"}
-      </Button>
+
+      {/* Output folder */}
+      <div className="space-y-1.5">
+        <Label>Output Folder (tuỳ chọn)</Label>
+        <div className="flex gap-2">
+          <Input
+            value={outputFolder}
+            onChange={(e) => setOutputFolder(e.target.value)}
+            placeholder="Mặc định: thư mục projects trong app"
+          />
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const folder = await selectDirectory()
+                if (folder) setOutputFolder(folder)
+              } catch { /* noop */ }
+            }}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs text-slate-300 transition-colors hover:bg-white/[0.08]"
+          >
+            <FolderOpen className="h-4 w-4" />
+            Browse
+          </button>
+        </div>
+      </div>
+
+      <div className="flex gap-3">
+        <Button
+          type="button"
+          variant="outline"
+          className="flex-1"
+          onClick={() => window.history.back()}
+        >
+          Huỷ
+        </Button>
+        <Button
+          type="submit"
+          className="flex-1 bg-gradient-to-r from-[#6d28d9] to-[#8b5cf6] text-white shadow-lg shadow-purple-500/20 hover:brightness-110"
+          disabled={loading}
+        >
+          {loading ? "Đang tạo..." : "Tạo Project"}
+        </Button>
+      </div>
     </form>
   )
 }
@@ -649,8 +720,40 @@ function Storyboard({ project }: { project: Project }) {
     }
   }
 
+  // Stats computed from scenes
+  const totalDuration = scenes.reduce((sum, s) => sum + (s.duration || 0), 0)
+  const mediaCount = scenes.filter((s) => s.media_path && s.media_type === "image").length
+  const clipCount = scenes.filter((s) => s.media_path && s.media_type === "video").length
+  const missingMedia = scenes.filter((s) => !s.media_path).length
+  const completedScenes = scenes.filter((s) => s.media_path && s.audio_path).length
+
+  const formatDur = (sec: number) => {
+    const m = Math.floor(sec / 60)
+    const s = Math.round(sec % 60)
+    return `${m}:${String(s).padStart(2, "0")}`
+  }
+
   return (
     <div className="space-y-4">
+      {/* Stats row */}
+      {scenes.length > 0 && (
+        <div className="flex flex-wrap items-center gap-4 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-2.5 text-sm">
+          <span className="font-semibold text-slate-200">{scenes.length} cảnh</span>
+          <span className="text-slate-500">·</span>
+          <span className="text-slate-400">{formatDur(totalDuration)}</span>
+          <span className="text-slate-500">·</span>
+          <span className="text-slate-400">{mediaCount} ảnh</span>
+          <span className="text-slate-500">·</span>
+          <span className="text-slate-400">{clipCount} clip</span>
+          <span className="ml-auto text-xs text-slate-500">{completedScenes}/{scenes.length} hoàn thành</span>
+        </div>
+      )}
+
+      {/* Progress bar */}
+      {scenes.length > 0 && (
+        <Progress value={scenes.length > 0 ? Math.round((completedScenes / scenes.length) * 100) : 0} className="h-1" />
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-sm text-slate-500">{scenes.length} cảnh · kéo thẻ để đổi thứ tự</div>
         <div className="flex flex-wrap gap-2">
@@ -677,6 +780,31 @@ function Storyboard({ project }: { project: Project }) {
             <Sparkles className={cn("h-3.5 w-3.5", analyzing && "animate-pulse")} />
             {analyzing ? "Đang phân tích…" : "Phân cảnh AI thông minh"}
           </Button>
+
+          {/* Tải lại cảnh thiếu media */}
+          {missingMedia > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 border-amber-500/30 text-amber-300 hover:bg-amber-500/10"
+              onClick={async () => {
+                try {
+                  const res = await api.createMediaTasks(project.id, {})
+                  toast({
+                    title: `Đã tạo task cho ${res.created} cảnh thiếu`,
+                    description: "Flow Connector sẽ tự tạo media cho các cảnh chưa có.",
+                  })
+                  load()
+                } catch (e) {
+                  toast({ title: "Tạo task thất bại", description: String(e), variant: "destructive" })
+                }
+              }}
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Tải lại {missingMedia} cảnh thiếu
+            </Button>
+          )}
+
           <Button
             size="sm"
             className="gap-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-orange-500/20 hover:brightness-110"
@@ -842,7 +970,8 @@ function Storyboard({ project }: { project: Project }) {
                       <Input
                         value={scene.visual_prompt}
                         onChange={(e) => updateScene(scene, { visual_prompt: e.target.value })}
-                        className="text-sm"
+                        className="text-sm italic text-slate-300"
+                        placeholder="Describe the visual scene in English..."
                       />
                       <Button size="icon" variant="ghost" title="AI viết lại prompt theo toàn cảnh" disabled={analyzingScene === scene.id} onClick={async () => {
                         try {
@@ -860,15 +989,18 @@ function Storyboard({ project }: { project: Project }) {
                       </Button>
                     </div>
                     {scene.style_prompt ? (
-                      <p className="truncate rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300" title={scene.style_prompt}>
+                      <p className="truncate rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-[11px] italic text-amber-300" title={scene.style_prompt}>
                         🎨 {scene.style_prompt}
                       </p>
                     ) : null}
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
-                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-xs hover:bg-white/[0.04]">
+                    <label className={cn(
+                      "inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition-colors hover:bg-white/[0.04]",
+                      scene.media_path ? "border-white/10" : "border-amber-500/40 bg-amber-500/[0.06] text-amber-200",
+                    )}>
                       <Upload className="h-3.5 w-3.5" />
-                      {scene.media_path ? "Thay media" : "Chọn ảnh/video"}
+                      {scene.media_path ? "Thay media" : "Upload ảnh/video"}
                       <input
                         type="file"
                         accept="image/*,video/*"
