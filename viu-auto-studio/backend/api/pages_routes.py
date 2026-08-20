@@ -422,11 +422,13 @@ def generate_ideas(payload: IdeaGenerateRequest = Body(...),
     prompt = (
         f"Bạn là biên tập viên nội dung video. Dựa trên chủ đề '{topic}', "
         f"kiểu video '{channel_cfg.get('video_kind', 'Documentary Explainer')}', "
-        f"ngách '{channel_cfg.get('niche', '')}', đối tượng '{channel_cfg.get('audience', '18-35 tuổi')}', "
-        f"và hook style '{channel_cfg.get('hook_style', '')}', hãy đề xuất 3 ý tưởng video "
+        f"ngách '{channel_cfg.get('niche', '')}', đối tượng '{channel_cfg.get('target_audience') or channel_cfg.get('audience', '18-35 tuổi')}', "
+        f"phân loại '{channel_cfg.get('content_rating', 'general')}', kiểu thumbnail '{channel_cfg.get('thumbnail_style', 'auto')}', "
+        f"và hook style '{channel_cfg.get('hook_style') or channel_cfg.get('hook', '')}', hãy đề xuất 3 ý tưởng video "
         f"khác nhau về góc nhìn và hook. Trả JSON: {{ideas: [{{title, hook, angle, outline: [5 mục], duration_estimate, thumbnail_concept, thumbnail_prompt}}]}}. "
         "Trả bằng tiếng Việt."
     )
+
     try:
         import json
         resp = generate_text(
@@ -1434,8 +1436,33 @@ def flow_heartbeat(
     return connection_payload(fc)
 
 
+@router.post("/flow-connection/logout")
+def logout_flow_connection(
+    x_viu_flow_token: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    """Đăng xuất Flow profile và reset trạng thái account/factory hiện tại."""
+    _require_flow_bootstrap_token(x_viu_flow_token)
+    fc = db.query(FlowConnection).order_by(FlowConnection.id.desc()).first()
+    if not fc:
+        return {"ok": True, "message": "Flow chưa có profile đăng nhập."}
+    fc.status = "unpaired"
+    fc.google_account = ""
+    fc.profile_name = ""
+    fc.factory_state = "waiting_login"
+    fc.factory_project_id = None
+    fc.factory_session_id = ""
+    fc.factory_mode = False
+    fc.include_video = False
+    fc.last_error = ""
+    fc.last_state_at = datetime.utcnow()
+    db.commit()
+    return {"ok": True, "message": "Đã reset trạng thái tài khoản Google Flow.", "connection": connection_payload(fc)}
+
+
 @router.post("/flow-connection/new-pairing-code")
 def new_pairing_code(db: Session = Depends(get_db)):
+
     import secrets
     fc = db.query(FlowConnection).order_by(FlowConnection.id.desc()).first()
     if not fc:

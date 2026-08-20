@@ -47,7 +47,7 @@ const VOICE_STYLE_5AXES = [
 
 type Config = Record<string, unknown>
 
-const CONFIG_KEYS = new Set(["image_source", "video_style", "niche", "series_type", "description", "direction", "script_style", "hook", "long_video_duration", "short_video_duration", "ai_provider", "tts_provider", "voice", "character_sync", "image_generator", "image_mode", "static_image_seconds", "video_model", "review_mode", "suggested_time", "language"])
+const CONFIG_KEYS = new Set(["image_source", "video_style", "niche", "series_type", "description", "direction", "script_style", "hook", "long_video_duration", "short_video_duration", "target_audience", "content_rating", "thumbnail_style", "subtitle_style", "ai_provider", "tts_provider", "voice", "character_sync", "image_generator", "image_mode", "static_image_seconds", "video_model", "review_mode", "suggested_time", "language"])
 
 const DEFAULT_CONFIG: Config = {
   image_source: "ai",
@@ -60,6 +60,10 @@ const DEFAULT_CONFIG: Config = {
   hook: "",
   long_video_duration: "3 - 5 phút",
   short_video_duration: "90 - 120 giây",
+  target_audience: "",
+  content_rating: "general",
+  thumbnail_style: "auto",
+  subtitle_style: "default",
   ai_provider: "default",
   tts_provider: "",
   voice: "",
@@ -216,6 +220,7 @@ export function ChannelConfigDialog({
         }
         await api.updateProjectConfig(projectId, { ...projectConfig, channel: nextConfig })
       }
+      await api.updateProject(projectId, { language: String(nextConfig.language || "vi") })
       setConfig({ ...DEFAULT_CONFIG, ...nextConfig })
       setDirty(false)
       setSavedAt(Date.now())
@@ -261,9 +266,9 @@ export function ChannelConfigDialog({
               <h3 className="mb-4 flex items-center gap-2 text-base font-semibold tracking-tight text-slate-100">🧠 Nội dung & Bộ não — quyết định chủ đề & chất riêng của kênh</h3>
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Nguồn hình</Label>
+                  <Label className="text-xs font-medium text-slate-400">Nguồn hình</Label>
                   <Select value={String(config.image_source)} onValueChange={(v) => set("image_source", v)}>
-                    <SelectTrigger className="w-full text-sm">
+                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -274,9 +279,9 @@ export function ChannelConfigDialog({
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Kiểu video (bộ não AI)</Label>
+                  <Label className="text-xs font-medium text-slate-400">Kiểu video (bộ não AI)</Label>
                   <Select value={String(config.video_style)} onValueChange={(v) => set("video_style", v)}>
-                    <SelectTrigger className="w-full text-sm">
+                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
                       <SelectValue placeholder="— Chọn kiểu —" />
                     </SelectTrigger>
                     <SelectContent>
@@ -297,8 +302,9 @@ export function ChannelConfigDialog({
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Ngách của kênh (gõ cụ thể để khác biệt)</Label>
+                  <Label className="text-xs font-medium text-slate-400">Ngách của kênh (gõ cụ thể để khác biệt)</Label>
                   <Input
+                    className="border-white/10 bg-[#0c1419] text-slate-200 placeholder:text-slate-500"
                     placeholder="Vd: Sinh tồn của thợ săn voi mùa đông vùng Siberia"
                     value={String(config.niche || "")}
                     onChange={(e) => set("niche", e.target.value)}
@@ -308,9 +314,9 @@ export function ChannelConfigDialog({
 
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Kiểu chuỗi tập (chống trùng chủ đề)</Label>
+                  <Label className="text-xs font-medium text-slate-400">Kiểu chuỗi tập (chống trùng chủ đề)</Label>
                   <Select value={String(config.series_type)} onValueChange={(v) => set("series_type", v)}>
-                    <SelectTrigger className="w-full text-sm">
+                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -328,10 +334,56 @@ export function ChannelConfigDialog({
                 </p>
               )}
 
+              <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-slate-400">Đối tượng xem mặc định</Label>
+                  <Input
+                    className="border-white/10 bg-[#0c1419] text-slate-200 placeholder:text-slate-500"
+                    placeholder="Vd: Người mới bắt đầu, 18–35 tuổi"
+                    value={String(config.target_audience || "")}
+                    onChange={(e) => set("target_audience", e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-slate-400">Phân loại nội dung</Label>
+                  <Select value={String(config.content_rating || "general")} onValueChange={(v) => set("content_rating", v)}>
+                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="general">Phổ thông — phù hợp đa số</SelectItem>
+                      <SelectItem value="teen">13+ — có chủ đề trưởng thành nhẹ</SelectItem>
+                      <SelectItem value="mature">18+ — nội dung trưởng thành</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-slate-400">Kiểu thumbnail</Label>
+                  <Select value={String(config.thumbnail_style || "auto")} onValueChange={(v) => set("thumbnail_style", v)}>
+                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">Tự động theo nội dung</SelectItem>
+                      <SelectItem value="custom">Theo concept/prompt tùy chỉnh</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-slate-400">Kiểu phụ đề mặc định</Label>
+                  <Select value={String(config.subtitle_style || "default")} onValueChange={(v) => set("subtitle_style", v)}>
+                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">Mặc định theo Cài đặt chung</SelectItem>
+                      <SelectItem value="clean">Sạch, dễ đọc</SelectItem>
+                      <SelectItem value="bold">Đậm, tương phản cao</SelectItem>
+                      <SelectItem value="cinematic">Điện ảnh, tối giản</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Mô tả chi tiết kênh (nói cụ thể về gì)</Label>
+                  <Label className="text-xs font-medium text-slate-400">Mô tả chi tiết kênh (nói cụ thể về gì)</Label>
                   <Textarea
+                    className="border-white/10 bg-[#0c1419] font-mono text-sm text-slate-200 placeholder:text-slate-500"
                     placeholder="Vd: Kênh kể chuyện sinh tồn của người tiền sử ở vùng băng giá..."
                     value={String(config.description || "")}
                     onChange={(e) => set("description", e.target.value)}
@@ -339,8 +391,9 @@ export function ChannelConfigDialog({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Định hướng kênh (thiên về điều gì hơn)</Label>
+                  <Label className="text-xs font-medium text-slate-400">Định hướng kênh (thiên về điều gì hơn)</Label>
                   <Textarea
+                    className="border-white/10 bg-[#0c1419] font-mono text-sm text-slate-200 placeholder:text-slate-500"
                     placeholder="Vd: Nghiêng về cảm xúc & kịch tính sinh tồn hơn là số liệu khoa học; khán giả phổ thông yêu thích lịch sử."
                     value={String(config.direction || "")}
                     onChange={(e) => set("direction", e.target.value)}
@@ -351,11 +404,12 @@ export function ChannelConfigDialog({
 
               <div className="mt-4 space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Label className="text-xs">Phong cách viết kịch bản (giọng riêng của kênh)</Label>
+                  <Label className="text-xs font-medium text-slate-400">Phong cách viết kịch bản (giọng riêng của kênh)</Label>
                 </div>
-                <Textarea
-                  placeholder="Viết thành quy tắc cụ thể. Tránh các tính từ chung chung như 'hấp dẫn, chuyên nghiệp, cuốn hút'."
-                  value={String(config.script_style || "")}
+                  <Textarea
+                    className="border-white/10 bg-[#0c1419] font-mono text-sm text-slate-200 placeholder:text-slate-500"
+                    placeholder="Viết thành quy tắc cụ thể. Tránh các tính từ chung chung như 'hấp dẫn, chuyên nghiệp, cuốn hút'."
+                    value={String(config.script_style || "")}
                   onChange={(e) => set("script_style", e.target.value)}
                   rows={5}
                 />
@@ -390,8 +444,9 @@ export function ChannelConfigDialog({
                 ))}
               </div>
               <div className="mt-4 space-y-1.5">
-                <Label className="text-xs">Hook của kênh (câu chốt thương hiệu — AI lồng sau đoạn mở đầu)</Label>
+                <Label className="text-xs font-medium text-slate-400">Hook của kênh (câu chốt thương hiệu — AI lồng sau đoạn mở đầu)</Label>
                 <Textarea
+                    className="border-white/10 bg-[#0c1419] font-mono text-sm text-slate-200 placeholder:text-slate-500"
                   placeholder="Vd: Mình là recap — kể cho bạn nghe chuyện thật mà không cần xem hết cả bộ phim."
                   value={String(config.hook || "")}
                   onChange={(e) => set("hook", e.target.value)}
@@ -405,9 +460,9 @@ export function ChannelConfigDialog({
             {/* Độ dài */}
             <section className="grid gap-4 rounded-2xl border border-white/10 bg-white/[0.025] p-5 shadow-lg shadow-black/10 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label className="text-xs">Độ dài Video dài mục tiêu</Label>
+                <Label className="text-xs font-medium text-slate-400">Độ dài Video dài mục tiêu</Label>
                 <Select value={String(config.long_video_duration)} onValueChange={(v) => set("long_video_duration", v)}>
-                  <SelectTrigger className="w-full text-sm">
+                  <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -418,9 +473,9 @@ export function ChannelConfigDialog({
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs">Độ dài Shorts mục tiêu</Label>
+                <Label className="text-xs font-medium text-slate-400">Độ dài Shorts mục tiêu</Label>
                 <Select value={String(config.short_video_duration)} onValueChange={(v) => set("short_video_duration", v)}>
-                  <SelectTrigger className="w-full text-sm">
+                  <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -438,9 +493,9 @@ export function ChannelConfigDialog({
               <h3 className="mb-4 flex items-center gap-2 text-base font-semibold tracking-tight text-slate-100">🎙 Giọng & Hình</h3>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label className="text-xs">AI provider (văn bản)</Label>
+                  <Label className="text-xs font-medium text-slate-400">AI provider (văn bản)</Label>
                   <Select value={String(config.ai_provider)} onValueChange={(v) => set("ai_provider", v)}>
-                    <SelectTrigger className="w-full text-sm">
+                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -451,9 +506,9 @@ export function ChannelConfigDialog({
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Giọng đọc (TTS)</Label>
+                  <Label className="text-xs font-medium text-slate-400">Giọng đọc (TTS)</Label>
                   <Select value={String(config.tts_provider || "default")} onValueChange={(v) => set("tts_provider", v === "default" ? "" : v)}>
-                    <SelectTrigger className="w-full text-sm">
+                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -466,9 +521,9 @@ export function ChannelConfigDialog({
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Giọng cụ thể</Label>
+                  <Label className="text-xs font-medium text-slate-400">Giọng cụ thể</Label>
                   <Select value={String(config.voice || "__default__")} onValueChange={(v) => set("voice", v === "__default__" ? "" : v)}>
-                    <SelectTrigger className="w-full text-sm">
+                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -484,16 +539,16 @@ export function ChannelConfigDialog({
                     </SelectContent>
                   </Select>
                   <Input
-                    className="mt-2"
+                    className="mt-2 border-white/10 bg-[#0c1419] text-slate-200 placeholder:text-slate-500"
                     placeholder="Hoặc nhập voice ID tùy chỉnh"
                     value={String(config.voice || "")}
                     onChange={(e) => set("voice", e.target.value)}
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Đồng bộ nhân vật</Label>
+                  <Label className="text-xs font-medium text-slate-400">Đồng bộ nhân vật</Label>
                   <Select value={String(config.character_sync)} onValueChange={(v) => set("character_sync", v)}>
-                    <SelectTrigger className="w-full text-sm">
+                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -503,9 +558,9 @@ export function ChannelConfigDialog({
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Tạo ảnh/video bằng</Label>
+                  <Label className="text-xs font-medium text-slate-400">Tạo ảnh/video bằng</Label>
                   <Select value={String(config.image_generator)} onValueChange={(v) => set("image_generator", v)}>
-                    <SelectTrigger className="w-full text-sm">
+                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -515,9 +570,9 @@ export function ChannelConfigDialog({
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Chế độ hình</Label>
+                  <Label className="text-xs font-medium text-slate-400">Chế độ hình</Label>
                   <Select value={String(config.image_mode)} onValueChange={(v) => set("image_mode", v)}>
-                    <SelectTrigger className="w-full text-sm">
+                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -528,8 +583,9 @@ export function ChannelConfigDialog({
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Thời gian ảnh tĩnh (giây)</Label>
+                  <Label className="text-xs font-medium text-slate-400">Thời gian ảnh tĩnh (giây)</Label>
                   <Input
+                    className="border-white/10 bg-[#0c1419] text-slate-200 placeholder:text-slate-500"
                     type="number"
                     min={1}
                     max={20}
@@ -538,9 +594,9 @@ export function ChannelConfigDialog({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Model video</Label>
+                  <Label className="text-xs font-medium text-slate-400">Model video</Label>
                   <Select value={String(config.video_model)} onValueChange={(v) => set("video_model", v)}>
-                    <SelectTrigger className="w-full text-sm">
+                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -568,9 +624,9 @@ export function ChannelConfigDialog({
               <h3 className="mb-4 flex items-center gap-2 text-base font-semibold tracking-tight text-slate-100">⏰ Tự động & Lịch</h3>
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Chế độ duyệt</Label>
+                  <Label className="text-xs font-medium text-slate-400">Chế độ duyệt</Label>
                   <Select value={String(config.review_mode)} onValueChange={(v) => set("review_mode", v)}>
-                    <SelectTrigger className="w-full text-sm">
+                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -580,17 +636,18 @@ export function ChannelConfigDialog({
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Giờ đề xuất</Label>
+                  <Label className="text-xs font-medium text-slate-400">Giờ đề xuất</Label>
                   <Input
+                    className="border-white/10 bg-[#0c1419] text-slate-200 placeholder:text-slate-500"
                     type="time"
                     value={String(config.suggested_time || "07:00")}
                     onChange={(e) => set("suggested_time", e.target.value)}
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Ngôn ngữ sản xuất</Label>
+                  <Label className="text-xs font-medium text-slate-400">Ngôn ngữ sản xuất</Label>
                   <Select value={String(config.language)} onValueChange={(v) => set("language", v)}>
-                    <SelectTrigger className="w-full text-sm">
+                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>

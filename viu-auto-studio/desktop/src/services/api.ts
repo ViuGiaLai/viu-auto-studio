@@ -91,7 +91,14 @@ export async function startFlowBrowser(projectId: number, factorySessionId: stri
   return w.electronAPI.startFlow({ projectId, factorySessionId })
 }
 
+export async function logoutFlowBrowser(): Promise<{ ok: boolean; message: string }> {
+  const w = window as unknown as { electronAPI?: { logoutFlow?: () => Promise<{ ok: boolean; message: string }> } }
+  if (!w.electronAPI?.logoutFlow) return { ok: false, message: "Logout Flow chỉ khả dụng trong Electron Desktop." }
+  return w.electronAPI.logoutFlow()
+}
+
 export async function openLocalPath(target: string): Promise<{ ok: boolean; message: string }> {
+
   const w = window as unknown as { electronAPI?: { openPath?: (path: string) => Promise<{ ok: boolean; message: string }> } }
   if (!w.electronAPI?.openPath) return { ok: false, message: "Thao tác này chỉ khả dụng trong Electron Desktop." }
   return w.electronAPI.openPath(target)
@@ -99,28 +106,29 @@ export async function openLocalPath(target: string): Promise<{ ok: boolean; mess
 
 export async function openAiBrowser(provider: "chatgpt" | "gemini"): Promise<{ ok: boolean; status: string; message: string; profilePath?: string; browserName?: string }> {
   const w = window as unknown as { electronAPI?: { openAiBrowser?: (input: { provider: "chatgpt" | "gemini" }) => Promise<{ ok: boolean; status: string; message: string; profilePath?: string; browserName?: string }> } }
-  if (!w.electronAPI?.openAiBrowser) {
-    const url = provider === "chatgpt" ? "https://chatgpt.com/" : "https://gemini.google.com/app"
-    window.open(url, "_blank", "noopener,noreferrer")
-    return { ok: true, status: "web_opened", message: `Đã mở trang đăng nhập ${provider === "chatgpt" ? "ChatGPT" : "Gemini"}.` }
+  if (w.electronAPI?.openAiBrowser) {
+    return w.electronAPI.openAiBrowser({ provider })
   }
-  return w.electronAPI.openAiBrowser({ provider })
+    return post<{ ok: boolean; status: string; message: string; profilePath?: string; browserName?: string }>("/ai-browser/open", { provider })
+
 }
 
 export async function getAiBrowserStatus(provider: "chatgpt" | "gemini"): Promise<{ connected: boolean; email?: string; model?: string; plan?: string; browserRunning?: boolean; message?: string }> {
   const w = window as unknown as { electronAPI?: { getAiBrowserStatus?: (input: { provider: "chatgpt" | "gemini" }) => Promise<{ connected: boolean; email?: string; model?: string; plan?: string; browserRunning?: boolean; message?: string }> } }
-  if (!w.electronAPI?.getAiBrowserStatus) {
-    return { connected: false }
+  if (w.electronAPI?.getAiBrowserStatus) {
+    return w.electronAPI.getAiBrowserStatus({ provider })
   }
-  return w.electronAPI.getAiBrowserStatus({ provider })
+    return request<{ connected: boolean; email?: string; model?: string; plan?: string; browserRunning?: boolean; message?: string }>(`/ai-browser/status?provider=${provider}`)
+
 }
 
 export async function logoutAiBrowser(provider: "chatgpt" | "gemini"): Promise<{ ok: boolean; message: string }> {
   const w = window as unknown as { electronAPI?: { logoutAiBrowser?: (input: { provider: "chatgpt" | "gemini" }) => Promise<{ ok: boolean; message: string }> } }
-  if (!w.electronAPI?.logoutAiBrowser) {
-    return { ok: true, message: "Đã đăng xuất" }
+  if (w.electronAPI?.logoutAiBrowser) {
+    return w.electronAPI.logoutAiBrowser({ provider })
   }
-  return w.electronAPI.logoutAiBrowser({ provider })
+    return post<{ ok: boolean; message: string }>("/ai-browser/logout", { provider })
+
 }
 
 export function formatApiUrl(path: string): string {

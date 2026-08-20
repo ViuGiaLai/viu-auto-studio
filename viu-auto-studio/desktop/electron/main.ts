@@ -3,7 +3,7 @@ import path from "node:path"
 import http from "node:http"
 import fs from "node:fs"
 import { startBackend, stopBackend } from "./backend-manager"
-import { startFlowBrowser, stopFlowBrowser } from "./flow-browser"
+import { startFlowBrowser, stopFlowBrowser, logoutFlowBrowser } from "./flow-browser"
 import { openAiBrowser, getAiBrowserStatus, logoutAiBrowser, stopAllAiBrowsers, type AiProviderType } from "./ai-browser"
 import { readRuntimeConfig, getUserDataDir, dirnameOf, findFreePort } from "./runtime-config"
 
@@ -341,6 +341,8 @@ function createWindow(): void {
           await setChannelControl('input[placeholder*="Siberia"]', "Sinh tồn điện ảnh vùng băng giá")
           await clickChannelButton("Sắc gọn kiểu tin tức")
           await setChannelControl('textarea[placeholder*="kể chuyện sinh tồn"]', "Kênh kể chuyện có nhịp nhanh, câu ngắn, ưu tiên dữ kiện kiểm chứng và kết thúc rõ ràng.")
+          await clickChannelButton("Nghe thử")
+          await waitChannel(1200)
           await clickChannelButton("Test kết nối")
           await waitChannel(700)
           await clickChannelButton("Lưu cấu hình")
@@ -434,6 +436,10 @@ ipcMain.handle("flow:start", async (_event, input: { projectId: number; factoryS
 ipcMain.handle("flow:stop", async () => {
   stopFlowBrowser()
   return { ok: true }
+})
+ipcMain.handle("flow:logout", async () => {
+  const runtime = readRuntimeConfig()
+  return logoutFlowBrowser(runtime || undefined)
 })
 ipcMain.handle("getUserDataDir", async () => getUserDataDir())
 ipcMain.handle("dialog:select-directory", async () => {

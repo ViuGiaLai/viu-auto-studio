@@ -20,7 +20,8 @@ import type {
 } from "@/types"
 
 import type { MediaAssetRead } from "@/services/pages-api"
-import { mediaAssetsApi } from "@/services/pages-api"
+import { flowApi, mediaAssetsApi } from "@/services/pages-api"
+
 import { ASPECT_RATIOS, LANGUAGES, SCENE_EFFECTS, STATUS_LABELS, VIDEO_TYPES } from "@/types"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/design-system"
@@ -1212,7 +1213,32 @@ function SubtitleConfigPanel({ project }: { project: Project }) {
   const { subtitleConfig, setSubtitleConfig } = useEditorStore()
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
 
+  useEffect(() => {
+    let cancelled = false
+    const applyChannelSubtitleStyle = async () => {
+      try {
+        const source = await api.getProjectConfig(project.id)
+        if (cancelled || !source.config_json) return
+        const parsed = JSON.parse(source.config_json) as Record<string, unknown>
+        const channel = parsed.channel && typeof parsed.channel === "object" ? parsed.channel as Record<string, unknown> : parsed
+        const style = String(channel.subtitle_style || "default")
+        const presets: Record<string, Partial<SubtitleConfig>> = {
+          clean: { font_size: 48, position: "bottom", primary_color: "#FFFFFF", border_width: 2 },
+          bold: { font_size: 64, position: "bottom", primary_color: "#FFD700", border_width: 4 },
+          cinematic: { font_size: 42, position: "bottom", primary_color: "#E8E8E8", border_width: 0 },
+        }
+        const preset = presets[style]
+        if (preset && !cancelled) setSubtitleConfig(preset)
+      } catch {
+        // Project config is optional; keep the editor's existing subtitle state.
+      }
+    }
+    void applyChannelSubtitleStyle()
+    return () => { cancelled = true }
+  }, [project.id, setSubtitleConfig])
+
   const exportSrt = async () => {
+
     try {
       // Tải file SRT từ backend — trigger download thật
       const link = document.createElement("a")
@@ -1921,9 +1947,29 @@ export default function ProjectEditorPage() {
   const [loading, setLoading] = useState(true)
     const [activeTab, setActiveTab] = useState("idea")
   const userSelectedTab = useRef(false)
+  const flowOpenedTabs = useRef(new Set<string>())
+  const openFlowForStage = async (tab: string) => {
+    if (!projectId || !project || !["storyboard", "characters"].includes(tab)) return
+    const key = `${projectId}:${tab}`
+    if (flowOpenedTabs.current.has(key)) return
+    flowOpenedTabs.current.add(key)
+    try {
+      const connection = await flowApi.get().catch(() => null)
+      const factorySessionId = connection?.factory_project_id === projectId && connection.factory_session_id
+        ? connection.factory_session_id
+        : `profile-${projectId}`
+      const result = await startFlowBrowser(projectId, factorySessionId)
+      if (!result.ok) throw new Error(result.message)
+      toast({ title: "Đã mở Chrome Profile riêng cho Google Flow", description: tab === "storyboard" ? "Phân cảnh Visual đã sẵn sàng để tự tạo hình ảnh/video theo prompt." : "Nhân vật đã sẵn sàng để Flow dùng ảnh tham chiếu tự động." })
+    } catch (error) {
+      flowOpenedTabs.current.delete(key)
+      toast({ title: "Không mở được Chrome Flow", description: String(error), variant: "destructive" })
+    }
+  }
   const selectTab = (tab: string) => {
     userSelectedTab.current = true
     setActiveTab(tab)
+    if (tab === "storyboard" || tab === "characters") void openFlowForStage(tab)
   }
   const [channels, setChannels] = useState<Array<{ id: number; name: string }>>([])
 

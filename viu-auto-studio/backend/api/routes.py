@@ -261,6 +261,37 @@ def update_settings(payload: StudioSettingsUpdate, db: Session = Depends(get_db)
     return {"ok": True, "updated": updated}
 
 
+class AiBrowserRequest(BaseModel):
+    provider: str = "gemini"
+
+
+@router.post("/ai-browser/open")
+def open_ai_browser_endpoint(payload: AiBrowserRequest):
+    """Launch isolated standalone Chrome App window for AI login."""
+    from backend.services.ai.browser_manager import open_isolated_browser
+
+    res = open_isolated_browser(payload.provider.lower())
+    if not res.get("ok"):
+        raise HTTPException(422, res.get("message", "Không thể mở trình duyệt"))
+    return res
+
+
+@router.get("/ai-browser/status")
+def get_ai_browser_status_endpoint(provider: str = "gemini"):
+    """Get AI browser login session status."""
+    from backend.services.ai.browser_manager import get_session_status
+
+    return get_session_status(provider.lower())
+
+
+@router.post("/ai-browser/logout")
+def logout_ai_browser_endpoint(payload: AiBrowserRequest):
+    """Logout and wipe AI browser profile data."""
+    from backend.services.ai.browser_manager import logout_session
+
+    return logout_session(payload.provider.lower())
+
+
 class DeepSeekTestRequest(BaseModel):
     api_key: str = ""
 
@@ -1398,14 +1429,16 @@ def analyze_semantic_scenes(project_id: int, payload: dict, db: Session = Depend
         except (TypeError, ValueError):
             project_cfg = {}
     project_channel_cfg = project_cfg.get("channel") if isinstance(project_cfg.get("channel"), dict) else {}
-    style_parts.extend(str(project_channel_cfg.get(key) or "") for key in ("niche", "script_style", "direction", "hook"))
+    style_parts.extend(str(project_channel_cfg.get(key) or "") for key in ("niche", "script_style", "direction", "hook", "target_audience", "content_rating"))
+
     if project and project.channel_id:
 
         channel = db.query(Channel).filter(Channel.id == project.channel_id).first()
         if channel and channel.config_json:
             try:
                 channel_cfg = json.loads(channel.config_json) if isinstance(channel.config_json, str) else dict(channel.config_json)
-                style_parts.extend(str(channel_cfg.get(key) or "") for key in ("niche", "writing_style", "script_style", "channel_direction", "direction", "hook"))
+                style_parts.extend(str(channel_cfg.get(key) or "") for key in ("niche", "writing_style", "script_style", "channel_direction", "direction", "hook", "target_audience", "content_rating"))
+
             except (TypeError, ValueError):
                 pass
     try:
@@ -1818,7 +1851,9 @@ STEP_LABELS = [
 
 
 @router.get("/projects/{project_id}/pipeline-status")
+@router.get("/projects/{project_id}/pipeline")
 def project_pipeline_status(project_id: int, db: Session = Depends(get_db)):
+
     """Return per-step production status for the Workspace progress panel."""
     project = db.query(Project).filter(Project.id == project_id).first()
     if project is None:

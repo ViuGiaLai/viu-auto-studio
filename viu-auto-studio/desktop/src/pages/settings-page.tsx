@@ -6,9 +6,10 @@ import {
   Globe, Bot, Sparkles, MessageSquare, Eye, EyeOff, LogOut, Chrome, Check,
   Moon, Sun, ArrowRight
 } from "lucide-react"
-import { api, openExternalUrl, selectDirectory, openAiBrowser, getAiBrowserStatus, logoutAiBrowser, mediaUrl } from "@/services/api"
+import { api, openExternalUrl, selectDirectory, openAiBrowser, getAiBrowserStatus, logoutAiBrowser, mediaUrl, startFlowBrowser, logoutFlowBrowser } from "@/services/api"
 
-import { globalApi } from "@/services/pages-api"
+import { flowApi, globalApi, type FlowConnectionRead } from "@/services/pages-api"
+
 import { toast } from "@/hooks/use-toast"
 import type { TTSConfig, TTSVoice } from "@/types"
 import { Button } from "@/components/design-system"
@@ -72,10 +73,13 @@ export default function SettingsPage() {
   // Gemini (aistudio.google) image source
   const [geminiKey, setGeminiKey] = useState("")
 
-  // Flow Connector (Chrome Extension)
+    // Flow Connector (Chrome Extension)
   const [connectorEnabled, setConnectorEnabled] = useState(false)
   const [workerConnected, setWorkerConnected] = useState(false)
+  const [flowConnection, setFlowConnection] = useState<FlowConnectionRead | null>(null)
+  const [flowAccountLoading, setFlowAccountLoading] = useState(false)
   const [geminiEnabled, setGeminiEnabled] = useState(false)
+
   const [geminiChecking, setGeminiChecking] = useState(false)
   const [geminiResult, setGeminiResult] = useState<{ valid: boolean; image_ok: boolean; note: string } | null>(null)
 
@@ -164,36 +168,96 @@ export default function SettingsPage() {
     }
   }
 
+    const refreshFlowConnection = async () => {
+    try {
+      setFlowConnection(await flowApi.get())
+    } catch {
+      setFlowConnection(null)
+    }
+  }
+
+  useEffect(() => {
+    void refreshFlowConnection()
+    const timer = window.setInterval(() => void refreshFlowConnection(), 2500)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  const openFlowAccount = async () => {
+    setFlowAccountLoading(true)
+    try {
+      const result = await startFlowBrowser(0, "account-profile")
+      if (!result.ok) throw new Error(result.message)
+      toast({ title: "Đã mở Chrome Profile riêng", description: "Đăng nhập Google Flow trong cửa sổ vừa mở. App sẽ tự kiểm tra và cập nhật nút thành Đăng xuất." })
+      await refreshFlowConnection()
+    } catch (error) {
+      toast({ title: "Không thể mở Chrome Flow", description: String(error), variant: "destructive" })
+    } finally {
+      setFlowAccountLoading(false)
+    }
+  }
+
+  const logoutFlowAccount = async () => {
+    if (!window.confirm("Đăng xuất Google Flow và xóa Chrome Profile riêng?")) return
+    setFlowAccountLoading(true)
+    try {
+      const result = await logoutFlowBrowser()
+      if (!result.ok) throw new Error(result.message)
+      setFlowConnection(null)
+      toast({ title: "Đã đăng xuất Google Flow", description: result.message })
+    } catch (error) {
+      toast({ title: "Không thể đăng xuất Google Flow", description: String(error), variant: "destructive" })
+    } finally {
+      setFlowAccountLoading(false)
+      await refreshFlowConnection()
+    }
+  }
+
+  const flowLoggedIn = flowConnection?.status === "paired" && Boolean(flowConnection.google_account || flowConnection.factory_state === "ready" || flowConnection.factory_state === "processing")
+
   const handleOpenAiBrowser = async (provider: "chatgpt" | "gemini") => {
+
     if (provider === "chatgpt") setChatgptLoading(true)
     else setGeminiLoading(true)
 
     try {
       const res = await openAiBrowser(provider)
+      if (!res.ok) {
+        if (provider === "chatgpt") setChatgptLoading(false)
+        else setGeminiLoading(false)
+        toast({
+          title: "Không thể mở trình duyệt",
+          description: res.message,
+          variant: "destructive",
+        })
+        return
+      }
       toast({
-        title: res.ok ? "Đã mở trình duyệt Chrome/Edge" : "Không thể mở trình duyệt",
-        description: res.message,
-        variant: res.ok ? "default" : "destructive",
+        title: "Đã mở Chrome/Edge profile riêng",
+        description: res.message || "Vui lòng đăng nhập tài khoản trên cửa sổ vừa mở.",
       })
     } catch (e) {
-      toast({ title: "Lỗi mở trình duyệt", description: String(e), variant: "destructive" })
-    } finally {
-      // CLEAR LOADING IMMEDIATELY so the button returns to normal
       if (provider === "chatgpt") setChatgptLoading(false)
       else setGeminiLoading(false)
+      toast({ title: "Lỗi mở trình duyệt", description: String(e), variant: "destructive" })
+      return
     }
 
-    // Start background watcher without locking the button
+    // Keep loading state until either:
+    // 1. User logs in (status.connected -> true)
+    // 2. User closes Chrome without logging in (status.browserRunning -> false)
+    // 3. Timeout (3 mins)
     if (pollingRef.current[provider]) {
       clearInterval(pollingRef.current[provider])
     }
-    const deadline = Date.now() + 120_000
+    const deadline = Date.now() + 180_000
     pollingRef.current[provider] = setInterval(async () => {
       if (Date.now() > deadline) {
         if (pollingRef.current[provider]) {
           clearInterval(pollingRef.current[provider])
           delete pollingRef.current[provider]
         }
+        if (provider === "chatgpt") setChatgptLoading(false)
+        else setGeminiLoading(false)
         return
       }
       try {
@@ -205,16 +269,26 @@ export default function SettingsPage() {
           }
           if (provider === "chatgpt") {
             setChatgptStatus(status)
+            setChatgptLoading(false)
             toast({ title: "Đã kết nối ChatGPT", description: status.email ? `Tài khoản: ${status.email}` : "Đã đăng nhập thành công" })
           } else {
             setGeminiStatus(status)
+            setGeminiLoading(false)
             toast({ title: "Đã kết nối Gemini (Google)", description: status.email ? `Tài khoản: ${status.email}` : "Đã đăng nhập thành công" })
           }
+        } else if (status.browserRunning === false) {
+          // Chrome profile window was closed by user without logging in
+          if (pollingRef.current[provider]) {
+            clearInterval(pollingRef.current[provider])
+            delete pollingRef.current[provider]
+          }
+          if (provider === "chatgpt") setChatgptLoading(false)
+          else setGeminiLoading(false)
         }
       } catch {
         // Polling error ignored
       }
-    }, 2500)
+    }, 1500)
   }
 
   const handleRefreshAiStatus = async (provider: "chatgpt" | "gemini") => {
@@ -242,12 +316,14 @@ export default function SettingsPage() {
       clearInterval(pollingRef.current[provider])
       delete pollingRef.current[provider]
     }
+    if (provider === "chatgpt") setChatgptLoading(false)
+    else setGeminiLoading(false)
     try {
       const res = await logoutAiBrowser(provider)
       if (provider === "chatgpt") {
-        setChatgptStatus({ connected: false })
+        setChatgptStatus({ connected: false, browserRunning: false })
       } else {
-        setGeminiStatus({ connected: false })
+        setGeminiStatus({ connected: false, browserRunning: false })
       }
       toast({ title: "Đã đăng xuất", description: res.message })
     } catch (e) {
@@ -309,7 +385,21 @@ export default function SettingsPage() {
 
   useEffect(() => {
     loadAll()
+    const autoStatusInterval = setInterval(() => {
+      getAiBrowserStatus("chatgpt")
+        .then((s) => {
+          setChatgptStatus(s)
+        })
+        .catch(() => {})
+      getAiBrowserStatus("gemini")
+        .then((s) => {
+          setGeminiStatus(s)
+        })
+        .catch(() => {})
+    }, 3000)
+
     return () => {
+      clearInterval(autoStatusInterval)
       Object.values(pollingRef.current).forEach((timer) => clearInterval(timer))
     }
   }, [])
@@ -880,8 +970,42 @@ export default function SettingsPage() {
         </TabsContent>
 
         {/* AI Dịch & Ảnh */}
-        <TabsContent value="ai" className="space-y-6">
+                <TabsContent value="ai" className="space-y-6">
+          <div className="rounded-xl border border-indigo-400/20 bg-[#111a2d] p-5 shadow-xl">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-200">
+                  <Chrome className="h-4 w-4 text-indigo-300" /> TÀI KHOẢN GOOGLE FLOW
+                </div>
+                <p className="mt-2 max-w-2xl text-xs leading-5 text-slate-400">
+                  {flowLoggedIn
+                    ? `Đã đăng nhập${flowConnection?.google_account ? `: ${flowConnection.google_account}` : ""}. Chrome Profile riêng và Flow Connector đang sẵn sàng.`
+                    : "Chưa thêm tài khoản nào. Bấm mở Chrome Profile riêng để đăng nhập Google Flow; app sẽ tự kiểm tra trạng thái."}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={cn("h-2 w-2 rounded-full", flowLoggedIn ? "bg-emerald-400" : "bg-amber-400")} />
+                <span className="text-xs text-slate-400">{flowLoggedIn ? "Đã đăng nhập" : "Chưa đăng nhập"}</span>
+              </div>
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <Button
+                type="button"
+                size="sm"
+                disabled={flowAccountLoading}
+                onClick={() => void (flowLoggedIn ? logoutFlowAccount() : openFlowAccount())}
+                className={flowLoggedIn ? "gap-1.5 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25" : "gap-1.5 bg-indigo-500 text-white hover:bg-indigo-400"}
+              >
+                {flowLoggedIn ? <LogOut className="h-3.5 w-3.5" /> : <Chrome className="h-3.5 w-3.5" />}
+                {flowAccountLoading ? "Đang xử lý…" : flowLoggedIn ? "Đăng xuất" : "Mở Chrome Profile riêng"}
+              </Button>
+              {flowConnection?.profile_name && <span className="text-[11px] text-slate-500">Profile: {flowConnection.profile_name}</span>}
+            </div>
+            <p className="mt-3 text-[11px] text-slate-500">Quản lý đầy đủ ở đây: bật/tắt, xóa, sắp thứ tự tài khoản trong Cấu hình → Tài khoản Google Flow.</p>
+          </div>
+
           {/* Card 1: Dịch & SEO (AI) */}
+
           <div className="vas-card p-6 border border-white/10 bg-[#0d1527] rounded-xl shadow-xl space-y-6">
             <div>
               <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
@@ -992,7 +1116,7 @@ export default function SettingsPage() {
                   {chatgptStatus.connected ? (
                     <div className="flex items-center gap-2 text-xs text-emerald-300">
                       <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                      <span>Đã kết nối: <strong className="font-semibold text-slate-100">{chatgptStatus.email || "rmahviu05.gl@gmail.com"}</strong></span>
+                      <span>Đã kết nối: <strong className="font-semibold text-slate-100">{chatgptStatus.email || "Tài khoản ChatGPT"}</strong></span>
                     </div>
                   ) : (
                     <p className="text-xs text-slate-400">
@@ -1037,7 +1161,7 @@ export default function SettingsPage() {
                         )}
                       >
                         <Chrome className={cn("h-4 w-4 shrink-0", chatgptLoading && "animate-spin")} />
-                        <span>{chatgptLoading ? "Đang mở…" : "Đăng nhập bằng Chrome/Edge"}</span>
+                        <span>{chatgptLoading ? "Đang chờ đăng nhập…" : "Đăng nhập bằng Chrome/Edge"}</span>
                       </button>
                       <Button
                         variant="outline"
@@ -1073,7 +1197,7 @@ export default function SettingsPage() {
                   {geminiStatus.connected ? (
                     <div className="flex items-center gap-2 text-xs text-emerald-300">
                       <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                      <span>Đã kết nối: <strong className="font-semibold text-slate-100">{geminiStatus.email || "Gemini"}</strong></span>
+                      <span>Đã kết nối: <strong className="font-semibold text-slate-100">{geminiStatus.email || "Tài khoản Google"}</strong></span>
                     </div>
                   ) : (
                     <p className="text-xs text-slate-400">
@@ -1118,7 +1242,7 @@ export default function SettingsPage() {
                         )}
                       >
                         <Chrome className={cn("h-4 w-4 shrink-0", geminiLoading && "animate-spin")} />
-                        <span>{geminiLoading ? "Đang mở…" : "Đăng nhập bằng Chrome/Edge"}</span>
+                        <span>{geminiLoading ? "Đang chờ đăng nhập…" : "Đăng nhập bằng Chrome/Edge"}</span>
                       </button>
                       <Button
                         variant="outline"

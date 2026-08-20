@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process"
-import { existsSync, mkdirSync } from "node:fs"
+import { existsSync, mkdirSync, rmSync } from "node:fs"
 import path from "node:path"
-import { findFreePort, getUserDataDir, type RuntimeConfig } from "./runtime-config"
+import { findFreePort, getUserDataDir, dirnameOf, type RuntimeConfig } from "./runtime-config"
 
 type FlowBrowserStartInput = {
   projectId: number
@@ -70,7 +70,43 @@ function candidateChromePaths(): string[] {
 }
 
 function findChrome(): string | null {
-  return candidateChromePaths().find((candidate) => existsSync(candidate)) || null
+  // 1. Check candidates from known paths
+  const fromDisk = candidateChromePaths().find((candidate) => existsSync(candidate))
+  if (fromDisk) return fromDisk
+
+  // 2. Check Windows Registry (chrome.exe, msedge.exe)
+  if (process.platform === "win32") {
+    try {
+      const { execSync } = require("node:child_process")
+      for (const exe of ["chrome.exe", "msedge.exe"]) {
+        for (const hive of ["HKLM", "HKCU"]) {
+          try {
+            const regPath = `${hive}\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\${exe}`
+            const output = execSync(`reg query "${regPath}" /ve`, { encoding: "utf-8", windowsHide: true, timeout: 3000 })
+            const match = output.match(/REG_SZ\s+(.+)/i)
+            if (match) {
+              const p = match[1].trim().replace(/^"|"$/g, "")
+              if (existsSync(p)) return p
+            }
+          } catch { /* not found in this hive */ }
+        }
+      }
+    } catch { /* no child_process */ }
+
+    // 3. Try 'where' command
+    try {
+      const { execSync } = require("node:child_process")
+      for (const exe of ["chrome.exe", "msedge.exe"]) {
+        try {
+          const output = execSync(`where ${exe}`, { encoding: "utf-8", windowsHide: true, timeout: 3000 })
+          const firstLine = output.split("\n")[0]?.trim()
+          if (firstLine && existsSync(firstLine)) return firstLine
+        } catch { /* not in PATH */ }
+      }
+    } catch { /* no child_process */ }
+  }
+
+  return null
 }
 
 async function waitForDevTools(port: number, timeoutMs = 15_000): Promise<boolean> {
@@ -155,7 +191,8 @@ export async function startFlowBrowser(runtime: RuntimeConfig, input: FlowBrowse
     "--disable-sync",
     `--load-extension=${extensionPath}`,
     `--disable-extensions-except=${extensionPath}`,
-    "--app=https://labs.google/fx/tools/flow",
+    "--new-window",
+    "https://labs.google/fx/tools/flow",
   ]
   browserProcess = spawn(chrome, args, { detached: false, windowsHide: false, stdio: "ignore" })
   browserProcess.once("exit", () => {
@@ -180,11 +217,25 @@ export async function startFlowBrowser(runtime: RuntimeConfig, input: FlowBrowse
 }
 
 function resolveFlowConnectorPath(): string | null {
+  // dirnameOf handles both ESM file:// URLs and CJS paths after Vite bundling
+  let here: string
+  try {
+    here = dirnameOf(import.meta.url)
+  } catch {
+    here = __dirname ?? process.cwd()
+  }
   const candidates = [
+    // Development: flow-connector at project root (viu-auto-studio/flow-connector)
     path.resolve(process.cwd(), "flow-connector"),
     path.resolve(process.cwd(), "../flow-connector"),
-    path.resolve(__dirname, "../../flow-connector"),
+    // Relative to bundled dist-electron/main.mjs → ../../flow-connector
+    path.resolve(here, "../../flow-connector"),
+    path.resolve(here, "../flow-connector"),
+    path.resolve(here, "flow-connector"),
+    // Electron packaged app: resources/flow-connector
     path.join(process.resourcesPath || "", "flow-connector"),
+    // app.asar.unpacked
+    path.join(process.resourcesPath || "", "app.asar.unpacked", "flow-connector"),
   ]
   return candidates.find((candidate) => existsSync(path.join(candidate, "manifest.json"))) || null
 }
@@ -194,4 +245,28 @@ export function stopFlowBrowser(): void {
   browserProcess = null
   browserPort = 0
   if (proc) terminateBrowserTree(proc)
+}
+
+export async function logoutFlowBrowser(runtime?: RuntimeConfig): Promise<{ ok: boolean; message: string }> {
+  let backendWarning = ""
+  if (runtime?.apiBaseUrl && runtime.flowBootstrapToken) {
+    try {
+      const response = await fetch(`${runtime.apiBaseUrl}/api/flow-connection/logout`, {
+        method: "POST",
+        headers: { "x-viu-flow-token": runtime.flowBootstrapToken },
+      })
+      if (!response.ok) backendWarning = `Backend không cập nhật được trạng thái logout (HTTP ${response.status})`
+    } catch (error) {
+      backendWarning = String(error instanceof Error ? error.message : error)
+    }
+  }
+  stopFlowBrowser()
+  await new Promise((resolve) => setTimeout(resolve, process.platform === "win32" ? 800 : 200))
+  const profilePath = path.join(getUserDataDir(), "flow-chrome-profile")
+  try {
+    rmSync(profilePath, { recursive: true, force: true })
+  } catch (error) {
+    backendWarning = backendWarning || `Không xóa được Chrome profile: ${String(error instanceof Error ? error.message : error)}`
+  }
+  return { ok: !backendWarning, message: backendWarning || "Đã đăng xuất và xóa Chrome Flow profile riêng." }
 }
