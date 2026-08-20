@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react"
+import { useNavigate } from "react-router-dom"
 import {
   Settings as SettingsIcon, Play, RefreshCw, AlertTriangle, CheckCircle2,
-  KeyRound, Image, Zap, ExternalLink, FolderOpen, Send, ShieldCheck,
-  Globe, Bot, Sparkles, MessageSquare, Eye, EyeOff, LogOut, Chrome, Check
+  KeyRound, Image, Zap, ExternalLink, FolderOpen, Folder, Send, ShieldCheck,
+  Globe, Bot, Sparkles, MessageSquare, Eye, EyeOff, LogOut, Chrome, Check,
+  Moon, Sun, ArrowRight
 } from "lucide-react"
 import { api, openExternalUrl, selectDirectory, openAiBrowser, getAiBrowserStatus, logoutAiBrowser, mediaUrl } from "@/services/api"
 
@@ -34,6 +36,7 @@ const TABS = [
 ]
 
 export default function SettingsPage() {
+  const navigate = useNavigate()
   const [config, setConfig] = useState<TTSConfig | null>(null)
   const [providers, setProviders] = useState<Array<{ id: string; name: string; available: boolean }>>([])
   const [voices, setVoices] = useState<TTSVoice[]>([])
@@ -421,11 +424,71 @@ export default function SettingsPage() {
     if (!folder) return
     setDirty(true)
     setSettingsDraft((current) => ({ ...current, output_folder: folder }))
+    toast({ title: "Đã chọn thư mục output", description: folder })
+  }
+
+  const openCurrentOutputFolder = async () => {
+    const folder = String(settingsDraft.output_folder || "")
+    if (!folder) {
+      toast({ title: "Chưa cấu hình thư mục output", description: "Vui lòng chọn thư mục trước.", variant: "destructive" })
+      return
+    }
+    try {
+      const w = window as unknown as { electronAPI?: { openPath?: (target: string) => Promise<boolean> } }
+      if (w.electronAPI?.openPath) {
+        await w.electronAPI.openPath(folder)
+      } else {
+        openExternalUrl(`file:///${folder.replace(/\\/g, "/")}`)
+      }
+      toast({ title: "Đã mở thư mục", description: folder })
+    } catch (e) {
+      toast({ title: "Không thể mở thư mục", description: String(e), variant: "destructive" })
+    }
+  }
+
+  const handleToggleDarkMode = (enabled: boolean) => {
+    setDirty(true)
+    setSettingsDraft((s) => ({ ...s, dark_mode: enabled }))
+    if (enabled) {
+      document.documentElement.classList.add("dark")
+      localStorage.setItem("vas.theme", "dark")
+    } else {
+      document.documentElement.classList.remove("dark")
+      localStorage.setItem("vas.theme", "light")
+    }
+    toast({
+      title: enabled ? "Đã bật Chế độ tối" : "Đã tắt Chế độ tối (Chuyển sang Chế độ sáng)",
+    })
+  }
+
+  const handleToggleAutoRefresh = (enabled: boolean) => {
+    setDirty(true)
+    setSettingsDraft((s) => ({ ...s, auto_refresh: enabled }))
+    localStorage.setItem("vas.auto_refresh", enabled ? "1" : "0")
+    toast({
+      title: enabled ? "Đã bật tự động cập nhật hàng đợi" : "Đã tắt tự động cập nhật",
+    })
+  }
+
+  const handleDisplayLanguage = (v: string) => {
+    setDirty(true)
+    setSettingsDraft((s) => ({ ...s, display_language: v }))
+    localStorage.setItem("vas.lang", v)
+    document.documentElement.lang = v
+    toast({
+      title: `Đã chọn ngôn ngữ giao diện: ${v === "vi" ? "Tiếng Việt" : "English"}`,
+    })
   }
 
   const selectEngineMode = (mode: string) => {
     setDirty(true)
     setSettingsDraft((current) => ({ ...current, engine_mode: mode }))
+    const labels: Record<string, string> = {
+      basic: "Cơ bản (veryfast · CRF 24)",
+      balanced: "Cân bằng (medium · CRF 21)",
+      high: "Hiệu năng cao (slow · CRF 18)",
+    }
+    toast({ title: "Đã chọn cấu hình Engine", description: labels[mode] || mode })
   }
 
   const testTelegram = async (sendMessage: boolean) => {
@@ -461,11 +524,16 @@ export default function SettingsPage() {
 
     setPreviewing(true)
     try {
-      const res = await api.ttsPreview(customText, { speed: config.speed, volume: config.volume })
+      const res = await api.ttsPreview(customText, {
+        provider: config.provider,
+        voice: config.voice,
+        speed: config.speed,
+        volume: config.volume,
+      })
       if (res.audio_path) {
         setPreviewUrl(mediaUrl(res.audio_path))
         setTimeout(() => audioRef.current?.play(), 100)
-        toast({ title: "Đã tạo âm thanh mẫu" })
+        toast({ title: "Đã tạo âm thanh mẫu thành công" })
       } else {
         toast({ title: res.message || "Không thể tạo mẫu", variant: "destructive" })
       }
@@ -486,8 +554,6 @@ export default function SettingsPage() {
         language: settingsDraft.display_language ?? settingsDraft.language,
         production_language: settingsDraft.production_language,
         auto_refresh: settingsDraft.auto_refresh,
-
-
         dark_mode: settingsDraft.dark_mode,
       }
 
@@ -497,7 +563,7 @@ export default function SettingsPage() {
       setSettings(settingsDraft)
       setSettingsSaved(true)
       setDirty(false)
-      toast({ title: "Đã lưu cài đặt" })
+      toast({ title: "Đã lưu cài đặt thành công" })
       setTimeout(() => setSettingsSaved(false), 3000)
     } catch (e) {
       toast({ title: "Không thể lưu", description: String(e), variant: "destructive" })
@@ -584,8 +650,7 @@ export default function SettingsPage() {
                 <Label>Ngôn ngữ giao diện</Label>
                 <Select
                   value={String(settingsDraft.display_language ?? "vi")}
-                  onValueChange={(v) => { setDirty(true); setSettingsDraft((s) => ({ ...s, display_language: v })) }}
-
+                  onValueChange={handleDisplayLanguage}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue />
@@ -617,30 +682,41 @@ export default function SettingsPage() {
                     <div className="text-sm font-medium">Thư mục dữ liệu/output</div>
                     <div className="truncate text-xs text-muted-foreground">{String(settingsDraft.output_folder ?? "Chưa chọn thư mục")}</div>
                   </div>
-                  <Button type="button" variant="outline" size="sm" className="shrink-0 gap-1.5" onClick={chooseOutputFolder}>
-                    <FolderOpen className="h-3.5 w-3.5" /> Chọn thư mục
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {Boolean(settingsDraft.output_folder) && (
+                      <Button type="button" variant="outline" size="sm" className="shrink-0 gap-1.5" onClick={openCurrentOutputFolder} title="Mở thư mục trên máy">
+                        <Folder className="h-3.5 w-3.5" /> Mở thư mục
+                      </Button>
+                    )}
+                    <Button type="button" variant="outline" size="sm" className="shrink-0 gap-1.5" onClick={chooseOutputFolder}>
+                      <FolderOpen className="h-3.5 w-3.5" /> Chọn thư mục
+                    </Button>
+                  </div>
                 </div>
               </div>
               <div className="flex items-center justify-between rounded-md border p-3">
                 <div>
                   <div className="text-sm font-medium">Tự động cập nhật danh sách việc</div>
-
                   <div className="text-xs text-muted-foreground">Tự làm mới hàng đợi mỗi 5 giây</div>
                 </div>
                 <Switch
                   checked={Boolean(settingsDraft.auto_refresh)}
-                  onCheckedChange={(v) => { setDirty(true); setSettingsDraft((s) => ({ ...s, auto_refresh: v })) }}
+                  onCheckedChange={handleToggleAutoRefresh}
                 />
               </div>
               <div className="flex items-center justify-between rounded-md border p-3">
-                <div>
-                  <div className="text-sm font-medium">Chế độ tối</div>
-                  <div className="text-xs text-muted-foreground">Luôn dùng giao diện tối</div>
+                <div className="space-y-0.5">
+                  <div className="text-sm font-medium flex items-center gap-1.5">
+                    {Boolean(settingsDraft.dark_mode ?? true) ? <Moon className="h-4 w-4 text-amber-400" /> : <Sun className="h-4 w-4 text-amber-500" />}
+                    Chế độ tối
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {Boolean(settingsDraft.dark_mode ?? true) ? "Luôn dùng giao diện tối" : "Đang dùng giao diện sáng"}
+                  </div>
                 </div>
                 <Switch
                   checked={Boolean(settingsDraft.dark_mode ?? true)}
-                  onCheckedChange={(v) => { setDirty(true); setSettingsDraft((s) => ({ ...s, dark_mode: v })) }}
+                  onCheckedChange={handleToggleDarkMode}
                 />
               </div>
             </div>
@@ -1519,15 +1595,49 @@ export default function SettingsPage() {
 
         {/* Đăng bài & Lập lịch */}
         <TabsContent value="publish">
-          <div className="vas-card p-5">
-            <h3 className="mb-4 text-base font-semibold text-slate-100">▶ Đăng bài & Lập lịch</h3>
-            <p className="mb-4 flex items-center gap-1 text-sm text-slate-500">
-              <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />
-              Đang phát triển — tính năng sẽ có trong bản cập nhật tới
-            </p>
-            <div>
-              <div className="rounded-lg border border-white/[0.06] border-dashed p-8 text-center text-sm text-slate-500">
-                Lên lịch tự động đăng video theo giờ đề xuất của từng kênh.
+          <div className="vas-card p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-slate-100">▶ Đăng bài & Lập lịch</h3>
+                <p className="mt-1 text-sm text-slate-400">
+                  Lên lịch tự động đăng video theo khung giờ vàng và cấu hình từng kênh YouTube / TikTok / Reels.
+                </p>
+              </div>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30 w-fit">
+                <AlertTriangle className="h-3.5 w-3.5" /> Bản xem trước
+              </span>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6 space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-lg border border-white/[0.06] bg-black/20 p-4 space-y-2">
+                  <div className="font-semibold text-slate-200 text-sm">Quản lý Kênh & Khung giờ đăng</div>
+                  <p className="text-xs text-slate-400">
+                    Cấu hình tiêu chuẩn video, tỷ lệ khung hình và thông tin kênh xuất bản trực tiếp trên từng dự án.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 text-xs mt-2"
+                    onClick={() => navigate("/projects")}
+                  >
+                    Quản lý Dự án & Kênh <ArrowRight className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <div className="rounded-lg border border-white/[0.06] bg-black/20 p-4 space-y-2">
+                  <div className="font-semibold text-slate-200 text-sm">Hàng đợi xuất bản tự động</div>
+                  <p className="text-xs text-slate-400">
+                    Theo dõi tiến độ render, duyệt video và đẩy video lên kho lưu trữ sẵn sàng xuất bản.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 text-xs mt-2"
+                    onClick={() => navigate("/queue")}
+                  >
+                    Mở Hàng đợi (Queue) <ArrowRight className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
             </div>
           </div>

@@ -92,6 +92,7 @@ export function ChannelConfigDialog({
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
+  const [savedAt, setSavedAt] = useState<number | null>(null)
   const [testingVoice, setTestingVoice] = useState(false)
   const [previewingVoice, setPreviewingVoice] = useState(false)
   const [voices, setVoices] = useState<TTSVoice[]>([])
@@ -127,6 +128,7 @@ export function ChannelConfigDialog({
         setStyles(st)
         setConfig({ ...DEFAULT_CONFIG, ...loaded })
         setDirty(false)
+        setSavedAt(Date.now())
       } catch (error) {
         if (!cancelled) toast({ title: "Không thể tải cấu hình kênh", description: String(error), variant: "destructive" })
       } finally {
@@ -216,7 +218,8 @@ export function ChannelConfigDialog({
       }
       setConfig({ ...DEFAULT_CONFIG, ...nextConfig })
       setDirty(false)
-      toast({ title: "Đã lưu cấu hình kênh" })
+      setSavedAt(Date.now())
+      toast({ title: "Đã lưu cấu hình kênh", description: channelId ? "Cấu hình channel hiện tại đã được đồng bộ." : "Cấu hình riêng của project đã được lưu." })
       onSaved?.(nextConfig)
       onOpenChange(false)
     } catch (e) {
@@ -228,14 +231,21 @@ export function ChannelConfigDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : close())}>
-      <DialogContent className="max-h-[90vh] max-w-6xl overflow-y-auto border-cyan-500/20 bg-[#0c141b] p-0">
-        <DialogHeader className="sticky top-0 z-10 border-b border-white/10 bg-[#0c141b]/95 px-6 py-4 backdrop-blur">
-          <DialogTitle className="flex items-center gap-2 text-lg">
-            ⚙️ Cấu hình kênh
-            {channelName && <span className="text-sm font-normal text-muted-foreground">— {channelName}</span>}
-            {dirty && <Badge variant="outline" className="border-amber-400/40 text-amber-300">Chưa lưu</Badge>}
-          </DialogTitle>
-          <DialogDescription>bộ não AI, giọng, lịch tự đề xuất</DialogDescription>
+      <DialogContent className="max-h-[92vh] max-w-7xl overflow-y-auto rounded-2xl border border-cyan-400/20 bg-[#071017] p-0 shadow-2xl shadow-cyan-950/30">
+        <DialogHeader className="sticky top-0 z-20 border-b border-white/10 bg-[#071017]/95 px-7 py-5 backdrop-blur-xl">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <DialogTitle className="flex flex-wrap items-center gap-2 text-xl tracking-tight text-white">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-400/20 bg-cyan-400/10 text-lg">⚙️</span>
+                <span>Cấu hình kênh</span>
+                {channelName && <span className="text-sm font-normal text-slate-400">— {channelName}</span>}
+              </DialogTitle>
+              <DialogDescription className="mt-2 text-xs text-slate-500">Bộ não AI, giọng đọc, hình ảnh và lịch sản xuất cho project hiện tại.</DialogDescription>
+            </div>
+            <Badge variant="outline" className={dirty ? "shrink-0 border-amber-400/40 bg-amber-400/10 text-amber-300" : "shrink-0 border-emerald-400/30 bg-emerald-400/10 text-emerald-300"}>
+              {dirty ? "Đã thay đổi · Chưa lưu" : "Đã đồng bộ"}
+            </Badge>
+          </div>
         </DialogHeader>
 
         {loading ? (
@@ -245,10 +255,10 @@ export function ChannelConfigDialog({
             ))}
           </div>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-5 bg-[#071017] px-7 py-6">
             {/* 🧠 Nội dung & Bộ não */}
-            <section>
-              <h3 className="mb-3 text-sm font-bold">🧠 Nội dung & Bộ não — quyết định chủ đề & chất riêng của kênh</h3>
+            <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5 shadow-lg shadow-black/10">
+              <h3 className="mb-4 flex items-center gap-2 text-base font-semibold tracking-tight text-slate-100">🧠 Nội dung & Bộ não — quyết định chủ đề & chất riêng của kênh</h3>
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs">Nguồn hình</Label>
@@ -365,14 +375,14 @@ export function ChannelConfigDialog({
               </div>
             </section>
 
-            <hr className="border-border/60" />
+            <hr className="border-white/10" />
 
             {/* 📝 5 trục + Hook */}
-            <section>
-              <h3 className="mb-3 text-sm font-bold">📝 Cách viết để AI thật sự rõ giọng — 5 trục</h3>
-              <div className="grid gap-2 sm:grid-cols-5">
+            <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5 shadow-lg shadow-black/10">
+              <h3 className="mb-4 flex items-center gap-2 text-base font-semibold tracking-tight text-slate-100">📝 Cách viết để AI thật sự rõ giọng — 5 trục</h3>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                 {VOICE_STYLE_5AXES.map((a) => (
-                  <div key={a.title} className="rounded-md border bg-background p-3 text-xs">
+                  <div key={a.title} className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-xs shadow-sm shadow-black/10">
                     <div className="font-bold">{a.title}</div>
                     <div className="mt-1 text-muted-foreground">{a.bad}</div>
                     <div className="mt-0.5 text-emerald-300">{a.good}</div>
@@ -390,10 +400,10 @@ export function ChannelConfigDialog({
               </div>
             </section>
 
-            <hr className="border-border/60" />
+            <hr className="border-white/10" />
 
             {/* Độ dài */}
-            <section className="grid gap-4 sm:grid-cols-2">
+            <section className="grid gap-4 rounded-2xl border border-white/10 bg-white/[0.025] p-5 shadow-lg shadow-black/10 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label className="text-xs">Độ dài Video dài mục tiêu</Label>
                 <Select value={String(config.long_video_duration)} onValueChange={(v) => set("long_video_duration", v)}>
@@ -421,11 +431,11 @@ export function ChannelConfigDialog({
               </div>
             </section>
 
-            <hr className="border-border/60" />
+            <hr className="border-white/10" />
 
             {/* 🎙 Giọng & Hình */}
-            <section>
-              <h3 className="mb-3 text-sm font-bold">🎙 Giọng & Hình</h3>
+            <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5 shadow-lg shadow-black/10">
+              <h3 className="mb-4 flex items-center gap-2 text-base font-semibold tracking-tight text-slate-100">🎙 Giọng & Hình</h3>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label className="text-xs">AI provider (văn bản)</Label>
@@ -551,11 +561,11 @@ export function ChannelConfigDialog({
               </div>
             </section>
 
-            <hr className="border-border/60" />
+            <hr className="border-white/10" />
 
             {/* ⏰ Tự động & Lịch */}
-            <section>
-              <h3 className="mb-3 text-sm font-bold">⏰ Tự động & Lịch</h3>
+            <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5 shadow-lg shadow-black/10">
+              <h3 className="mb-4 flex items-center gap-2 text-base font-semibold tracking-tight text-slate-100">⏰ Tự động & Lịch</h3>
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs">Chế độ duyệt</Label>
@@ -590,18 +600,21 @@ export function ChannelConfigDialog({
                   </Select>
                 </div>
               </div>
-              <p className="mt-3 rounded border border-primary/30 bg-primary/10 px-3 py-2 text-xs text-muted-foreground">
-                💡 Chế độ duyệt đang chọn: dùng chờ bạn đọc & sửa kịch bản trước khi lồng tiếng và sinh ảnh.
+              <p className="mt-4 rounded-xl border border-cyan-400/15 bg-cyan-400/[0.06] px-4 py-3 text-xs leading-5 text-slate-300">
+                💡 {config.review_mode === "auto" ? "Tự động hoàn toàn: sau khi chạy Factory, hệ thống tiếp tục phân cảnh, lồng tiếng và sinh media mà không dừng chờ duyệt." : "Duyệt kịch bản trước: Factory dừng sau bước kịch bản để bạn đọc/sửa trước khi lồng tiếng và sinh media."}
               </p>
             </section>
           </div>
         )}
 
-        <DialogFooter className="sticky bottom-0 z-10 border-t border-white/10 bg-[#0c141b]/95 px-6 py-4 backdrop-blur">
-          <Button variant="ghost" onClick={close}>
+        <DialogFooter className="sticky bottom-0 z-20 flex items-center justify-between gap-4 border-t border-white/10 bg-[#071017]/95 px-7 py-4 backdrop-blur-xl">
+          <div className="mr-auto text-xs text-slate-500">
+            {saving ? "Đang lưu vào project..." : dirty ? "Có thay đổi chưa lưu" : savedAt ? `Đã đồng bộ lúc ${new Date(savedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}` : "Đã tải cấu hình"}
+          </div>
+          <Button variant="ghost" onClick={close} disabled={saving} className="text-slate-300 hover:bg-white/[0.06]">
             Đóng
           </Button>
-          <Button onClick={save} disabled={saving || loading} className="bg-gradient-to-r from-amber-500 to-pink-500 hover:opacity-90">
+          <Button onClick={save} disabled={saving || loading || !dirty} className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-900/30 hover:brightness-110 disabled:opacity-40">
             {saving ? "Đang lưu..." : "💾 Lưu cấu hình"}
           </Button>
         </DialogFooter>

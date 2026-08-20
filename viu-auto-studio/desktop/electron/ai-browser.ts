@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process"
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs"
 import path from "node:path"
 import { findFreePort, getUserDataDir } from "./runtime-config"
 
@@ -342,6 +342,19 @@ export async function logoutAiBrowser(provider: AiProviderType): Promise<{ ok: b
     activeBrowsers.delete(provider)
   }
 
+  // Small delay to allow Chrome process termination before wiping folder
+  await new Promise((r) => setTimeout(r, 400))
+
+  const profileDirName = `${provider}-browser-profile`
+  const profilePath = path.join(getUserDataDir(), profileDirName)
+  try {
+    if (existsSync(profilePath)) {
+      rmSync(profilePath, { recursive: true, force: true })
+    }
+  } catch (err) {
+    console.warn(`[AiBrowser] Could not completely wipe profile ${profileDirName}:`, err)
+  }
+
   const saved = readSavedSessions()
   saved[provider] = {
     connected: false,
@@ -353,7 +366,7 @@ export async function logoutAiBrowser(provider: AiProviderType): Promise<{ ok: b
 
   return {
     ok: true,
-    message: `Đã đăng xuất tài khoản ${provider === "chatgpt" ? "ChatGPT" : "Gemini"}.`,
+    message: `Đã đăng xuất và xóa sạch dữ liệu phiên ${provider === "chatgpt" ? "ChatGPT" : "Gemini"}.`,
   }
 }
 

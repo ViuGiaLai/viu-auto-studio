@@ -191,10 +191,12 @@ export const api = {
   deleteChannel: (id: number) => request<void>(`/channels/${id}`, { method: "DELETE" }),
 
   // Projects
-  listProjects: (search?: string, status?: string) => {
+    listProjects: (search?: string, status?: string, includeSizes = false) => {
     const params = new URLSearchParams()
     if (search) params.set("search", search)
     if (status) params.set("status", status)
+    if (includeSizes) params.set("include_sizes", "true")
+
     const qs = params.toString()
     return request<Project[]>(`/projects${qs ? `?${qs}` : ""}`)
   },

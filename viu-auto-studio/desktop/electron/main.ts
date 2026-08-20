@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, shell, Menu } from "electron"
 import path from "node:path"
 import http from "node:http"
 import fs from "node:fs"
@@ -101,6 +101,19 @@ function createWindow(): void {
     },
   })
 
+  // Disable default generic menu bar (File Edit View Window Help)
+  mainWindow.setMenuBarVisibility(false)
+  Menu.setApplicationMenu(null)
+
+  // Redirect ALL external web links & window.open calls to real system browser (Chrome/Edge)
+  // NEVER spawn an embedded Electron child window with generic menu bar
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith("http:") || url.startsWith("https:") || url.startsWith("mailto:")) {
+      void shell.openExternal(url)
+    }
+    return { action: "deny" }
+  })
+
   mainWindow.webContents.on("console-message", (_event, _level, message, line, sourceId) => {
     if (message.toLowerCase().includes("error") || message.toLowerCase().includes("exception")) {
       console.error(`[RendererConsole] ${message} (${sourceId}:${line})`)
@@ -121,7 +134,7 @@ function createWindow(): void {
         mainWindow.setContentSize(1920, 1080)
         const base = VITE_DEV_SERVER_URL || uiBaseUrl
         await new Promise((resolve) => setTimeout(resolve, 1200))
-        if (process.env.VIU_UI_SMOKE !== "1" && process.env.VIU_CHANNEL_CONFIG_SMOKE !== "1") for (const route of routes) {
+        if (process.env.VIU_UI_SMOKE !== "1" && process.env.VIU_CHANNEL_CONFIG_SMOKE !== "1" && process.env.VIU_PROJECTS_SMOKE !== "1") for (const route of routes) {
           if (route) {
             await mainWindow.loadURL(`${base}/${route}`)
             await new Promise((resolve) => setTimeout(resolve, 1200))
@@ -130,6 +143,29 @@ function createWindow(): void {
           const name = route ? route.replace(/\//g, "-") : "dashboard"
           fs.writeFileSync(path.join(captureDir, `${name}.png`), image.toPNG())
           console.log(`[Capture] ${name}.png`)
+        }
+
+        if (process.env.VIU_PROJECTS_SMOKE === "1") {
+          const projectsStarted = Date.now()
+          await mainWindow.loadURL(`${base}/projects`)
+          const loadUrlMs = Date.now() - projectsStarted
+          const dataReady = await mainWindow.webContents.executeJavaScript(`new Promise((resolve) => {
+            const started = performance.now()
+            const check = () => {
+              const search = document.querySelector('input[placeholder*="Tìm kiếm dự án"]')
+              const skeletons = [...document.querySelectorAll('.animate-pulse')].filter((node) => node.getClientRects().length)
+              if (search && skeletons.length === 0) {
+                resolve({ readyMs: Math.round(performance.now() - started), skeletons: 0, cards: document.querySelectorAll('a[href^="/projects/"]:not([href="/projects/new"])').length })
+              } else {
+                setTimeout(check, 25)
+              }
+            }
+            check()
+          })`)
+          const projectImage = await mainWindow.webContents.capturePage()
+          fs.writeFileSync(path.join(captureDir, "projects-page-after-load.png"), projectImage.toPNG())
+          fs.writeFileSync(path.join(captureDir, "projects-load-result.json"), JSON.stringify({ loadUrlMs, dataReady }, null, 2), "utf8")
+          console.log(`[ProjectsSmoke] ${JSON.stringify({ loadUrlMs, dataReady })}`)
         }
 
         if (process.env.VIU_UI_SMOKE === "1") {
@@ -333,7 +369,8 @@ function createWindow(): void {
           await clickChannelButton("Cấu hình kênh")
           await waitChannel(900)
           const projectScopedBody = await mainWindow.webContents.executeJavaScript(`document.body.innerText`)
-          if (!projectScopedBody.includes("Electron Unattached Project") || !projectScopedBody.includes("cấu hình riêng") || !projectScopedBody.includes("bộ não AI, giọng")) throw new Error("Cấu hình project không mở trực tiếp khi chưa gắn channel")
+          const projectScopedBodyNormalized = String(projectScopedBody).toLocaleLowerCase("vi-VN")
+          if (!projectScopedBodyNormalized.includes("electron unattached project") || !projectScopedBodyNormalized.includes("cấu hình riêng") || !projectScopedBodyNormalized.includes("bộ não ai, giọng")) throw new Error("Cấu hình project không mở trực tiếp khi chưa gắn channel")
           await setChannelControl('input[placeholder*="Siberia"]', "Cấu hình riêng của project hiện tại")
           await clickChannelButton("Lưu cấu hình")
           await waitChannel(900)

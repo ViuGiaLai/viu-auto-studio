@@ -100,7 +100,7 @@ export default function ProjectsPage() {
   const load = () => {
     setLoading(true)
     api
-      .listProjects(search || undefined)
+      .listProjects(search || undefined, undefined, sort === "size")
       .then(setProjects)
       .catch(() => toast({ title: "Không thể tải danh sách dự án", variant: "destructive" }))
       .finally(() => setLoading(false))
@@ -109,7 +109,7 @@ export default function ProjectsPage() {
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter])
+  }, [statusFilter, sort])
 
   const listForFilters = useMemo(() => {
     return projects.filter(

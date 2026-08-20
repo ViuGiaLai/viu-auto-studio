@@ -34,21 +34,37 @@ function terminateBrowserTree(proc: ChildProcess): void {
 }
 
 function candidateChromePaths(): string[] {
-  const env = process.env.VIU_CHROME_PATH
+  const env = process.env.VIU_CHROME_PATH || process.env.VIU_BROWSER_PATH
   const values = env ? [env] : []
   if (process.platform === "win32") {
     const programFiles = process.env.ProgramFiles || "C:\\Program Files"
     const programFilesX86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)"
     const localAppData = process.env.LOCALAPPDATA || path.join(process.env.USERPROFILE || "", "AppData", "Local")
     values.push(
+      // Google Chrome
       path.join(programFiles, "Google", "Chrome", "Application", "chrome.exe"),
       path.join(programFilesX86, "Google", "Chrome", "Application", "chrome.exe"),
       path.join(localAppData, "Google", "Chrome", "Application", "chrome.exe"),
+      // Microsoft Edge
+      path.join(programFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
+      path.join(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe"),
+      path.join(localAppData, "Microsoft", "Edge", "Application", "msedge.exe"),
     )
   } else if (process.platform === "darwin") {
-    values.push("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+    values.push(
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+      "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    )
   } else {
-    values.push("/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium", "/usr/bin/chromium-browser")
+    values.push(
+      "/usr/bin/google-chrome",
+      "/usr/bin/google-chrome-stable",
+      "/usr/bin/microsoft-edge",
+      "/usr/bin/microsoft-edge-stable",
+      "/usr/bin/chromium",
+      "/usr/bin/chromium-browser",
+    )
   }
   return [...new Set(values)].filter(Boolean)
 }

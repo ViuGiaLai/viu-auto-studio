@@ -412,22 +412,27 @@ def delete_channel(channel_id: int, db: Session = Depends(get_db)):
 def list_projects(
     search: str | None = None,
     status: str | None = None,
+    include_sizes: bool = False,
     db: Session = Depends(get_db),
 ):
+
     query = db.query(Project)
     if search:
         query = query.filter(Project.name.ilike(f"%{search}%"))
     if status:
         query = query.filter(Project.status == status)
     projects = query.order_by(Project.updated_at.desc()).all()
-    for project in projects:
-        try:
-            dir_path = Path(project.project_directory) if project.project_directory else None
-            if dir_path and dir_path.exists():
-                project.size_bytes = sum(f.stat().st_size for f in dir_path.rglob("*") if f.is_file())
-            else:
+    if include_sizes:
+        for project in projects:
+            try:
+                dir_path = Path(project.project_directory) if project.project_directory else None
+                project.size_bytes = sum(f.stat().st_size for f in dir_path.rglob("*") if f.is_file()) if dir_path and dir_path.exists() else 0
+            except OSError:
                 project.size_bytes = 0
-        except OSError:
+    else:
+        # Do not scan project trees during the normal list request. Large media
+        # folders can otherwise keep the project screen on skeletons for tens of seconds.
+        for project in projects:
             project.size_bytes = 0
     return projects
 
