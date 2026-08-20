@@ -144,7 +144,24 @@ async function runOnce() {
   let task;
   try {
     const state = await heartbeat();
-    if (!state?.ready || !state.loggedIn) return;
+    if (!state?.loggedIn) return;
+
+    // If page is not ready (on landing page), ask content script to navigate to editor
+    if (!state.ready) {
+      const tab = await activeFlowTab();
+      if (tab?.id) {
+        try {
+          const navResult = await chrome.tabs.sendMessage(tab.id, { type: 'VAS_NAVIGATE_EDITOR' });
+          if (!navResult?.ok) return; // Navigation failed, try again next poll
+          // After navigation, re-check status
+          const newState = await flowPageStatus();
+          if (!newState.ready) return; // Still not ready, try again next poll
+        } catch { return; }
+      } else {
+        return; // No Flow tab found
+      }
+    }
+
     task = await request(`/api/connector/tasks/next?worker_id=${encodeURIComponent(await workerId())}`);
     if (!task || !task.task_id) return;
     const tab = await activeFlowTab();
