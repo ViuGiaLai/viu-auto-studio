@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   startFlow: (input) => ipcRenderer.invoke("flow:start", input),
   stopFlow: () => ipcRenderer.invoke("flow:stop"),
   logoutFlow: () => ipcRenderer.invoke("flow:logout"),
+  flowGoogleStatus: () => ipcRenderer.invoke("flow:googleStatus"),
   openAiBrowser: (input) => ipcRenderer.invoke("aiBrowser:open", input),
   getAiBrowserStatus: (input) => ipcRenderer.invoke("aiBrowser:status", input),
   logoutAiBrowser: (input) => ipcRenderer.invoke("aiBrowser:logout", input),

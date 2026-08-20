@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   startFlow: (input: { projectId: number; factorySessionId: string }): Promise<{ ok: boolean; status: string; message: string; profilePath?: string }> => ipcRenderer.invoke("flow:start", input),
   stopFlow: (): Promise<{ ok: boolean }> => ipcRenderer.invoke("flow:stop"),
   logoutFlow: (): Promise<{ ok: boolean; message: string }> => ipcRenderer.invoke("flow:logout"),
+  flowGoogleStatus: (): Promise<{ loggedIn: boolean; email: string }> => ipcRenderer.invoke("flow:googleStatus"),
   openAiBrowser: (input: { provider: "chatgpt" | "gemini" }): Promise<{ ok: boolean; status: string; message: string; profilePath?: string; browserName?: string }> => ipcRenderer.invoke("aiBrowser:open", input),
   getAiBrowserStatus: (input: { provider: "chatgpt" | "gemini" }): Promise<{ connected: boolean; email?: string; model?: string; plan?: string; browserRunning?: boolean; message?: string }> => ipcRenderer.invoke("aiBrowser:status", input),
   logoutAiBrowser: (input: { provider: "chatgpt" | "gemini" }): Promise<{ ok: boolean; message: string }> => ipcRenderer.invoke("aiBrowser:logout", input),

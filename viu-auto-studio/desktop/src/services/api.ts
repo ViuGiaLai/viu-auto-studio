@@ -97,6 +97,12 @@ export async function logoutFlowBrowser(): Promise<{ ok: boolean; message: strin
   return w.electronAPI.logoutFlow()
 }
 
+export async function flowGoogleStatus(): Promise<{ loggedIn: boolean; email: string }> {
+  const w = window as unknown as { electronAPI?: { flowGoogleStatus?: () => Promise<{ loggedIn: boolean; email: string }> } }
+  if (!w.electronAPI?.flowGoogleStatus) return { loggedIn: false, email: "" }
+  return w.electronAPI.flowGoogleStatus()
+}
+
 export async function openLocalPath(target: string): Promise<{ ok: boolean; message: string }> {
 
   const w = window as unknown as { electronAPI?: { openPath?: (path: string) => Promise<{ ok: boolean; message: string }> } }

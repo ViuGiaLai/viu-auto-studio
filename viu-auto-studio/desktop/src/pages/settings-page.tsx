@@ -6,7 +6,7 @@ import {
   Globe, Bot, Sparkles, MessageSquare, Eye, EyeOff, LogOut, Chrome, Check,
   Moon, Sun, ArrowRight
 } from "lucide-react"
-import { api, openExternalUrl, selectDirectory, openAiBrowser, getAiBrowserStatus, logoutAiBrowser, mediaUrl, startFlowBrowser, logoutFlowBrowser } from "@/services/api"
+import { api, openExternalUrl, selectDirectory, openAiBrowser, getAiBrowserStatus, logoutAiBrowser, mediaUrl, startFlowBrowser, logoutFlowBrowser, flowGoogleStatus } from "@/services/api"
 
 import { flowApi, globalApi, type FlowConnectionRead } from "@/services/pages-api"
 
@@ -78,6 +78,7 @@ export default function SettingsPage() {
   const [workerConnected, setWorkerConnected] = useState(false)
   const [flowConnection, setFlowConnection] = useState<FlowConnectionRead | null>(null)
   const [flowAccountLoading, setFlowAccountLoading] = useState(false)
+  const [flowGoogleOnDisk, setFlowGoogleOnDisk] = useState<{ loggedIn: boolean; email: string }>({ loggedIn: false, email: "" })
   const [geminiEnabled, setGeminiEnabled] = useState(false)
 
   const [geminiChecking, setGeminiChecking] = useState(false)
@@ -168,11 +169,19 @@ export default function SettingsPage() {
     }
   }
 
+
     const refreshFlowConnection = async () => {
     try {
       setFlowConnection(await flowApi.get())
     } catch {
       setFlowConnection(null)
+    }
+    // Also check Google login on disk (independent of extension pairing)
+    try {
+      const gs = await flowGoogleStatus()
+      setFlowGoogleOnDisk(gs)
+    } catch {
+      setFlowGoogleOnDisk({ loggedIn: false, email: "" })
     }
   }
 
@@ -187,7 +196,7 @@ export default function SettingsPage() {
     try {
       const result = await startFlowBrowser(0, "account-profile")
       if (!result.ok) throw new Error(result.message)
-      toast({ title: "Đã mở Chrome Profile riêng", description: "Đăng nhập Google Flow trong cửa sổ vừa mở. App sẽ tự kiểm tra và cập nhật nút thành Đăng xuất." })
+      toast({ title: "Đã mở Chrome Profile riêng", description: result.message })
       await refreshFlowConnection()
     } catch (error) {
       toast({ title: "Không thể mở Chrome Flow", description: String(error), variant: "destructive" })
@@ -203,6 +212,7 @@ export default function SettingsPage() {
       const result = await logoutFlowBrowser()
       if (!result.ok) throw new Error(result.message)
       setFlowConnection(null)
+      setFlowGoogleOnDisk({ loggedIn: false, email: "" })
       toast({ title: "Đã đăng xuất Google Flow", description: result.message })
     } catch (error) {
       toast({ title: "Không thể đăng xuất Google Flow", description: String(error), variant: "destructive" })
@@ -212,7 +222,9 @@ export default function SettingsPage() {
     }
   }
 
-  const flowLoggedIn = flowConnection?.status === "paired" && Boolean(flowConnection.google_account || flowConnection.factory_state === "ready" || flowConnection.factory_state === "processing")
+  // Flow is "logged in" if either: backend extension is paired, OR Google cookies exist on disk
+  const flowLoggedIn = (flowConnection?.status === "paired" && Boolean(flowConnection.google_account || flowConnection.factory_state === "ready" || flowConnection.factory_state === "processing")) || flowGoogleOnDisk.loggedIn
+  const flowDisplayEmail = flowConnection?.google_account || flowGoogleOnDisk.email || ""
 
   const handleOpenAiBrowser = async (provider: "chatgpt" | "gemini") => {
 
@@ -979,7 +991,7 @@ export default function SettingsPage() {
                 </div>
                 <p className="mt-2 max-w-2xl text-xs leading-5 text-slate-400">
                   {flowLoggedIn
-                    ? `Đã đăng nhập${flowConnection?.google_account ? `: ${flowConnection.google_account}` : ""}. Chrome Profile riêng và Flow Connector đang sẵn sàng.`
+                    ? `Đã đăng nhập${flowDisplayEmail ? `: ${flowDisplayEmail}` : ""}. Chrome Profile riêng và Flow Connector đang sẵn sàng.`
                     : "Chưa thêm tài khoản nào. Bấm mở Chrome Profile riêng để đăng nhập Google Flow; app sẽ tự kiểm tra trạng thái."}
                 </p>
               </div>

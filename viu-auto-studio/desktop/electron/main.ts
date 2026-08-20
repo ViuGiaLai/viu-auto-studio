@@ -3,7 +3,7 @@ import path from "node:path"
 import http from "node:http"
 import fs from "node:fs"
 import { startBackend, stopBackend } from "./backend-manager"
-import { startFlowBrowser, stopFlowBrowser, logoutFlowBrowser } from "./flow-browser"
+import { startFlowBrowser, stopFlowBrowser, logoutFlowBrowser, isFlowGoogleLoggedIn } from "./flow-browser"
 import { openAiBrowser, getAiBrowserStatus, logoutAiBrowser, stopAllAiBrowsers, type AiProviderType } from "./ai-browser"
 import { readRuntimeConfig, getUserDataDir, dirnameOf, findFreePort } from "./runtime-config"
 
@@ -440,6 +440,9 @@ ipcMain.handle("flow:stop", async () => {
 ipcMain.handle("flow:logout", async () => {
   const runtime = readRuntimeConfig()
   return logoutFlowBrowser(runtime || undefined)
+})
+ipcMain.handle("flow:googleStatus", async () => {
+  return isFlowGoogleLoggedIn()
 })
 ipcMain.handle("getUserDataDir", async () => getUserDataDir())
 ipcMain.handle("dialog:select-directory", async () => {

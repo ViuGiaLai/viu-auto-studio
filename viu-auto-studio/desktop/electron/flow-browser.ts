@@ -123,11 +123,18 @@ async function waitForDevTools(port: number, timeoutMs = 15_000): Promise<boolea
   return false
 }
 
-async function configureExtension(runtime: RuntimeConfig, input: FlowBrowserStartInput): Promise<void> {
-  const puppeteer = await import("puppeteer-core")
-  const browser = await puppeteer.connect({ browserURL: `http://127.0.0.1:${browserPort}` })
+/**
+ * Try to configure the Flow Connector extension via service worker.
+ * Returns true if successfully configured, false if service worker not found.
+ * Does NOT throw — caller decides what to do.
+ */
+async function configureExtension(runtime: RuntimeConfig, input: FlowBrowserStartInput, timeoutMs = 30_000): Promise<boolean> {
+  if (!browserPort) return false
+  let browser: Awaited<ReturnType<typeof import("puppeteer-core")["connect"]>> | null = null
   try {
-    const deadline = Date.now() + 15_000
+    const puppeteer = await import("puppeteer-core")
+    browser = await puppeteer.connect({ browserURL: `http://127.0.0.1:${browserPort}` })
+    const deadline = Date.now() + timeoutMs
     while (Date.now() < deadline) {
       const serviceWorkerTarget = browser.targets().find((target) => target.type() === "service_worker" && target.url().includes("/service-worker.js"))
       if (serviceWorkerTarget) {
@@ -149,15 +156,82 @@ async function configureExtension(runtime: RuntimeConfig, input: FlowBrowserStar
             factorySessionId: input.factorySessionId,
             flowUrl: "https://labs.google/fx/tools/flow",
           })
-          return
+          return true
         }
       }
-      await new Promise((resolve) => setTimeout(resolve, 250))
+      await new Promise((resolve) => setTimeout(resolve, 500))
     }
-    throw new Error("Không tìm thấy Flow Connector service worker trong Chrome")
+    return false
+  } catch {
+    return false
   } finally {
-    await browser.disconnect()
+    try { await browser?.disconnect() } catch { /* ignore */ }
   }
+}
+
+/**
+ * Keep retrying configureExtension in background every 5s for up to 2 minutes.
+ * This lets the user log in first while we wait for the extension to become available.
+ */
+function tryConfigureInBackground(runtime: RuntimeConfig, input: FlowBrowserStartInput): void {
+  let attempts = 0
+  const maxAttempts = 24 // 24 × 5s = 2 minutes
+  const interval = setInterval(async () => {
+    attempts++
+    if (!browserProcess || !browserPort || attempts > maxAttempts) {
+      clearInterval(interval)
+      return
+    }
+    const ok = await configureExtension(runtime, input, 3000)
+    if (ok) {
+      clearInterval(interval)
+      console.log("[Flow] Extension configured successfully in background (attempt", attempts, ")")
+    }
+  }, 5000)
+}
+
+/**
+ * Check if user has logged in to Google in the Flow Chrome profile (on disk).
+ */
+export function isFlowGoogleLoggedIn(): { loggedIn: boolean; email: string } {
+  const profilePath = path.join(getUserDataDir(), "flow-chrome-profile")
+  // Check Preferences for Google account_info
+  const prefsFiles = [
+    path.join(profilePath, "Default", "Preferences"),
+    path.join(profilePath, "Preferences"),
+  ]
+  for (const prefsFile of prefsFiles) {
+    if (existsSync(prefsFile)) {
+      try {
+        const { readFileSync } = require("node:fs")
+        const prefs = JSON.parse(readFileSync(prefsFile, "utf-8"))
+        const accounts = prefs?.account_info || prefs?.google?.account_info
+        if (Array.isArray(accounts) && accounts.length > 0) {
+          const email = accounts[0].email || accounts[0].account_id || ""
+          if (email) return { loggedIn: true, email }
+        }
+      } catch { /* continue */ }
+    }
+  }
+  // Check cookies for Google SID/HSID
+  const cookieFiles = [
+    path.join(profilePath, "Default", "Network", "Cookies"),
+    path.join(profilePath, "Default", "Cookies"),
+    path.join(profilePath, "Network", "Cookies"),
+  ]
+  for (const cookieFile of cookieFiles) {
+    if (existsSync(cookieFile)) {
+      try {
+        const { readFileSync } = require("node:fs")
+        const buf = readFileSync(cookieFile)
+        const str = buf.toString("latin1")
+        if (str.includes("__Secure-1PSID") || str.includes("HSID") || str.includes("SSID")) {
+          return { loggedIn: true, email: "Google Account" }
+        }
+      } catch { /* continue */ }
+    }
+  }
+  return { loggedIn: false, email: "" }
 }
 
 export async function startFlowBrowser(runtime: RuntimeConfig, input: FlowBrowserStartInput): Promise<FlowBrowserStartResult> {
@@ -174,14 +248,17 @@ export async function startFlowBrowser(runtime: RuntimeConfig, input: FlowBrowse
   }
   const profilePath = path.join(getUserDataDir(), "flow-chrome-profile")
   mkdirSync(profilePath, { recursive: true })
+
+  // Reuse existing browser if running
   if (browserProcess && browserPort && await waitForDevTools(browserPort, 500)) {
-    try {
-      await configureExtension(runtime, input)
-      return { ok: true, status: "reused", message: "Đã tái sử dụng Chrome Flow profile.", profilePath }
-    } catch {
-      // The old process may be stale; continue with a new browser process.
-    }
+    const ok = await configureExtension(runtime, input, 5000)
+    if (ok) return { ok: true, status: "reused", message: "Đã tái sử dụng Chrome Flow profile.", profilePath }
+    // Extension not ready but Chrome is alive — start background config retry
+    tryConfigureInBackground(runtime, input)
+    return { ok: true, status: "reused", message: "Chrome Flow đang chạy. Extension sẽ tự kết nối khi sẵn sàng.", profilePath }
   }
+
+  // Launch new Chrome
   browserPort = await findFreePort("127.0.0.1")
   const args = [
     `--user-data-dir=${profilePath}`,
@@ -205,14 +282,23 @@ export async function startFlowBrowser(runtime: RuntimeConfig, input: FlowBrowse
     browserPort = 0
     return { ok: false, status: "failed", message: "Chrome không mở được remote debugging session." }
   }
-  try {
-    await configureExtension(runtime, input)
+
+  // Try to configure extension — if it fails, DON'T kill Chrome
+  // Let the user log in and the background retrier will configure later
+  const configured = await configureExtension(runtime, input, 10_000)
+  if (configured) {
     return { ok: true, status: "started", message: "Đã mở Chrome Flow profile và nạp Flow Connector.", profilePath }
-  } catch (error) {
-    terminateBrowserTree(browserProcess)
-    browserProcess = null
-    browserPort = 0
-    return { ok: false, status: "failed", message: String(error instanceof Error ? error.message : error), profilePath }
+  }
+  // Extension not ready yet but Chrome is alive — start background retry
+  tryConfigureInBackground(runtime, input)
+  const googleStatus = isFlowGoogleLoggedIn()
+  return {
+    ok: true,
+    status: "started",
+    message: googleStatus.loggedIn
+      ? `Chrome Flow đã mở. Đăng nhập Google: ${googleStatus.email}. Extension sẽ tự kết nối.`
+      : "Chrome Flow đã mở. Hãy đăng nhập Google; extension sẽ tự kết nối khi sẵn sàng.",
+    profilePath,
   }
 }
 
