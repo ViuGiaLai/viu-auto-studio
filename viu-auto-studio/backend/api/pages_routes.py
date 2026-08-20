@@ -1315,8 +1315,8 @@ def start_factory_flow(payload: FactoryStartRequest, db: Session = Depends(get_d
         db.commit()
         raise HTTPException(409, connection.last_error)
 
-    heartbeat_fresh = bool(connection.heartbeat_at and (datetime.utcnow() - connection.heartbeat_at).total_seconds() < 120)
-    connection.factory_state = "ready" if connection.status == "paired" and heartbeat_fresh else "waiting_login"
+    heartbeat_fresh = bool(connection.heartbeat_at and (datetime.utcnow() - connection.heartbeat_at).total_seconds() < 300)
+    connection.factory_state = "ready" if (connection.status == "paired" or bool(connection.google_account) or heartbeat_fresh) else "waiting_login"
     connection.last_error = ""
     connection.last_state_at = datetime.utcnow()
     if created:
@@ -1333,7 +1333,7 @@ def start_factory_flow(payload: FactoryStartRequest, db: Session = Depends(get_d
         "project_id": payload.project_id,
         "factory_session_id": session_id,
         "factory_state": connection.factory_state,
-        "requires_login": connection.factory_state == "waiting_login",
+        "requires_login": connection.factory_state == "waiting_login" and not bool(connection.google_account),
         "include_video": include_video,
         "factory_stage": connection.factory_stage,
         "created": created,
@@ -1367,13 +1367,11 @@ def update_factory_flow_state(
     if logged_in:
         connection.status = "paired"
         connection.paired_at = connection.paired_at or datetime.utcnow()
-    else:
-        connection.status = "unpaired"
-    if ready:
         if connection.factory_state not in {"processing", "generate_image", "generate_video", "completed", "failed"}:
             connection.factory_state = "ready"
         connection.last_error = ""
     else:
+        connection.status = "unpaired"
         connection.factory_state = "waiting_login"
     if session_id:
         connection.factory_session_id = session_id

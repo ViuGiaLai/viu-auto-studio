@@ -809,7 +809,7 @@ function Storyboard({ project }: { project: Project }) {
       if (!browser.ok) {
         toast({ title: "Không khởi động được Chrome Flow", description: browser.message, variant: "destructive" })
       } else if (res.requires_login) {
-        toast({ title: "Đang chờ đăng nhập Google Flow", description: "Chrome profile riêng đã mở. Đăng nhập một lần; hệ thống sẽ tự tiếp tục Factory khi Flow sẵn sàng." })
+        toast({ title: "Đang mở Google Flow", description: browser.message || "Hệ thống đang tự kết nối và mở phiên làm việc..." })
       } else {
         toast({ title: "Factory Mode đã chạy", description: `Đã xếp ${res.created} task và tự kết nối Flow Connector.` })
       }
@@ -2126,9 +2126,9 @@ export default function ProjectEditorPage() {
     }
     setActiveTab("media")
     toast({
-      title: factory.requires_login ? "Đã duyệt; đang chờ đăng nhập Google Flow" : "Đã duyệt và khởi động Factory",
+      title: factory.requires_login ? "Đã duyệt & đang mở Google Flow" : "Đã duyệt và khởi động Factory",
       description: factory.requires_login
-        ? "Chrome profile riêng đã mở. Đăng nhập một lần; Flow sẽ tự tiếp tục tạo media và sau đó dựng phim."
+        ? "Chrome profile riêng đã mở. Flow Connector sẽ tự động vào editor và tạo media cho toàn bộ phân cảnh."
         : "Phân cảnh, giọng, media và hàng đợi dựng phim đã được khởi động tự động.",
     })
   }
