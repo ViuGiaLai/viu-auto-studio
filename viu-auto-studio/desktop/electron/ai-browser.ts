@@ -173,11 +173,13 @@ export async function openAiBrowser(provider: AiProviderType): Promise<{
   const args = [
     `--user-data-dir=${profilePath}`,
     `--remote-debugging-port=${port}`,
+    `--app=${targetUrl}`,
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-sync",
+    "--disable-background-networking",
+    "--disable-features=Translate,OptimizationHints",
     "--window-size=1280,800",
-    targetUrl,
   ]
 
   const child = spawn(browserPath, args, { detached: false, windowsHide: false, stdio: "ignore" })

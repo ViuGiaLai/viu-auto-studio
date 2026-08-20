@@ -155,7 +155,7 @@ export async function startFlowBrowser(runtime: RuntimeConfig, input: FlowBrowse
     "--disable-sync",
     `--load-extension=${extensionPath}`,
     `--disable-extensions-except=${extensionPath}`,
-    "https://labs.google/fx/tools/flow",
+    "--app=https://labs.google/fx/tools/flow",
   ]
   browserProcess = spawn(chrome, args, { detached: false, windowsHide: false, stdio: "ignore" })
   browserProcess.once("exit", () => {
