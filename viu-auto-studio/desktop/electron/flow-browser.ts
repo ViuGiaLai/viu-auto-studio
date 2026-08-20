@@ -345,16 +345,32 @@ export async function startFlowBrowser(runtime: RuntimeConfig, input: FlowBrowse
   const profilePath = path.join(getUserDataDir(), "flow-chrome-profile")
   mkdirSync(profilePath, { recursive: true })
 
+  // Build bootstrap config to embed in URL hash
+  const bootstrapConfig = buildExtensionConfig(runtime, input)
+  const bootstrapHash = Buffer.from(JSON.stringify(bootstrapConfig)).toString("base64url")
+  const flowUrl = `https://labs.google/fx/tools/flow#vas-bootstrap=${bootstrapHash}`
+
   // Reuse existing browser if running
   if (browserProcess && browserPort && await waitForDevTools(browserPort, 500)) {
+    // Try puppeteer config first
     const ok = await configureExtension(runtime, input, 5000)
     if (ok) return { ok: true, status: "reused", message: "Đã tái sử dụng Chrome Flow profile.", profilePath }
-    // Extension not ready but Chrome is alive — start background config retry
+    // Navigate to bootstrap URL to trigger content script auto-config
+    try {
+      const puppeteer = await import("puppeteer-core")
+      const browser = await puppeteer.connect({ browserURL: `http://127.0.0.1:${browserPort}` })
+      const pages = await browser.pages()
+      const flowPage = pages.find((p) => p.url().includes("labs.google"))
+      if (flowPage) {
+        await flowPage.goto(flowUrl, { waitUntil: "domcontentloaded", timeout: 10_000 })
+      }
+      await browser.disconnect()
+    } catch { /* continue */ }
     tryConfigureInBackground(runtime, input)
-    return { ok: true, status: "reused", message: "Chrome Flow đang chạy. Extension sẽ tự kết nối khi sẵn sàng.", profilePath }
+    return { ok: true, status: "reused", message: "Chrome Flow đang chạy, extension đang nhận config.", profilePath }
   }
 
-  // Launch new Chrome
+  // Launch new Chrome with bootstrap URL
   browserPort = await findFreePort("127.0.0.1")
   const args = [
     `--user-data-dir=${profilePath}`,
@@ -365,7 +381,7 @@ export async function startFlowBrowser(runtime: RuntimeConfig, input: FlowBrowse
     `--load-extension=${extensionPath}`,
     `--disable-extensions-except=${extensionPath}`,
     "--new-window",
-    "https://labs.google/fx/tools/flow",
+    flowUrl,
   ]
   browserProcess = spawn(chrome, args, { detached: false, windowsHide: false, stdio: "ignore" })
   browserProcess.once("exit", () => {
@@ -379,21 +395,20 @@ export async function startFlowBrowser(runtime: RuntimeConfig, input: FlowBrowse
     return { ok: false, status: "failed", message: "Chrome không mở được remote debugging session." }
   }
 
-  // Try to configure extension — if it fails, DON'T kill Chrome
-  // Let the user log in and the background retrier will configure later
-  const configured = await configureExtension(runtime, input, 10_000)
-  if (configured) {
-    return { ok: true, status: "started", message: "Đã mở Chrome Flow profile và nạp Flow Connector.", profilePath }
+  // Content script will auto-bootstrap from URL hash.
+  // Also try puppeteer as backup (won't kill Chrome if it fails).
+  const configured = await configureExtension(runtime, input, 8_000)
+  if (!configured) {
+    tryConfigureInBackground(runtime, input)
   }
-  // Extension not ready yet but Chrome is alive — start background retry
-  tryConfigureInBackground(runtime, input)
+
   const googleStatus = isFlowGoogleLoggedIn()
   return {
     ok: true,
     status: "started",
     message: googleStatus.loggedIn
-      ? `Chrome Flow đã mở. Đăng nhập Google: ${googleStatus.email}. Extension sẽ tự kết nối.`
-      : "Chrome Flow đã mở. Hãy đăng nhập Google; extension sẽ tự kết nối khi sẵn sàng.",
+      ? `Chrome Flow đã mở (${googleStatus.email}). Extension đang tự động xử lý.`
+      : "Chrome Flow đã mở. Extension sẽ tự chạy khi trang Flow sẵn sàng.",
     profilePath,
   }
 }

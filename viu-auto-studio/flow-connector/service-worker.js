@@ -178,6 +178,20 @@ chrome.runtime.onInstalled.addListener(() => chrome.alarms.create('vas-poll', { 
 chrome.runtime.onStartup.addListener(() => chrome.alarms.create('vas-poll', { periodInMinutes: 0.25 }));
 chrome.alarms.onAlarm.addListener((alarm) => { if (alarm.name === 'vas-poll') void runOnce(); });
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === 'VAS_BOOTSTRAP' && message.config) {
+    chrome.storage.local.set({
+      apiBaseUrl: message.config.apiBaseUrl,
+      bootstrapToken: message.config.bootstrapToken,
+      factorySessionId: message.config.factorySessionId,
+      flowUrl: message.config.flowUrl || 'https://labs.google/fx/tools/flow',
+      paired: true,
+      autoFactory: true,
+    }).then(() => {
+      sendResponse({ ok: true });
+      void runOnce();
+    }).catch((e) => sendResponse({ ok: false, error: String(e) }));
+    return true;
+  }
   if (message?.type === 'VAS_GET_CONFIG') {
     config().then(sendResponse);
     return true;

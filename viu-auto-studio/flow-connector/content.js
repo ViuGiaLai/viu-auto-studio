@@ -1,6 +1,27 @@
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const visible = (element) => !!element && element.getBoundingClientRect().width > 0 && element.getBoundingClientRect().height > 0;
 const normalized = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+// === Auto-bootstrap: read config from URL hash (#vas-bootstrap=base64json) ===
+(function autoBootstrap() {
+  try {
+    const hash = location.hash || '';
+    const match = hash.match(/vas-bootstrap=([A-Za-z0-9+/=_-]+)/);
+    if (!match) return;
+    const json = atob(match[1].replace(/-/g, '+').replace(/_/g, '/'));
+    const cfg = JSON.parse(json);
+    if (cfg.apiBaseUrl) {
+      chrome.runtime.sendMessage({ type: 'VAS_BOOTSTRAP', config: cfg }, (resp) => {
+        console.log('[VAS] Bootstrap from URL hash:', resp?.ok ? 'OK' : 'failed');
+      });
+      // Clean hash so it doesn't persist on reload
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+  } catch (e) {
+    console.warn('[VAS] Auto-bootstrap error:', e);
+  }
+})();
+
 function buttons() { return [...document.querySelectorAll('button,[role="button"],[role="tab"],[role="option"]')].filter(visible); }
 function findByText(words) {
   const wanted = words.map(normalized);
