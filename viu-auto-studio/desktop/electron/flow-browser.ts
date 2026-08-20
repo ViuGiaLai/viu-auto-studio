@@ -124,43 +124,139 @@ async function waitForDevTools(port: number, timeoutMs = 15_000): Promise<boolea
 }
 
 /**
- * Try to configure the Flow Connector extension via service worker.
- * Returns true if successfully configured, false if service worker not found.
- * Does NOT throw — caller decides what to do.
+ * Find the extension ID from Chrome's debug endpoint or from profile directory.
  */
-async function configureExtension(runtime: RuntimeConfig, input: FlowBrowserStartInput, timeoutMs = 30_000): Promise<boolean> {
+async function findExtensionId(profilePath: string): Promise<string | null> {
+  // Method 1: Query /json/list for any chrome-extension:// URL
+  try {
+    const resp = await fetch(`http://127.0.0.1:${browserPort}/json/list`)
+    const targets = await resp.json() as Array<{ url?: string; type?: string }>
+    for (const t of targets) {
+      const match = t.url?.match(/^chrome-extension:\/\/([a-z]{32})\//i)
+      if (match) return match[1]
+    }
+  } catch { /* continue */ }
+
+  // Method 2: Read from profile's Extensions directory
+  try {
+    const { readdirSync } = require("node:fs")
+    const extDir = path.join(profilePath, "Default", "Extensions")
+    if (existsSync(extDir)) {
+      const ids = readdirSync(extDir).filter((d: string) => /^[a-z]{32}$/i.test(d))
+      if (ids.length > 0) return ids[0]
+    }
+  } catch { /* continue */ }
+
+  // Method 3: Check Local Extension Settings in profile
+  try {
+    const { readdirSync } = require("node:fs")
+    const settingsDir = path.join(profilePath, "Default", "Local Extension Settings")
+    if (existsSync(settingsDir)) {
+      const ids = readdirSync(settingsDir).filter((d: string) => /^[a-z]{32}$/i.test(d))
+      if (ids.length > 0) return ids[0]
+    }
+  } catch { /* continue */ }
+
+  return null
+}
+
+/**
+ * The config payload to inject into the extension.
+ */
+function buildExtensionConfig(runtime: RuntimeConfig, input: FlowBrowserStartInput) {
+  return {
+    apiBaseUrl: runtime.apiBaseUrl,
+    bootstrapToken: runtime.flowBootstrapToken,
+    factorySessionId: input.factorySessionId,
+    flowUrl: "https://labs.google/fx/tools/flow",
+    paired: true,
+    autoFactory: true,
+  }
+}
+
+/**
+ * Try to configure the Flow Connector extension.
+ * Uses 3 fallback methods:
+ *   1. Find service_worker target via puppeteer (fast but unreliable with MV3 suspending)
+ *   2. Open extension's options page and inject config via page.evaluate
+ *   3. Use CDP to find any extension context
+ */
+async function configureExtension(runtime: RuntimeConfig, input: FlowBrowserStartInput, timeoutMs = 15_000): Promise<boolean> {
   if (!browserPort) return false
+  const config = buildExtensionConfig(runtime, input)
+  const profilePath = path.join(getUserDataDir(), "flow-chrome-profile")
+
   let browser: Awaited<ReturnType<typeof import("puppeteer-core")["connect"]>> | null = null
   try {
     const puppeteer = await import("puppeteer-core")
     browser = await puppeteer.connect({ browserURL: `http://127.0.0.1:${browserPort}` })
-    const deadline = Date.now() + timeoutMs
-    while (Date.now() < deadline) {
-      const serviceWorkerTarget = browser.targets().find((target) => target.type() === "service_worker" && target.url().includes("/service-worker.js"))
-      if (serviceWorkerTarget) {
-        const worker = await serviceWorkerTarget.worker()
-        if (worker) {
-          await worker.evaluate((config) => {
-            const chromeApi = (globalThis as unknown as { chrome: { storage: { local: { set(values: Record<string, unknown>): Promise<void> } } } }).chrome
-            void chromeApi.storage.local.set({
-              apiBaseUrl: config.apiBaseUrl,
-              bootstrapToken: config.bootstrapToken,
-              factorySessionId: config.factorySessionId,
-              flowUrl: config.flowUrl,
-              paired: true,
-              autoFactory: true,
-            })
-          }, {
-            apiBaseUrl: runtime.apiBaseUrl,
-            bootstrapToken: runtime.flowBootstrapToken,
-            factorySessionId: input.factorySessionId,
-            flowUrl: "https://labs.google/fx/tools/flow",
-          })
+
+    // === Method 1: Find service worker target (works when SW is active) ===
+    const swDeadline = Date.now() + Math.min(timeoutMs, 8000)
+    while (Date.now() < swDeadline) {
+      const swTarget = browser.targets().find((t) =>
+        (t.type() === "service_worker" || t.type() === "background_page") &&
+        (t.url().includes("/service-worker.js") || t.url().includes("flow"))
+      )
+      if (swTarget) {
+        try {
+          const worker = await swTarget.worker()
+          if (worker) {
+            await worker.evaluate((cfg) => {
+              const c = (globalThis as unknown as { chrome: { storage: { local: { set(v: Record<string, unknown>): Promise<void> } } } }).chrome
+              void c.storage.local.set(cfg)
+            }, config)
+            console.log("[Flow] Configured extension via service worker")
+            return true
+          }
+        } catch { /* worker evaluate failed, try next method */ }
+      }
+      await new Promise((r) => setTimeout(r, 500))
+    }
+
+    // === Method 2: Find extension ID, open options page, inject config ===
+    const extId = await findExtensionId(profilePath)
+    if (extId) {
+      console.log("[Flow] Found extension ID:", extId)
+      try {
+        const optionsUrl = `chrome-extension://${extId}/options.html`
+        const page = await browser.newPage()
+        try {
+          await page.goto(optionsUrl, { waitUntil: "domcontentloaded", timeout: 10_000 })
+          await page.evaluate((cfg) => {
+            const c = (globalThis as unknown as { chrome: { storage: { local: { set(v: Record<string, unknown>): Promise<void> } } } }).chrome
+            if (c?.storage?.local?.set) {
+              void c.storage.local.set(cfg)
+            }
+          }, config)
+          console.log("[Flow] Configured extension via options page")
+          return true
+        } finally {
+          await page.close().catch(() => {})
+        }
+      } catch (e) {
+        console.warn("[Flow] Options page method failed:", e)
+      }
+    }
+
+    // === Method 3: Try any extension target ===
+    const extTarget = browser.targets().find((t) =>
+      t.url().startsWith("chrome-extension://")
+    )
+    if (extTarget) {
+      try {
+        const page = await extTarget.page()
+        if (page) {
+          await page.evaluate((cfg) => {
+            const c = (globalThis as unknown as { chrome: { storage: { local: { set(v: Record<string, unknown>): Promise<void> } } } }).chrome
+            if (c?.storage?.local?.set) void c.storage.local.set(cfg)
+          }, config)
+          console.log("[Flow] Configured extension via existing extension page")
           return true
         }
-      }
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      } catch { /* last resort failed */ }
     }
+
     return false
   } catch {
     return false
