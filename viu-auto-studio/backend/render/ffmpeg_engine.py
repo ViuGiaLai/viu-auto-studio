@@ -246,10 +246,11 @@ class FFmpegEngine:
         filter_complex = ";".join(filters)
 
         args = [
+            "-threads", "0",
             *inputs,
             "-filter_complex", filter_complex,
             "-map", video_label, "-map", "[aout]",
-            "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
             "-c:a", "aac", "-b:a", "192k",
         ]
         if audio_path and Path(audio_path).exists():
@@ -351,8 +352,9 @@ class FFmpegEngine:
         concat_tmp = str(Path(output_path).parent / "_concat_tmp.mp4")
 
         args = [
+            "-threads", "0",
             *concat_args,
-            "-c:v", "libx264", "-preset", preset, "-crf", str(crf),
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
             "-c:a", "aac", "-b:a", "192k",
             "-y", concat_tmp,
         ]
@@ -422,10 +424,11 @@ class FFmpegEngine:
 
         filter_complex = ";".join(filter_parts)
         args = [
+            "-threads", "0",
             *inputs2,
             "-filter_complex", filter_complex,
             "-map", video_label, "-map", "[aout]",
-            "-c:v", "libx264", "-preset", preset, "-crf", str(crf),
+            "-c:v", "libx264", "-preset", preset or "veryfast", "-crf", str(crf or 22),
             "-c:a", "aac", "-b:a", "192k",
             "-y", output_path,
         ]

@@ -2255,76 +2255,247 @@ function RenderPanel({ project }: { project: Project }) {
           <Badge variant="outline">MP4 · H.264 + AAC</Badge>
         </div>
 
-        <div className="space-y-5">
-          <section>
-            <div className="mb-2 flex items-center justify-between"><Label className="text-sm font-semibold">1. Output Preset</Label><span className="text-xs text-slate-500">Chọn trước, tinh chỉnh sau</span></div>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              {OUTPUT_PRESETS.map((item) => (
-                <button key={item.id} type="button" onClick={() => { setOutputPreset(item.id); invalidatePreflight() }} className={cn("rounded-xl border p-3 text-left transition", outputPreset === item.id ? "border-amber-400/70 bg-amber-400/10" : "border-white/10 bg-white/[0.02] hover:border-white/25")}>
-                  <div className="mb-2 text-2xl text-amber-300">{item.icon}</div>
-                  <div className="text-sm font-medium text-slate-100">{item.title}</div>
-                  <div className="mt-1 text-[11px] text-slate-500">{item.detail}</div>
-                </button>
-              ))}
+        <div className="space-y-3.5">
+          {/* Main 3-Column Dropdown Toolbar */}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 bg-white/[0.02] border border-white/5 rounded-xl p-3.5">
+            {/* 1. Output Preset Dropdown */}
+            <div>
+              <Label className="text-xs font-semibold text-slate-300 mb-1.5 block">1. Định dạng xuất video</Label>
+              <Select value={outputPreset} onValueChange={(v) => { setOutputPreset(v); invalidatePreflight() }}>
+                <SelectTrigger className="w-full bg-[#101A20] border-[#24313A] text-xs h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-[#101A20] border-[#24313A] text-xs">
+                  {OUTPUT_PRESETS.map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      <span className="font-medium text-slate-200">{item.title}</span>
+                      <span className="ml-2 text-slate-500 text-[11px]">({item.detail})</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          </section>
 
-          <section>
-            <div className="mb-2 flex items-center justify-between"><Label className="text-sm font-semibold">2. Render Profile</Label><span className="text-xs text-slate-500">Thiết lập kỹ thuật được ẩn trong Nâng cao</span></div>
-            <div className="grid gap-2 sm:grid-cols-3">
-              {RENDER_PROFILES.map((item) => (
-                <button key={item.id} type="button" onClick={() => applyProfile(item.id)} className={cn("rounded-xl border p-3 text-left transition", profileId === item.id ? "border-sky-400/70 bg-sky-400/10" : "border-white/10 bg-white/[0.02] hover:border-white/25")}>
-                  <div className="text-sm font-medium text-slate-100">{item.title}</div>
-                  <div className="mt-1 text-[11px] text-slate-500">{item.detail}</div>
-                </button>
-              ))}
+            {/* 2. Render Profile Dropdown */}
+            <div>
+              <Label className="text-xs font-semibold text-slate-300 mb-1.5 block">2. Tốc độ & Chế độ Render</Label>
+              <Select value={profileId} onValueChange={(v) => applyProfile(v)}>
+                <SelectTrigger className="w-full bg-[#101A20] border-[#24313A] text-xs h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-[#101A20] border-[#24313A] text-xs">
+                  {RENDER_PROFILES.map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      <span className="font-medium text-slate-200">{item.title}</span>
+                      <span className="ml-2 text-slate-500 text-[11px]">({item.detail})</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <p className="mt-2 text-[11px] text-slate-500">Đang chọn: <span className="text-slate-300">{selectedProfile.title}</span>. Codec, CRF và FPS chỉ dành cho trường hợp cần tinh chỉnh.</p>
-          </section>
 
-          <section className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
-            <Label className="text-sm font-semibold">3. Audio Mix</Label>
-            <div className="mt-3 grid gap-4 md:grid-cols-2">
-              <div><div className="mb-1 flex justify-between text-xs"><span>Giọng đọc</span><span>{Math.round(voiceVol * 100)}%</span></div><Slider value={[voiceVol]} min={0} max={2} step={0.05} onValueChange={(v) => { setVoiceVol(v[0]); invalidatePreflight() }} /></div>
-              <div><div className="mb-1 flex justify-between text-xs"><span>Nhạc nền</span><span>{Math.round(musicVol * 100)}%</span></div><Slider value={[musicVol]} min={0} max={1} step={0.05} onValueChange={(v) => { setMusicVol(v[0]); invalidatePreflight() }} /></div>
-            </div>
-            <div className="mt-4 flex flex-wrap gap-x-6 gap-y-3 text-xs">
-              <label className="flex items-center gap-2"><Switch checked={ducking} onCheckedChange={(v) => { setDucking(v); invalidatePreflight() }} /> Tự giảm nhạc khi có giọng</label>
-              <label className="flex items-center gap-2"><Switch checked={normalize} onCheckedChange={(v) => { setNormalize(v); invalidatePreflight() }} /> Chuẩn hóa âm lượng</label>
-            </div>
-          </section>
+            {/* 3. Subtitle Dropdown & Controls */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <Label className="text-xs font-semibold text-slate-300">3. Phụ đề video</Label>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] text-slate-400">{enableSubs ? "Bật" : "Tắt"}</span>
+                  <Switch checked={enableSubs} onCheckedChange={(v) => { setEnableSubs(v); invalidatePreflight() }} className="scale-75 origin-right" />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Select
+                  disabled={!enableSubs}
+                  value={subtitleStyle}
+                  onValueChange={(v) => {
+                    setSubtitleStyle(v)
+                    const cfg = v === "highlight"
+                      ? { font_size: 56, position: "bottom", primary_color: "#FFD700", border_width: 3, granularity: "phrase" }
+                      : v === "karaoke"
+                        ? { font_size: 52, position: "bottom", primary_color: "#00E5FF", border_width: 3, granularity: "phrase" }
+                        : { font_size: 48, position: "bottom", primary_color: "#FFFFFF", border_width: 2, granularity: "sentence" }
+                    setSubtitleConfig(cfg)
+                    invalidatePreflight()
+                  }}
+                >
+                  <SelectTrigger className="w-full bg-[#101A20] border-[#24313A] text-xs h-9 disabled:opacity-50">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#101A20] border-[#24313A] text-xs">
+                    <SelectItem value="highlight">✨ Nổi bật (Vàng kim)</SelectItem>
+                    <SelectItem value="basic">📄 Cơ bản (Trắng chuẩn)</SelectItem>
+                    <SelectItem value="karaoke">🎤 Karaoke (Nhịp câu)</SelectItem>
+                  </SelectContent>
+                </Select>
 
-          <section className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
-            <div className="flex items-center justify-between"><Label className="text-sm font-semibold">4. Subtitle</Label><Switch checked={enableSubs} onCheckedChange={(v) => { setEnableSubs(v); invalidatePreflight() }} /></div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-3">
-              {[{ id: "highlight", title: "Nổi bật", detail: "Chữ lớn, viền vàng kim", cfg: { font_size: 56, position: "bottom", primary_color: "#FFD700", border_width: 3, granularity: "phrase" } }, { id: "basic", title: "Cơ bản", detail: "Dễ đọc, gọn gàng", cfg: { font_size: 48, position: "bottom", primary_color: "#FFFFFF", border_width: 2, granularity: "sentence" } }, { id: "karaoke", title: "Karaoke", detail: "Bám theo từng nhịp câu", cfg: { font_size: 52, position: "bottom", primary_color: "#00E5FF", border_width: 3, granularity: "phrase" } }].map((item) => (
-                <button key={item.id} type="button" disabled={!enableSubs} onClick={() => { setSubtitleStyle(item.id); setSubtitleConfig(item.cfg); invalidatePreflight() }} className={cn("rounded-lg border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50", subtitleStyle === item.id ? "border-fuchsia-400/70 bg-fuchsia-400/10" : "border-white/10 hover:border-white/25")}><div className="text-sm font-medium">{item.title}</div><div className="mt-1 text-[11px] text-slate-500">{item.detail}</div></button>
-              ))}
+                <Select
+                  disabled={!enableSubs}
+                  value={subtitleFormat}
+                  onValueChange={(v) => { setSubtitleFormat(v); invalidatePreflight() }}
+                >
+                  <SelectTrigger className="w-[125px] shrink-0 bg-[#101A20] border-[#24313A] text-xs h-9 disabled:opacity-50">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#101A20] border-[#24313A] text-xs">
+                    <SelectItem value="embed">Nhúng video</SelectItem>
+                    <SelectItem value="srt">File .SRT</SelectItem>
+                    <SelectItem value="ass">File .ASS</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {[{ id: "embed", label: "Nhúng vào video" }, { id: "srt", label: "Xuất file .SRT" }, { id: "ass", label: "Xuất file .ASS" }].map((item) => <label key={item.id} className={cn("flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs", subtitleFormat === item.id && enableSubs ? "border-fuchsia-400/60 bg-fuchsia-400/10" : "border-white/10", !enableSubs && "opacity-50")}><input type="radio" name="subtitle-format" value={item.id} checked={subtitleFormat === item.id} disabled={!enableSubs} onChange={() => { setSubtitleFormat(item.id); invalidatePreflight() }} />{item.label}</label>)}
-            </div>
-          </section>
+          </div>
 
-          <details className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
-            <summary className="cursor-pointer text-sm font-medium text-slate-300">Nâng cao · CRF, preset, FPS, codec, bitrate</summary>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-              <div><Label className="text-xs">CRF</Label><Input type="number" min={15} max={40} value={crf} onChange={(e) => { setCrf(Number(e.target.value)); invalidatePreflight() }} /></div>
-              <div><Label className="text-xs">FPS</Label><Input type="number" min={15} max={60} value={fps} onChange={(e) => { setFps(Number(e.target.value)); invalidatePreflight() }} /></div>
-              <div><Label className="text-xs">Preset</Label><Select value={preset} onValueChange={(v) => { setPreset(v); invalidatePreflight() }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["ultrafast", "veryfast", "fast", "medium", "slow"].map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></div>
-              <div><Label className="text-xs">Codec</Label><Select value={codec} onValueChange={(v) => { setCodec(v); invalidatePreflight() }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="libx264">H.264 CPU</SelectItem><SelectItem value="h264_nvenc">H.264 NVENC</SelectItem></SelectContent></Select></div>
-              <div><Label className="text-xs">Audio bitrate</Label><Select value={audioBitrate} onValueChange={(v) => { setAudioBitrate(v); invalidatePreflight() }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["128k", "192k", "256k", "320k"].map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></div>
+          {/* Compact Audio Mix Row */}
+          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2.5 rounded-xl border border-white/5 bg-white/[0.02] p-3 text-xs">
+            <div className="flex items-center gap-6 flex-1 min-w-[280px]">
+              <div className="flex-1 min-w-[120px]">
+                <div className="mb-1 flex justify-between text-[11px] text-slate-400">
+                  <span>🎙 Giọng đọc</span>
+                  <span className="font-semibold text-slate-200">{Math.round(voiceVol * 100)}%</span>
+                </div>
+                <Slider value={[voiceVol]} min={0} max={2} step={0.05} onValueChange={(v) => { setVoiceVol(v[0]); invalidatePreflight() }} className="h-1.5" />
+              </div>
+
+              <div className="flex-1 min-w-[120px]">
+                <div className="mb-1 flex justify-between text-[11px] text-slate-400">
+                  <span>🎵 Nhạc nền</span>
+                  <span className="font-semibold text-slate-200">{Math.round(musicVol * 100)}%</span>
+                </div>
+                <Slider value={[musicVol]} min={0} max={1} step={0.05} onValueChange={(v) => { setMusicVol(v[0]); invalidatePreflight() }} className="h-1.5" />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4 text-[11px] text-slate-300">
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <Switch checked={ducking} onCheckedChange={(v) => { setDucking(v); invalidatePreflight() }} className="scale-75" />
+                <span>Giảm nhạc khi có giọng</span>
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <Switch checked={normalize} onCheckedChange={(v) => { setNormalize(v); invalidatePreflight() }} className="scale-75" />
+                <span>Chuẩn hóa âm</span>
+              </label>
+            </div>
+          </div>
+
+          {/* Collapsible Advanced Parameters */}
+          <details className="rounded-xl border border-white/5 bg-white/[0.01] px-3.5 py-2 text-xs">
+            <summary className="cursor-pointer text-[12px] font-medium text-slate-400 hover:text-slate-200">
+              ⚙ Nâng cao (CRF {crf} · FPS {fps} · Codec {codec} · Bitrate {audioBitrate})
+            </summary>
+            <div className="mt-2.5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5 border-t border-white/5 pt-2.5">
+              <div><Label className="text-[11px]">CRF (15-40)</Label><Input type="number" min={15} max={40} value={crf} onChange={(e) => { setCrf(Number(e.target.value)); invalidatePreflight() }} className="h-8 text-xs bg-[#101A20]" /></div>
+              <div><Label className="text-[11px]">FPS</Label><Input type="number" min={15} max={60} value={fps} onChange={(e) => { setFps(Number(e.target.value)); invalidatePreflight() }} className="h-8 text-xs bg-[#101A20]" /></div>
+              <div>
+                <Label className="text-[11px]">Preset</Label>
+                <Select value={preset} onValueChange={(v) => { setPreset(v); invalidatePreflight() }}>
+                  <SelectTrigger className="h-8 text-xs bg-[#101A20]"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-[#101A20] text-xs">{["ultrafast", "veryfast", "fast", "medium", "slow"].map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-[11px]">Codec</Label>
+                <Select value={codec} onValueChange={(v) => { setCodec(v); invalidatePreflight() }}>
+                  <SelectTrigger className="h-8 text-xs bg-[#101A20]"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-[#101A20] text-xs"><SelectItem value="libx264">H.264 CPU</SelectItem><SelectItem value="h264_nvenc">H.264 NVENC</SelectItem></SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-[11px]">Audio bitrate</Label>
+                <Select value={audioBitrate} onValueChange={(v) => { setAudioBitrate(v); invalidatePreflight() }}>
+                  <SelectTrigger className="h-8 text-xs bg-[#101A20]"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-[#101A20] text-xs">{["128k", "192k", "256k", "320k"].map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
             </div>
           </details>
-
-          <div className="rounded-xl border border-amber-300/20 bg-amber-300/[0.05] p-4 text-xs text-slate-400">Output dự kiến: <span className="font-medium text-slate-200">{selectedPreset.title}</span> · {selectedPreset.detail}. Render thực tế sẽ dùng media/voice từ Timeline và chỉ được đánh dấu hoàn tất sau khi FFprobe xác minh.</div>
         </div>
       </div>
 
-      <div className="vas-card p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-base font-semibold text-slate-100">Kiểm tra trước khi xuất</h3><p className="mt-1 text-xs text-slate-500">Không có checklist đạt thì không thể bắt đầu render.</p></div><Button variant="outline" onClick={runPreflight} disabled={preflightLoading || inProgress}><RefreshCw className={cn("h-4 w-4", preflightLoading && "animate-spin")} />{preflightLoading ? "Đang kiểm tra..." : "Kiểm tra lại"}</Button></div>
-        {preflight ? <div className="mt-4 space-y-2">{preflight.checks.map((check) => <div key={check.label} className="flex items-start gap-2 rounded-lg border border-white/5 px-3 py-2 text-xs"><span className={cn("mt-0.5", check.ok ? "text-emerald-400" : "text-red-400")}>{check.ok ? "✓" : "×"}</span><div><div className="font-medium text-slate-200">{check.label}</div><div className="text-slate-500">{check.detail}</div></div></div>)}<div className="flex flex-wrap gap-4 pt-2 text-xs text-slate-400"><span>Dung lượng: {preflight.disk_free_gb.toFixed(2)} GB trống</span><span>Ước tính: ~{preflight.estimated_size_gb.toFixed(2)} GB</span></div>{preflight.missing_scenes.length > 0 && <div className="text-xs text-red-300">Scene cần xử lý: {preflight.missing_scenes.join(", ")}</div>}</div> : <div className="mt-4 rounded-lg border border-dashed border-white/10 p-4 text-center text-xs text-slate-500">Nhấn “Kiểm tra lại” để kiểm tra media, voice, subtitle, FFmpeg, FFprobe và dung lượng trống.</div>}
-        <div className="mt-4 flex flex-wrap gap-2"><Button onClick={start} disabled={!canRender || rendering || inProgress || !preflight?.ok} className="bg-gradient-to-r from-amber-500 to-amber-300 text-slate-950 hover:from-amber-400 hover:to-amber-200"><Play className="h-4 w-4" />{inProgress ? "Đang xử lý..." : "Bắt đầu render"}</Button>{inProgress && <Button variant="destructive" onClick={cancel}><Square className="h-4 w-4" />Hủy</Button>}{(job?.status === "failed" || job?.status === "completed") && <Button variant="outline" onClick={retry}><RotateCcw className="h-4 w-4" />{job.status === "failed" ? "Thử lại từ bước lỗi" : "Xuất lại sau chỉnh sửa"}</Button>}</div>
+      <div className="vas-card p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className={cn(
+              "flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold",
+              preflight?.ok ? "bg-emerald-500/20 text-emerald-400" : "bg-amber-500/20 text-amber-400"
+            )}>
+              {preflight?.ok ? "✓" : "⚡"}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-slate-100">Kiểm tra điều kiện xuất video</h3>
+                {preflight?.ok && (
+                  <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
+                    Sẵn sàng xuất
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-400">
+                {preflight?.ok
+                  ? `Đủ điều kiện xuất: FFmpeg sẵn sàng · Ổ cứng trống ${preflight.disk_free_gb.toFixed(1)} GB (cần ~${preflight.estimated_size_gb.toFixed(2)} GB)`
+                  : "Kiểm tra công cụ media, giọng đọc, phụ đề và dung lượng trước khi render."}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="ghost" onClick={runPreflight} disabled={preflightLoading || inProgress} className="h-8 px-2.5 text-xs text-slate-400 hover:text-slate-200">
+              <RefreshCw className={cn("h-3.5 w-3.5 mr-1", preflightLoading && "animate-spin")} />
+              {preflightLoading ? "Đang quét..." : "Quét lại"}
+            </Button>
+
+            <Button
+              onClick={start}
+              disabled={!canRender || rendering || inProgress || !preflight?.ok}
+              className="h-8 bg-gradient-to-r from-amber-500 to-amber-300 text-slate-950 font-medium px-4 hover:from-amber-400 hover:to-amber-200 text-xs shadow-md"
+            >
+              <Play className="h-3.5 w-3.5 mr-1 fill-current" />
+              {inProgress ? "Đang xử lý..." : "Bắt đầu render"}
+            </Button>
+
+            {inProgress && (
+              <Button size="sm" variant="destructive" onClick={cancel} className="h-8 text-xs">
+                <Square className="h-3.5 w-3.5 mr-1" />
+                Hủy
+              </Button>
+            )}
+
+            {(job?.status === "failed" || job?.status === "completed") && (
+              <Button size="sm" variant="outline" onClick={retry} className="h-8 text-xs">
+                <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                {job.status === "failed" ? "Thử lại" : "Xuất lại"}
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {preflight && (
+          <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 border-t border-white/5 pt-3">
+            {preflight.checks.map((check) => (
+              <div
+                key={check.label}
+                className={cn(
+                  "flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-[11px]",
+                  check.ok ? "border-emerald-500/20 bg-emerald-500/5 text-slate-300" : "border-red-500/30 bg-red-500/10 text-red-200"
+                )}
+                title={check.detail}
+              >
+                <span className={cn("font-bold text-xs shrink-0", check.ok ? "text-emerald-400" : "text-red-400")}>
+                  {check.ok ? "✓" : "×"}
+                </span>
+                <div className="truncate">
+                  <span className="font-medium text-slate-200">{check.label}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {preflight?.missing_scenes && preflight.missing_scenes.length > 0 && (
+          <div className="mt-2 text-[11px] text-red-300 bg-red-500/10 rounded px-2.5 py-1 border border-red-500/20">
+            Cảnh cần bổ sung dữ liệu: {preflight.missing_scenes.join(", ")}
+          </div>
+        )}
       </div>
 
       {job && (

@@ -230,14 +230,18 @@ class PipelineManager:
                         project_id=project_id,
                         status=initial_status,
                         progress=0,
+                        started_at=datetime.utcnow(),
+                        completed_at=None,
+                        error_message="",
                         log_path=str(project_dir / "render.log"),
                         output_path=str(project_dir / "output.mp4"),
                     )
                     db.add(job)
                     db.flush()
                 else:
-                    # Resume from failed step: keep progress info
-                    pass
+                    job.started_at = datetime.utcnow()
+                    job.completed_at = None
+                    job.error_message = ""
 
                 project.project_directory = str(project_dir.resolve())
                 project.status = job.status or "generating_voice"
@@ -804,7 +808,6 @@ class PipelineManager:
                 db.query(Scene).filter(Scene.project_id == project_id)
                 .order_by(Scene.order_index).all()
             )
-            render_cfg = RenderConfig(**render_config)
             cursor = 0.0
             for scene in scenes:
                 if self._check_stop(db, job_id, stop):
@@ -851,7 +854,6 @@ class PipelineManager:
             .order_by(Scene.order_index).all()
         )
         project = db.query(Project).filter(Project.id == project_id).first()
-        render_cfg = RenderConfig(**render_config)
         width, height = output_size(project, render_cfg)
 
         # Timeline is the source of truth after the user edits the CapCut-like editor.
