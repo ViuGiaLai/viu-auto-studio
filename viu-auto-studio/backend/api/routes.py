@@ -265,6 +265,13 @@ def get_settings(db: Session = Depends(get_db)):
         telegram_enabled=_setting_bool(settings.get("telegram_enabled")),
         telegram_configured=bool(str(settings.get("telegram_bot_token", "")).strip() and str(settings.get("telegram_chat_id", "")).strip()),
         flow_logged_in=_setting_bool(settings.get("flow_logged_in")),
+        output_preset=settings.get("output_preset", "youtube"),
+        voice_volume=float(settings.get("voice_volume", 1.0)),
+        music_volume=float(settings.get("music_volume", 0.25)),
+        enable_ducking=_setting_bool(settings.get("enable_ducking"), True),
+        normalize_audio=_setting_bool(settings.get("normalize_audio"), True),
+        subtitle_style=settings.get("subtitle_style", "highlight"),
+        subtitle_output_format=settings.get("subtitle_output_format", "embed"),
     )
 
 
