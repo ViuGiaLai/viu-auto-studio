@@ -725,6 +725,11 @@ function Storyboard({ project }: { project: Project }) {
   const [regeneratingMedia, setRegeneratingMedia] = useState<number | null>(null)
   const [factoryStarting, setFactoryStarting] = useState(false)
   const [flowConnection, setFlowConnection] = useState<{ factory_state?: string; factory_project_id?: number | null; status?: string; last_error?: string } | null>(null)
+  
+  // AI Shot Proposal Dialog State
+  const [aiProposalScene, setAiProposalScene] = useState<Scene | null>(null)
+  const [aiProposedShots, setAiProposedShots] = useState<any[]>([])
+  const [generatingProposal, setGeneratingProposal] = useState(false)
 
   // Flow Connector task queue state
 
@@ -738,6 +743,42 @@ function Storyboard({ project }: { project: Project }) {
     completed: number
   } | null>(null)
   const [workerOnline, setWorkerOnline] = useState(false)
+
+
+  // Helper to auto-balance and recalculate sequential start/end timestamps for shots
+  const balanceShotsTimestamps = (shots: any[], totalDuration: number) => {
+    if (!shots || shots.length === 0) return []
+    const targetTotal = totalDuration > 0 ? totalDuration : 6.0
+    const count = shots.length
+    
+    // Calculate durations
+    let currentSum = shots.reduce((sum, s) => sum + (Number(s.duration) || 0), 0)
+    let balanced = shots.map(s => ({ ...s }))
+    
+    if (currentSum <= 0 || Math.abs(currentSum - targetTotal) > 0.05) {
+      const avg = Number((targetTotal / count).toFixed(1))
+      balanced = balanced.map((s, i) => {
+        const d = (i === count - 1) ? Number((targetTotal - (avg * (count - 1))).toFixed(1)) : avg
+        return { ...s, duration: Math.max(0.5, d) }
+      })
+    }
+    
+    // Assign sequential start_time and end_time
+    let runningTime = 0.0
+    return balanced.map((s, idx) => {
+      const st = Number(runningTime.toFixed(1))
+      const dur = (idx === count - 1) ? Number((targetTotal - runningTime).toFixed(1)) : Number(s.duration.toFixed(1))
+      const et = Number((st + dur).toFixed(1))
+      runningTime = et
+      return {
+        ...s,
+        order_index: idx,
+        duration: Math.max(0.5, dur),
+        start_time: st,
+        end_time: idx === count - 1 ? targetTotal : et
+      }
+    })
+  }
 
   const load = () => {
     api.listScenes(project.id).then(setScenes).catch(() => undefined)
@@ -973,8 +1014,10 @@ function Storyboard({ project }: { project: Project }) {
         </div>
       ) : (
         scenes.map((scene, index) => {
+          const masterDuration = scene.duration > 0 ? Number(scene.duration.toFixed(1)) : 6.0
+
           // Normalize shots array: fallback to 1 default shot if empty
-          const sceneShots = (scene.shots && scene.shots.length > 0)
+          const rawShots = (scene.shots && scene.shots.length > 0)
             ? scene.shots
             : [{
                 id: `shot_${scene.id}_default`,
@@ -986,15 +1029,17 @@ function Storyboard({ project }: { project: Project }) {
                 visual_prompt: scene.visual_prompt || "",
                 transition_description: scene.transition_description || "",
                 effect: scene.effect || "zoom_in",
-                duration: scene.duration || 4.0,
+                duration: masterDuration,
                 start_time: 0.0,
-                end_time: scene.duration || 4.0,
+                end_time: masterDuration,
               }]
+
+          const sceneShots = balanceShotsTimestamps(rawShots, masterDuration)
+          const totalShotsDuration = Number(sceneShots.reduce((sum, s) => sum + (s.duration || 0), 0).toFixed(1))
+          const isSynced = Math.abs(totalShotsDuration - masterDuration) < 0.15
 
           const handleAddShot = () => {
             const nextIdx = sceneShots.length
-            const totalDur = scene.duration || 6.0
-            const splitDur = Number((totalDur / (nextIdx + 1)).toFixed(1))
             const newShot = {
               id: `shot_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
               order_index: nextIdx,
@@ -1002,26 +1047,50 @@ function Storyboard({ project }: { project: Project }) {
               image_path: "",
               video_path: "",
               media_type: "image",
-              visual_prompt: `${scene.visual_prompt || "Cinematic scene"} (Shot #${nextIdx + 1})`,
+              visual_prompt: `${scene.visual_prompt || "Cinematic shot"} (Shot #${nextIdx + 1})`,
               transition_description: "pan_left",
               effect: "pan_left",
-              duration: splitDur,
-              start_time: Number((nextIdx * splitDur).toFixed(1)),
-              end_time: totalDur,
+              duration: 2.0,
+              start_time: 0.0,
+              end_time: 2.0,
             }
-            const updatedShots = [...sceneShots, newShot]
-            updateScene(scene, { shots: updatedShots } as any)
-            toast({ title: `Đã thêm Shot #${nextIdx + 1}`, description: "Gán hình/video và prompt riêng cho shot này." })
+            const balanced = balanceShotsTimestamps([...sceneShots, newShot], masterDuration)
+            updateScene(scene, { shots: balanced } as any)
+            toast({ title: `Đã thêm Shot #${nextIdx + 1}`, description: "Đã tự động cân bằng thời lượng các shot theo audio." })
           }
 
-          const handleSplitShotsAI = async () => {
-            try {
-              const res = await api.splitSceneShots(project.id, scene.id)
-              toast({ title: "Đã AI chia thành các shots visual", description: `Cảnh #${index + 1} đã được phân thành ${res.shots?.length || 2} shots với thời lượng riêng.` })
-              load()
-            } catch (e) {
-              toast({ title: "Chia shots thất bại", description: String(e), variant: "destructive" })
-            }
+          // Open AI Proposal Dialog instead of silent overwrite
+          const handleOpenAiProposal = () => {
+            setGeneratingProposal(true)
+            setAiProposalScene(scene)
+            
+            const count = masterDuration >= 10.0 ? 3 : masterDuration >= 5.0 ? 2 : 1
+            const avg = Number((masterDuration / count).toFixed(1))
+            const basePrompt = scene.visual_prompt || "Cinematic detailed scene, photorealistic lighting"
+            const motions = ["zoom_in", "pan_left", "pan_right", "zoom_out"]
+            
+            const proposed = Array.from({ length: count }).map((_, i) => {
+              const st = Number((i * avg).toFixed(1))
+              const dur = (i === count - 1) ? Number((masterDuration - (avg * (count - 1))).toFixed(1)) : avg
+              const et = Number((st + dur).toFixed(1))
+              return {
+                id: `proposed_shot_${i + 1}`,
+                order_index: i,
+                media_path: i === 0 ? (scene.media_path || scene.image_path || "") : "",
+                image_path: i === 0 ? (scene.image_path || "") : "",
+                video_path: i === 0 ? (scene.video_path || "") : "",
+                media_type: "image",
+                visual_prompt: i === 0 ? basePrompt : `${basePrompt} (Shot #${i + 1}: góc máy cận cảnh và chi tiết mới)`,
+                transition_description: `Shot ${i + 1}`,
+                effect: motions[i % motions.length],
+                duration: dur,
+                start_time: st,
+                end_time: i === count - 1 ? masterDuration : et,
+              }
+            })
+            
+            setAiProposedShots(proposed)
+            setGeneratingProposal(false)
           }
 
           const handleDeleteShot = (shotId: string) => {
@@ -1029,19 +1098,51 @@ function Storyboard({ project }: { project: Project }) {
               toast({ title: "Không thể xoá", description: "Mỗi cảnh cần tối thiểu 1 shot visual." })
               return
             }
-            const filtered = sceneShots.filter((s) => s.id !== shotId)
-            updateScene(scene, { shots: filtered } as any)
-            toast({ title: "Đã xoá shot" })
+            const remaining = sceneShots.filter((s) => s.id !== shotId)
+            const balanced = balanceShotsTimestamps(remaining, masterDuration)
+            updateScene(scene, { shots: balanced } as any)
+            toast({ title: "Đã xoá shot", description: "Đã tự động cân đối lại thời lượng các shot còn lại." })
           }
 
           const handleUpdateShot = (shotId: string, patch: any) => {
-            const updated = sceneShots.map((s) => s.id === shotId ? { ...s, ...patch } : s)
+            let updated = sceneShots.map((s) => s.id === shotId ? { ...s, ...patch } : s)
+            // If duration was changed, re-balance other shots
+            if (patch.duration !== undefined) {
+              const newDur = Math.max(0.5, Math.min(masterDuration - 0.5, Number(patch.duration)))
+              const otherCount = updated.length - 1
+              if (otherCount > 0) {
+                const remainingPool = Math.max(0.5 * otherCount, masterDuration - newDur)
+                const otherAvg = Number((remainingPool / otherCount).toFixed(1))
+                updated = updated.map(s => {
+                  if (s.id === shotId) return { ...s, duration: newDur }
+                  return { ...s, duration: otherAvg }
+                })
+              }
+              updated = balanceShotsTimestamps(updated, masterDuration)
+            }
+            
             const mainPatch: any = { shots: updated }
             if (shotId === sceneShots[0].id) {
               if (patch.visual_prompt !== undefined) mainPatch.visual_prompt = patch.visual_prompt
               if (patch.effect !== undefined) mainPatch.effect = patch.effect
             }
             updateScene(scene, mainPatch)
+          }
+
+          const handleRegenerateShotMedia = async (shot: any) => {
+            try {
+              setRegeneratingMedia(scene.id)
+              const s = await api.regenerateMedia(project.id, scene.id)
+              if (s.media_path) {
+                handleUpdateShot(shot.id, { media_path: s.media_path, image_path: s.media_path, media_type: s.media_type || "image" })
+              }
+              toast({ title: "Đã sinh lại ảnh AI cho Shot", description: "Media mới đã được gán vào shot." })
+              load()
+            } catch (e) {
+              toast({ title: "Sinh lại ảnh thất bại", description: String(e), variant: "destructive" })
+            } finally {
+              setRegeneratingMedia(null)
+            }
           }
 
           return (
@@ -1059,7 +1160,7 @@ function Storyboard({ project }: { project: Project }) {
                 selected.has(scene.id) ? "border-amber-500/60 ring-1 ring-amber-500/20" : "border-white/10 hover:border-white/20"
               )}
             >
-              {/* 1. SCENE HEADER & LỜI THUYẾT MINH BAR */}
+              {/* 1. SCENE HEADER & NARRATION BAR */}
               <div className="p-3.5 bg-black/40 border-b border-white/5 space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <div className="flex items-center gap-2">
@@ -1077,12 +1178,10 @@ function Storyboard({ project }: { project: Project }) {
                     <GripVertical className="h-3.5 w-3.5 text-slate-500 cursor-grab" />
                     <span className="font-bold text-slate-100">SCENE #{index + 1}</span>
                     <span className="text-slate-500">·</span>
-                    <span className="text-slate-400">Lời thuyết minh</span>
-                    {scene.duration > 0 && (
-                      <span className="text-[11px] font-mono text-amber-300/90 bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/20 font-semibold">
-                        🎙 {scene.duration.toFixed(1)}s audio
-                      </span>
-                    )}
+                    <span className="text-slate-400">Lời thuyết minh xuyên suốt</span>
+                    <span className="text-[11px] font-mono text-amber-300/90 bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/20 font-semibold">
+                      🎙 {masterDuration.toFixed(1)}s audio
+                    </span>
                   </div>
 
                   <div className="flex items-center gap-1.5">
@@ -1130,19 +1229,19 @@ function Storyboard({ project }: { project: Project }) {
                 />
               </div>
 
-              {/* 2. VISUAL SHOTS SUB-TIMELINE (1 Scene -> N Shots) */}
+              {/* 2. VISUAL SHOTS SUB-TIMELINE */}
               <div className="p-3.5 space-y-3 bg-[#0d1419]/60">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-semibold text-slate-200">🎬 VISUAL SHOTS</span>
-                    <span className="text-[11px] text-slate-400">({sceneShots.length} shot hình/video trên nền audio)</span>
+                    <span className="text-[11px] text-slate-400">({sceneShots.length} shot hình/video)</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <Button
                       size="sm"
                       variant="outline"
                       className="h-6 px-2 text-[11px] border-amber-500/30 text-amber-300 hover:bg-amber-500/10 gap-1"
-                      onClick={handleSplitShotsAI}
+                      onClick={handleOpenAiProposal}
                     >
                       <Sparkles className="h-3 w-3" /> ✨ AI chia shots
                     </Button>
@@ -1167,25 +1266,28 @@ function Storyboard({ project }: { project: Project }) {
                       key={shot.id || sIndex}
                       className="rounded-lg border border-white/10 bg-black/40 p-3 space-y-2.5 hover:border-white/20 transition shadow-inner"
                     >
-                      {/* Shot Title & Timeline */}
+                      {/* Shot Title & Timeline Duration Inputs */}
                       <div className="flex items-center justify-between text-[11px]">
                         <div className="flex items-center gap-1.5">
                           <span className="font-bold text-amber-300">Shot #{sIndex + 1}</span>
-                          <span className="text-slate-500 font-mono">
-                            {shot.start_time !== undefined ? `${shot.start_time.toFixed(1)}s → ${shot.end_time?.toFixed(1) || ''}s` : `${(shot.duration || 4).toFixed(1)}s`}
+                          <span className="text-slate-400 font-mono">
+                            {shot.start_time.toFixed(1)}s → {shot.end_time.toFixed(1)}s
                           </span>
                         </div>
-                        {sceneShots.length > 1 && (
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-5 w-5 text-slate-500 hover:text-red-400"
-                            onClick={() => handleDeleteShot(shot.id)}
-                            title="Xoá shot này"
-                          >
-                            <Trash2 className="h-3 w-3 text-red-400/80" />
-                          </Button>
-                        )}
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-slate-500">Thời lượng:</span>
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0.5"
+                            max={masterDuration}
+                            value={shot.duration}
+                            onChange={(e) => handleUpdateShot(shot.id, { duration: Number(e.target.value) })}
+                            className="w-12 h-5 rounded bg-black/60 border border-white/10 text-center font-mono text-[10px] text-amber-300"
+                            title="Chỉnh thời lượng shot (tự cân đối các shot khác)"
+                          />
+                          <span className="text-[10px] text-slate-500">s</span>
+                        </div>
                       </div>
 
                       {/* Thumbnail Media Box 16:9 */}
@@ -1210,32 +1312,34 @@ function Storyboard({ project }: { project: Project }) {
                           </div>
                         )}
 
-                        {/* Upload Button Overlay */}
-                        <label className="absolute bottom-1.5 right-1.5 cursor-pointer rounded bg-black/80 hover:bg-black/95 text-white border border-white/20 px-1.5 py-0.5 text-[9px] font-medium shadow transition flex items-center gap-1 backdrop-blur-sm">
-                          <Upload className="h-2.5 w-2.5" />
-                          {(shot.image_path || shot.video_path || shot.media_path) ? "Đổi" : "Tải ảnh"}
-                          <input
-                            type="file"
-                            accept="image/*,video/*"
-                            className="hidden"
-                            onChange={async (e) => {
-                              const f = e.target.files?.[0]
-                              if (f) {
-                                const form = new FormData()
-                                form.append("file", f)
-                                try {
-                                  const res = await fetch(`/api/upload/media?project_id=${project.id}`, { method: "POST", body: form })
-                                  const data = await res.json()
-                                  handleUpdateShot(shot.id, { media_path: data.media_path, image_path: data.media_path, media_type: data.media_type })
-                                  toast({ title: `Đã gán media cho Shot #${sIndex + 1}` })
-                                } catch (err) {
-                                  toast({ title: "Tải media thất bại", description: String(err), variant: "destructive" })
+                        {/* Action Overlays on Media */}
+                        <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1">
+                          <label className="cursor-pointer rounded bg-black/80 hover:bg-black/95 text-white border border-white/20 px-1.5 py-0.5 text-[9px] font-medium shadow transition flex items-center gap-1 backdrop-blur-sm">
+                            <Upload className="h-2.5 w-2.5" />
+                            {(shot.image_path || shot.video_path || shot.media_path) ? "Đổi" : "Tải ảnh"}
+                            <input
+                              type="file"
+                              accept="image/*,video/*"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const f = e.target.files?.[0]
+                                if (f) {
+                                  const form = new FormData()
+                                  form.append("file", f)
+                                  try {
+                                    const res = await fetch(`/api/upload/media?project_id=${project.id}`, { method: "POST", body: form })
+                                    const data = await res.json()
+                                    handleUpdateShot(shot.id, { media_path: data.media_path, image_path: data.media_path, media_type: data.media_type })
+                                    toast({ title: `Đã gán media cho Shot #${sIndex + 1}` })
+                                  } catch (err) {
+                                    toast({ title: "Tải media thất bại", description: String(err), variant: "destructive" })
+                                  }
                                 }
-                              }
-                              e.target.value = ""
-                            }}
-                          />
-                        </label>
+                                e.target.value = ""
+                              }}
+                            />
+                          </label>
+                        </div>
                       </div>
 
                       {/* Prompt input for this shot */}
@@ -1244,18 +1348,17 @@ function Storyboard({ project }: { project: Project }) {
                           value={shot.visual_prompt}
                           onChange={(e) => handleUpdateShot(shot.id, { visual_prompt: e.target.value })}
                           className="text-[11px] italic text-slate-300 h-7 bg-black/40 border-white/10"
-                          placeholder={`Prompt cho Shot #${sIndex + 1}...`}
+                          placeholder={`Prompt độc lập cho Shot #${sIndex + 1}...`}
                         />
                       </div>
 
-                      {/* Camera motion effect for this shot */}
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] text-slate-500">Chuyển động:</span>
+                      {/* Camera motion effect & quick actions */}
+                      <div className="flex items-center justify-between gap-1.5 pt-0.5">
                         <Select
                           value={shot.effect || "zoom_in"}
                           onValueChange={(v) => handleUpdateShot(shot.id, { effect: v })}
                         >
-                          <SelectTrigger className="h-6 text-[10px] bg-black/40 border-white/10 px-2 py-0">
+                          <SelectTrigger className="h-6 text-[10px] bg-black/40 border-white/10 px-2 py-0 w-28">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -1266,15 +1369,139 @@ function Storyboard({ project }: { project: Project }) {
                             ))}
                           </SelectContent>
                         </Select>
+
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6 text-slate-400 hover:text-amber-300"
+                            title="Sinh lại ảnh riêng cho shot này"
+                            disabled={regeneratingMedia === scene.id}
+                            onClick={() => handleRegenerateShotMedia(shot)}
+                          >
+                            <RefreshCw className={cn("h-3 w-3", regeneratingMedia === scene.id && "animate-spin text-amber-400")} />
+                          </Button>
+                          {sceneShots.length > 1 && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6 text-slate-400 hover:text-red-400"
+                              onClick={() => handleDeleteShot(shot.id)}
+                              title="Xoá shot này"
+                            >
+                              <Trash2 className="h-3 w-3 text-red-400/80" />
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
+                </div>
+
+                {/* 3. TIMELINE SYNC FOOTER BAR TRỰC QUAN */}
+                <div className="mt-2 flex flex-wrap items-center justify-between rounded-lg border border-white/5 bg-black/25 px-3 py-1.5 text-[11px]">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-slate-300">🎙 Narration: <b>{masterDuration.toFixed(1)}s</b></span>
+                    <span className="text-slate-600">|</span>
+                    <span className="font-mono text-slate-300">🎬 Visual: <b>{sceneShots.length} shots ({totalShotsDuration.toFixed(1)}s)</b></span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {isSynced ? (
+                      <span className="text-emerald-400 font-medium flex items-center gap-1">
+                        <Check className="h-3 w-3" /> Đồng bộ thời lượng
+                      </span>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-amber-400 font-medium flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" /> Lệch {Math.abs(totalShotsDuration - masterDuration).toFixed(1)}s
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-5 text-[10px] text-amber-300 hover:bg-amber-400/10 px-1.5"
+                          onClick={() => {
+                            const balanced = balanceShotsTimestamps(sceneShots, masterDuration)
+                            updateScene(scene, { shots: balanced } as any)
+                            toast({ title: "Đã cân bằng lại 100% theo audio" })
+                          }}
+                        >
+                          Cân bằng lại
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
           )
         })
       )}
+
+      {/* AI SHOTS PROPOSAL PREVIEW DIALOG: Người dùng xem và duyệt trước khi áp dụng */}
+      <Dialog open={Boolean(aiProposalScene)} onOpenChange={(open) => !open && setAiProposalScene(null)}>
+        <DialogContent className="max-w-2xl bg-[#12191e] border-white/10 text-slate-100">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base text-amber-300 font-bold">
+              <Sparkles className="h-4 w-4" /> Đề xuất phân chia Visual Shots từ AI
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              AI đã phân tích lời thoại của cảnh và chia thành các góc máy/shots visual phù hợp với thời lượng âm thanh.
+            </DialogDescription>
+          </DialogHeader>
+
+          {aiProposalScene && (
+            <div className="space-y-4 py-2">
+              {/* Lời thoại trích đoạn */}
+              <div className="rounded-lg bg-black/40 border border-white/5 p-3 space-y-1">
+                <div className="flex items-center justify-between text-[11px] text-slate-400">
+                  <span className="font-semibold text-slate-300">Lời thuyết minh:</span>
+                  <span className="font-mono text-amber-300">🎙 {aiProposalScene.duration?.toFixed(1) || '6.0'}s</span>
+                </div>
+                <p className="text-xs italic text-slate-200 leading-relaxed font-sans">
+                  "{aiProposalScene.narration}"
+                </p>
+              </div>
+
+              {/* Danh sách các đề xuất shot */}
+              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                {aiProposedShots.map((shot, idx) => (
+                  <div key={idx} className="rounded-lg border border-white/10 bg-black/30 p-2.5 text-xs space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-amber-400">Shot #{idx + 1}</span>
+                      <span className="font-mono text-slate-400 text-[11px]">
+                        {shot.start_time.toFixed(1)}s → {shot.end_time.toFixed(1)}s ({shot.duration.toFixed(1)}s)
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-300 bg-black/40 p-1.5 rounded border border-white/5 italic">
+                      {shot.visual_prompt}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => setAiProposalScene(null)} className="border-white/10 text-slate-300">
+              Huỷ
+            </Button>
+            <Button
+              size="sm"
+              className="bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 font-semibold hover:brightness-110"
+              onClick={() => {
+                if (aiProposalScene && aiProposedShots.length > 0) {
+                  updateScene(aiProposalScene, { shots: aiProposedShots } as any)
+                  toast({ title: "Đã áp dụng các Shots vào Scene", description: `Đã chia thành ${aiProposedShots.length} visual shots.` })
+                  setAiProposalScene(null)
+                  load()
+                }
+              }}
+            >
+              <Check className="h-4 w-4 mr-1" /> Áp dụng vào Scene
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
