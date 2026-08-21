@@ -173,12 +173,14 @@ def _color_to_ass(hex_color: str) -> str:
 
 
 def _margin_from_position(config: SubtitleConfig, canvas_height: int) -> int:
-    pos = (config.position or "bottom").lower()
+    pos = (getattr(config, "position", None) or "bottom").lower()
+    bottom_margin = getattr(config, "bottom_margin", None) or 60
     if pos == "top":
-        return max(0, canvas_height - 400)
+        return max(50, canvas_height - 150)
     if pos == "center":
-        return max(0, canvas_height // 2 - 200)
-    return max(0, canvas_height - (config.bottom_margin or 50))
+        return max(50, canvas_height // 2 - 50)
+    # Alignment 2 in ASS is Bottom-Center; MarginV is the offset from the bottom edge.
+    return max(30, int(bottom_margin))
 
 
 ASS_HEADER = """[Script Info]
