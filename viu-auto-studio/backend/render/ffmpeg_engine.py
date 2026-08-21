@@ -181,7 +181,7 @@ class FFmpegEngine:
 
         # --- Video source ---------------------------------------------------
         if media_type == "video" and Path(media_path).exists():
-            inputs += ["-i", media_path]
+            inputs += ["-t", f"{duration:.3f}", "-i", media_path]
             filters.append(
                 f"[0:v]scale={scaled_width}:{scaled_height}:force_original_aspect_ratio=increase,"
                 f"crop={width}:{height}:x='{crop_x}':y='{crop_y}',fps={fps},setpts=PTS-STARTPTS[vsrc]"

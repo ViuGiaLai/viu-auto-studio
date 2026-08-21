@@ -887,19 +887,48 @@ class PipelineManager:
                     "y": float(transform.get("y") or 0.0),
                 })
         if not render_items:
-            render_items = [{
-                "scene": scene,
-                "source": scene.media_path,
-                "media_type": scene.media_type or "image",
-                "audio": scene.audio_path,
-                "audio_volume": 1.0,
-                "duration": scene.duration,
-                "effect": scene.effect or "zoom_in",
-                "transition": "auto",
-                "scale": 1.0,
-                "x": 0.0,
-                "y": 0.0,
-            } for scene in scenes]
+            render_items = []
+            for scene in scenes:
+                raw_shots = []
+                try:
+                    if hasattr(scene, "shots_json") and scene.shots_json:
+                        raw_shots = json.loads(scene.shots_json)
+                except Exception:
+                    raw_shots = []
+
+                if raw_shots and len(raw_shots) > 1:
+                    # Multi-Shots scene: Render each visual shot, audio is attached to first shot
+                    for s_idx, s in enumerate(raw_shots):
+                        s_source = s.get("video_path") or s.get("image_path") or s.get("media_path") or scene.media_path
+                        s_dur = float(s.get("duration") or (scene.duration / len(raw_shots)))
+                        s_type = "video" if s_source and str(s_source).lower().endswith((".mp4", ".mov", ".webm", ".mkv")) else (s.get("media_type") or "image")
+                        render_items.append({
+                            "scene": scene,
+                            "source": s_source,
+                            "media_type": s_type,
+                            "audio": scene.audio_path if s_idx == 0 else "",
+                            "audio_volume": 1.0,
+                            "duration": s_dur,
+                            "effect": s.get("effect") or scene.effect or "zoom_in",
+                            "transition": "auto",
+                            "scale": 1.0,
+                            "x": 0.0,
+                            "y": 0.0,
+                        })
+                else:
+                    render_items.append({
+                        "scene": scene,
+                        "source": scene.media_path,
+                        "media_type": scene.media_type or "image",
+                        "audio": scene.audio_path,
+                        "audio_volume": 1.0,
+                        "duration": scene.duration,
+                        "effect": scene.effect or "zoom_in",
+                        "transition": "auto",
+                        "scale": 1.0,
+                        "x": 0.0,
+                        "y": 0.0,
+                    })
 
         clip_paths = []
         rendered_scenes = []

@@ -745,37 +745,51 @@ function Storyboard({ project }: { project: Project }) {
   const [workerOnline, setWorkerOnline] = useState(false)
 
 
-  // Helper to auto-balance and recalculate sequential start/end timestamps for shots
+  // Helper to auto-balance and recalculate sequential start/end timestamps for shots with proportional scaling & minDuration
   const balanceShotsTimestamps = (shots: any[], totalDuration: number) => {
     if (!shots || shots.length === 0) return []
-    const targetTotal = totalDuration > 0 ? totalDuration : 6.0
+    const targetTotal = totalDuration > 0 ? Number(totalDuration.toFixed(1)) : 6.0
     const count = shots.length
-    
-    // Calculate durations
-    let currentSum = shots.reduce((sum, s) => sum + (Number(s.duration) || 0), 0)
-    let balanced = shots.map(s => ({ ...s }))
-    
-    if (currentSum <= 0 || Math.abs(currentSum - targetTotal) > 0.05) {
-      const avg = Number((targetTotal / count).toFixed(1))
+    const minDur = 0.5
+
+    if (count === 1) {
+      return [{
+        ...shots[0],
+        order_index: 0,
+        duration: targetTotal,
+        start_time: 0.0,
+        end_time: targetTotal,
+      }]
+    }
+
+    let balanced = shots.map(s => ({ ...s, duration: Math.max(minDur, Number(s.duration) || minDur) }))
+    const currentSum = balanced.reduce((sum, s) => sum + s.duration, 0)
+
+    if (Math.abs(currentSum - targetTotal) > 0.05) {
+      const ratio = targetTotal / currentSum
       balanced = balanced.map((s, i) => {
-        const d = (i === count - 1) ? Number((targetTotal - (avg * (count - 1))).toFixed(1)) : avg
-        return { ...s, duration: Math.max(0.5, d) }
+        let d = Number((s.duration * ratio).toFixed(1))
+        d = Math.max(minDur, d)
+        return { ...s, duration: d }
       })
     }
-    
-    // Assign sequential start_time and end_time
+
+    // Assign sequential timestamps and ensure final end_time is exactly targetTotal
     let runningTime = 0.0
     return balanced.map((s, idx) => {
       const st = Number(runningTime.toFixed(1))
-      const dur = (idx === count - 1) ? Number((targetTotal - runningTime).toFixed(1)) : Number(s.duration.toFixed(1))
-      const et = Number((st + dur).toFixed(1))
+      let dur = Number(s.duration.toFixed(1))
+      if (idx === count - 1) {
+        dur = Math.max(minDur, Number((targetTotal - runningTime).toFixed(1)))
+      }
+      const et = idx === count - 1 ? targetTotal : Number((st + dur).toFixed(1))
       runningTime = et
       return {
         ...s,
         order_index: idx,
-        duration: Math.max(0.5, dur),
+        duration: dur,
         start_time: st,
-        end_time: idx === count - 1 ? targetTotal : et
+        end_time: et,
       }
     })
   }

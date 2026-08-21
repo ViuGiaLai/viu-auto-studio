@@ -1361,8 +1361,36 @@ def regenerate_scene_voice(project_id: int, scene_id: int, payload: SceneVoiceRe
                 raise RuntimeError("TTS provider không tạo được audio project hợp lệ")
             shutil.copy2(cached_path, audio_path)
         scene.audio_path = audio_path
+        new_dur = max(1.5, round(get_audio_duration(audio_path) + 0.3, 1))
+        old_dur = float(scene.duration or 0)
+        scene.duration = new_dur
 
-        scene.duration = max(1.5, get_audio_duration(audio_path) + 0.3)
+        # Rescale existing shots proportionally when TTS duration changes
+        if hasattr(scene, "shots_json") and scene.shots_json:
+            try:
+                import json
+                shots = json.loads(scene.shots_json)
+                if isinstance(shots, list) and len(shots) > 0:
+                    count = len(shots)
+                    old_sum = sum(float(s.get("duration") or 0) for s in shots)
+                    ratio = (new_dur / old_sum) if old_sum > 0 else (1.0 / count)
+                    running_t = 0.0
+                    for idx, s in enumerate(shots):
+                        d = max(0.5, round((float(s.get("duration") or (new_dur / count)) * ratio), 1))
+                        if idx == count - 1:
+                            d = max(0.5, round(new_dur - running_t, 1))
+                        st = round(running_t, 1)
+                        et = round(st + d, 1)
+                        if idx == count - 1:
+                            et = new_dur
+                        running_t = et
+                        s["duration"] = d
+                        s["start_time"] = st
+                        s["end_time"] = et
+                    scene.shots_json = json.dumps(shots)
+            except Exception as e:
+                pass
+
         scene.status = "voice_ready"
         scene.error_message = ""
         db.commit()
