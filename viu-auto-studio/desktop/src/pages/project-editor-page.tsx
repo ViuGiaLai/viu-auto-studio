@@ -9,6 +9,7 @@ import {
     ShieldCheck, ClipboardPaste, Download, Save, Plus, Copy, ChevronLeft, ChevronRight,
 
 } from "lucide-react"
+import appLogo from "@/assets/logo.png"
 import { api, mediaUrl, openLocalPath, outputVideoUrl, selectDirectory, startFlowBrowser } from "@/services/api"
 import { RenderProgressCard } from "@/components/render-progress-card"
 
@@ -2258,29 +2259,45 @@ function RenderPanel({ project }: { project: Project }) {
   }
   return (
     <div id="render-panel" className="space-y-5">
-      <div className="vas-card p-5">
+      <div className="relative overflow-hidden rounded-2xl border border-amber-500/30 bg-gradient-to-b from-[#141d24] via-[#101820] to-[#0d131a] p-5 shadow-2xl shadow-amber-500/10">
+        {/* Animated glowing neon top beam */}
+        <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-amber-400/90 to-transparent animate-pulse" />
+
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 font-bold shadow-md shadow-amber-500/20">
-              ⚡
+          <div className="flex items-center gap-3.5">
+            {/* Glowing Viu Logo with Ambient Aura */}
+            <div className="relative flex shrink-0 items-center justify-center">
+              <div className="absolute -inset-1 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-300 opacity-80 blur-md animate-pulse" />
+              <div className="relative flex h-11 w-11 items-center justify-center rounded-xl bg-slate-950/90 border border-amber-400/60 p-1 shadow-inner shadow-amber-500/40">
+                <img src={appLogo} alt="Viu Auto Studio" className="h-full w-full object-contain rounded-lg drop-shadow-[0_0_8px_rgba(245,158,11,0.9)]" />
+              </div>
             </div>
+
             <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-semibold text-slate-100">Smart Render Engine</h3>
-                <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h3 className="text-base font-bold text-slate-100 tracking-tight flex items-center gap-1.5">
+                  Smart Render Engine
+                </h3>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/40 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.25)]">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
                   {hardwareInfo?.is_hardware ? "GPU Hardware Accelerated" : "CPU Multi-Threaded"}
                 </span>
               </div>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-400 mt-0.5">
                 {hardwareInfo
                   ? `Đang dùng ${hardwareInfo.encoder_name} · Tốc độ ~${hardwareInfo.speed_multiplier}x realtime · Tự động tối ưu hoá`
                   : "Tự động phát hiện phần cứng và tối ưu tốc độ xuất video"}
               </p>
             </div>
           </div>
-          <Badge variant="outline" className="text-xs border-[#24313A] bg-[#101A20] text-slate-300">
+
+          <div className="flex items-center gap-2 rounded-xl border border-amber-400/30 bg-amber-400/[0.08] px-3.5 py-1.5 text-xs font-semibold text-amber-200 shadow-[0_0_15px_rgba(245,158,11,0.15)] transition-all hover:border-amber-400/60">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
             {selectedPreset.title} · MP4 H.264
-          </Badge>
+          </div>
         </div>
 
         <div className="space-y-3.5">
