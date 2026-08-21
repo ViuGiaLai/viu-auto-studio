@@ -1259,9 +1259,9 @@ function Storyboard({ project }: { project: Project }) {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {Object.entries(SCENE_EFFECTS).map(([k, v]) => (
-                              <SelectItem key={k} value={k}>
-                                {v}
+                            {SCENE_EFFECTS.map((ef) => (
+                              <SelectItem key={ef.value} value={ef.value}>
+                                {ef.label}
                               </SelectItem>
                             ))}
                           </SelectContent>
