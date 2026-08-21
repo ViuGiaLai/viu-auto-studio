@@ -1,0 +1,1246 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FLOW FACTORY</title>
+  <link rel="stylesheet" href="sidepanel.css">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+</head>
+
+<body class="light-theme">
+
+  <div id="main-screen" class="container">
+
+    <!-- ========== HEADER ========== -->
+    <div class="header">
+      <div class="header-titles">
+        <span class="logo">FLOW FACTORY <span class="brand-suffix">by Easyshorts nangmanssabu</span></span>
+        <span class="subtitle">2026 copyrights all rights by ssabufactory</span>
+        <p class="external-link">
+          <span data-i18n="exploreMore">Explore more AI tools:</span>
+          <a href="https://daparafactory.ai" target="_blank" rel="noopener">DAPARAFACTORY.AI ↗</a>
+          <span style="margin:0 6px;opacity:0.7">|</span>
+          <a href="https://chromewebstore.google.com/detail/grok-factory/ciegpeaonplpenadnjliolncmkalalck" target="_blank" rel="noopener">GROKFACTORY.AI ↗</a>
+        </p>
+      </div>
+      <div class="header-controls">
+        <div class="theme-switch">
+          <button class="theme-btn light active" data-theme="light" title="Light"></button>
+          <button class="theme-btn mint" data-theme="mint" title="Mint"></button>
+        </div>
+        <div class="lang-switch">
+          <select class="lang-select" id="langSelect" aria-label="Select UI language" title="Change language">
+            <!-- 기본 표시: "LANGUAGE" (disabled selected hidden). 선택 후 다시 "LANGUAGE"로 리셋 -->
+            <option value="" disabled selected hidden>LANGUAGE</option>
+            <!-- 언어 옵션은 JS가 SUPPORTED_LANGUAGES 순서로 동적 추가 -->
+          </select>
+        </div>
+        <button id="notice-bell" class="notice-bell" aria-label="Announcements" title="공지사항">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+          </svg>
+          <span class="notice-dot hidden" aria-hidden="true"></span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ========== NOTICE MODAL ========== -->
+    <div id="notice-modal" class="notice-modal hidden" role="dialog" aria-modal="true" aria-labelledby="notice-modal-title">
+      <div class="notice-modal-backdrop"></div>
+      <div class="notice-modal-content">
+        <header class="notice-modal-header">
+          <h2 id="notice-modal-title" data-i18n="noticeModalTitle">📢 공지사항</h2>
+          <button id="notice-modal-close" class="notice-modal-close" aria-label="Close">✕</button>
+        </header>
+        <div id="notice-modal-list" class="notice-modal-list">
+          <!-- 동적 생성 -->
+        </div>
+        <footer class="notice-modal-footer">
+          <span id="notice-modal-updated" class="notice-modal-updated"></span>
+        </footer>
+      </div>
+    </div>
+
+    <!-- ========== TABS ========== -->
+    <div class="tabs">
+      <button class="tab active" data-tab="settings" data-i18n="tabSettings">⚙️ SETTINGS</button>
+      <button class="tab" data-tab="control" data-i18n="tabControl">🎬 CONTROL</button>
+    </div>
+
+    <!-- ============================== -->
+    <!-- SETTINGS TAB                    -->
+    <!-- ============================== -->
+    <div id="content-settings" class="content">
+
+      <!-- Gemini API Key — 상태 + 설정 버튼 (한 줄) -->
+      <div class="section gemini-api-key-section">
+        <span class="section-title" data-i18n="geminiApiKeyTitle" style="display:block;text-align:center">GEMINI API KEY</span>
+        <div style="margin-top:8px;display:flex;gap:8px">
+          <div id="geminiKeyStatus" style="flex:1;padding:9px 12px;background:#fff;border:1px solid #6ee7b7;border-radius:10px;display:flex;align-items:center;justify-content:space-between;cursor:default">
+            <span id="geminiKeyStatusText" style="font-size:12px;font-weight:700;color:#888">API KEY를 등록하세요</span>
+            <span id="geminiModelBadge" style="padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;background:#ecfdf5;color:#059669;border:1px solid #6ee7b7">G3F</span>
+          </div>
+          <button id="geminiKeySettingBtn" type="button" data-i18n="apiKeySettingsBtn" style="flex:1;padding:9px 12px;border-radius:10px;border:1px solid #f9a8d4;background:#fff;color:#e8729a;font-size:12px;font-weight:700;cursor:pointer">API KEY 설정</button>
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <!-- 캐릭터 국적 -->
+      <div class="section">
+        <span class="label" data-i18n="labelNationality">CHARACTER NATIONALITY</span>
+        <select id="nationalitySelect" class="select">
+          <option value="korean" data-i18n="natKorean">Korean</option>
+          <option value="japanese" data-i18n="natJapanese">Japanese</option>
+          <option value="chinese" data-i18n="natChinese">Chinese</option>
+          <option value="southeast_asian" data-i18n="natSoutheastAsian">Southeast Asian</option>
+          <option value="western" data-i18n="natWestern">Western</option>
+          <option value="indian" data-i18n="natIndian">Indian</option>
+          <option value="latin" data-i18n="natLatin">Latin American</option>
+          <option value="arab" data-i18n="natArab">Arab</option>
+          <option value="black" data-i18n="natBlack">Black</option>
+        </select>
+      </div>
+
+      <!-- 기본 저장 폴더 (Whisk와 동일: Downloads 내부 폴더명만) -->
+      <div class="section">
+        <span class="label" data-i18n="baseFolder">BASE FOLDER NAME (Inside Downloads)</span>
+        <input type="text" id="downloadFolder" class="input" placeholder="FlowFactory" value="FlowFactory">
+      </div>
+
+      <!-- 프롬프트 자동 다운로드 (scriptToImage/Factory 전용) -->
+      <div class="section">
+        <label class="checkbox-row">
+          <input type="checkbox" id="autoDownloadImagePrompts" checked>
+          <span data-i18n="autoDownloadImagePrompts">이미지프롬프트 자동다운로드</span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="autoDownloadVideoPrompts" checked>
+          <span data-i18n="autoDownloadVideoPrompts">동영상프롬프트 자동다운로드</span>
+        </label>
+      </div>
+
+      <hr class="divider">
+
+      <!-- 기본 비율 (Flow: 가로/세로만) -->
+      <div class="section">
+        <span class="label" data-i18n="labelAspectRatio">ASPECT RATIO</span>
+        <div class="ratio-buttons">
+          <button class="ratio-btn active" data-ratio="16:9">16:9</button>
+          <button class="ratio-btn" data-ratio="9:16">9:16</button>
+        </div>
+      </div>
+
+      <!-- 이미지 모델 선택 (Flow 텍스트→이미지용) -->
+      <div class="section">
+        <span class="label" data-i18n="labelFlowImageModel">IMAGE MODEL</span>
+        <div class="image-model-buttons">
+          <button class="image-model-btn" data-model="Nano Banana Pro">🍌 Nano Banana Pro</button>
+          <button class="image-model-btn active" data-model="Nano Banana 2">🍌 Nano Banana 2</button>
+        </div>
+        <span class="info-text" data-i18n="flowImageModelHint">Flow 텍스트→이미지 생성 시 사용</span>
+      </div>
+
+      <!-- ★ v1.1.4: 프롬프트당 이미지 개수 (1 or 2) -->
+      <div class="section">
+        <span class="label" data-i18n="labelOutputCount">IMAGES PER PROMPT</span>
+        <div class="ratio-buttons">
+          <button class="ratio-btn output-count-btn active" data-output-count="1">1</button>
+          <button class="ratio-btn output-count-btn" data-output-count="2">2</button>
+        </div>
+        <span class="info-text" data-i18n="outputCountHint">1: 프롬프트당 1장 (파일명 _a만) / 2: 프롬프트당 2장 (파일명 _a, _b)</span>
+      </div>
+
+      <!-- 비디오 모델 (Flow: Veo 3.1 Lite / Fast / Quality) -->
+      <div class="section">
+        <span class="label" data-i18n="labelFlowVideoModel">VIDEO MODEL</span>
+        <div class="image-model-buttons">
+          <button class="image-model-btn video-model-btn active" data-video-model="Veo 3.1 Lite">🎬 Veo 3.1 Lite</button>
+          <button class="image-model-btn video-model-btn" data-video-model="Veo 3.1 Fast">🎬 Veo 3.1 Fast</button>
+          <button class="image-model-btn video-model-btn" data-video-model="Veo 3.1 Quality" disabled title="Disabled by default to prevent accidental high-cost clicks (100 credits)">🎬 Veo 3.1 Quality 🔒</button>
+        </div>
+        <span class="info-text" data-i18n="flowVideoModelHint">Flow credits per video generation (Lite: half price, Fast: default, Quality: highest)</span>
+      </div>
+
+      <!-- 비디오 해상도 (Flow: 1K / 2K / 4K, 저장 시 선택) -->
+      <div class="section">
+        <span class="label" data-i18n="labelResolution">VIDEO RESOLUTION</span>
+        <div class="video-option-group">
+          <button class="video-option-btn active" data-resolution="1K">1K</button>
+          <button class="video-option-btn" data-resolution="2K">2K</button>
+          <button class="video-option-btn premium" data-resolution="4K">4K</button>
+        </div>
+        <span class="info-text" data-i18n="resolutionHintFlow">1K: Original / 2K·4K: Upscaled · 4K requires upgrade</span>
+      </div>
+
+      <hr class="divider">
+
+      <!-- 대기 시간 -->
+      <div class="section">
+        <span class="label" data-i18n="labelDelay">DELAY BETWEEN PROMPTS (SEC)</span>
+        <div class="stepper">
+          <button class="stepper-btn" id="delayMinus">−</button>
+          <span class="stepper-value" id="delayValue">30</span>
+          <button class="stepper-btn" id="delayPlus">+</button>
+        </div>
+      </div>
+
+      <!-- 기본 비디오 프롬프트 -->
+      <div class="section">
+        <span class="label" data-i18n="labelDefaultPrompt">DEFAULT VIDEO PROMPT</span>
+        <input type="text" id="defaultPrompt" class="input" value="Dynamic action, Active camera angle" placeholder="Dynamic action, Active camera angle">
+        <span class="info-text" data-i18n="defaultPromptHint">Used when no prompt is entered in Image→Video mode</span>
+      </div>
+
+      <hr class="divider">
+
+      <!-- 이미지 스타일 -->
+      <div class="section">
+        <span class="section-title" data-i18n="sectionImageStyle">IMAGE STYLE</span>
+
+        <!-- 스타일 드롭다운 (AI 프롬프트 생성용) -->
+        <span class="label" data-i18n="labelStyleSelect">STYLE SELECT</span>
+        <select id="styleSelect" class="select">
+          <option value="" data-i18n="styleNone">None (No Style)</option>
+          <optgroup label="Live/Modern" data-i18n="optgroupLiveModern">
+            <option value="1" data-i18n="style_1">01. Asian Live Photo</option>
+            <option value="2" data-i18n="style_2">02. Western Live Photo</option>
+            <option value="3" data-i18n="style_3">03. Southeast Asian Live Photo</option>
+            <option value="4" data-i18n="style_4">04. Black Live Photo</option>
+          </optgroup>
+          <optgroup label="2D" data-i18n="optgroup2D">
+            <option value="5" data-i18n="style_5">05. East Asian 2D</option>
+            <option value="6" data-i18n="style_6">06. Western 2D</option>
+          </optgroup>
+          <optgroup label="3D" data-i18n="optgroup3D">
+            <option value="7" data-i18n="style_7">07. Asian 3D Disney</option>
+            <option value="8" data-i18n="style_8">08. Western 3D Disney</option>
+          </optgroup>
+          <optgroup label="Historical" data-i18n="optgroupHistorical">
+            <option value="9" data-i18n="style_9">09. Korean History</option>
+            <option value="10" data-i18n="style_10">10. Japanese History</option>
+            <option value="11" data-i18n="style_11">11. Chinese History</option>
+            <option value="12" data-i18n="style_12">12. Southeast Asian History</option>
+            <option value="13" data-i18n="style_13">13. Indian History</option>
+            <option value="14" data-i18n="style_14">14. Latin American History</option>
+            <option value="15" data-i18n="style_15">15. Black African History</option>
+            <option value="16" data-i18n="style_16">16. Arab Middle East History</option>
+            <option value="17" data-i18n="style_17">17. Western Medieval</option>
+            <option value="18" data-i18n="style_18">18. Western Renaissance</option>
+            <option value="19" data-i18n="style_19">19. Western 19th Century</option>
+          </optgroup>
+          <optgroup label="Art" data-i18n="optgroupArt">
+            <option value="20" data-i18n="style_20">20. Western Oil Painting</option>
+            <option value="21" data-i18n="style_21">21. Western Watercolor</option>
+            <option value="22" data-i18n="style_22">22. Colored Ink Wash</option>
+          </optgroup>
+          <optgroup label="Genre" data-i18n="optgroupGenre">
+            <option value="23" data-i18n="style_23">23. Asian Cyberpunk</option>
+            <option value="24" data-i18n="style_24">24. Western Cyberpunk</option>
+            <option value="25" data-i18n="style_25">25. Asian Fantasy</option>
+            <option value="26" data-i18n="style_26">26. Western Fantasy</option>
+          </optgroup>
+          <optgroup label="Unique" data-i18n="optgroupUnique">
+            <option value="27" data-i18n="style_27">27. Stick Man</option>
+            <option value="28" data-i18n="style_28">28. Stick Woman</option>
+            <option value="29" data-i18n="style_29">29. Chibi</option>
+            <option value="30" data-i18n="style_30">30. Pixel Art</option>
+            <option value="31" data-i18n="style_31">31. Minecraft</option>
+            <option value="32" data-i18n="style_32">32. Rough 3D</option>
+            <option value="33" data-i18n="style_33">33. Retro Cartoon</option>
+            <option value="34" data-i18n="style_34">34. Paper Craft</option>
+            <option value="35" data-i18n="style_35">35. Claymation</option>
+            <option value="36" data-i18n="style_36">36. Graffiti</option>
+          </optgroup>
+        </select>
+
+        <!-- ===== Style Gallery (3x3 Grid) ===== -->
+        <div class="style-gallery-section">
+          <span class="label" data-i18n="labelStyleGallery">STYLE GALLERY</span>
+          <p class="info-text" data-i18n="styleGalleryHint">Click style image to attach to Flow chat</p>
+
+          <div class="style-gallery">
+            <div class="style-item" data-style-id="1"><img src="../images/styles/style_01.jpg" alt=""><span class="style-label" data-i18n="style_1">01</span></div>
+            <div class="style-item" data-style-id="2"><img src="../images/styles/style_02.jpg" alt=""><span class="style-label" data-i18n="style_2">02</span></div>
+            <div class="style-item" data-style-id="3"><img src="../images/styles/style_03.jpg" alt=""><span class="style-label" data-i18n="style_3">03</span></div>
+            <div class="style-item" data-style-id="4"><img src="../images/styles/style_04.jpg" alt=""><span class="style-label" data-i18n="style_4">04</span></div>
+            <div class="style-item" data-style-id="5"><img src="../images/styles/style_05.jpg" alt=""><span class="style-label" data-i18n="style_5">05</span></div>
+            <div class="style-item" data-style-id="6"><img src="../images/styles/style_06.jpg" alt=""><span class="style-label" data-i18n="style_6">06</span></div>
+            <div class="style-item" data-style-id="7"><img src="../images/styles/style_07.jpg" alt=""><span class="style-label" data-i18n="style_7">07</span></div>
+            <div class="style-item" data-style-id="8"><img src="../images/styles/style_08.jpg" alt=""><span class="style-label" data-i18n="style_8">08</span></div>
+            <div class="style-item" data-style-id="9"><img src="../images/styles/style_09.jpg" alt=""><span class="style-label" data-i18n="style_9">09</span></div>
+            <div class="style-item" data-style-id="10"><img src="../images/styles/style_10.jpg" alt=""><span class="style-label" data-i18n="style_10">10</span></div>
+            <div class="style-item" data-style-id="11"><img src="../images/styles/style_11.jpg" alt=""><span class="style-label" data-i18n="style_11">11</span></div>
+            <div class="style-item" data-style-id="12"><img src="../images/styles/style_12.jpg" alt=""><span class="style-label" data-i18n="style_12">12</span></div>
+            <div class="style-item" data-style-id="13"><img src="../images/styles/style_13.jpg" alt=""><span class="style-label" data-i18n="style_13">13</span></div>
+            <div class="style-item" data-style-id="14"><img src="../images/styles/style_14.jpg" alt=""><span class="style-label" data-i18n="style_14">14</span></div>
+            <div class="style-item" data-style-id="15"><img src="../images/styles/style_15.jpg" alt=""><span class="style-label" data-i18n="style_15">15</span></div>
+            <div class="style-item" data-style-id="16"><img src="../images/styles/style_16.jpg" alt=""><span class="style-label" data-i18n="style_16">16</span></div>
+            <div class="style-item" data-style-id="17"><img src="../images/styles/style_17.jpg" alt=""><span class="style-label" data-i18n="style_17">17</span></div>
+            <div class="style-item" data-style-id="18"><img src="../images/styles/style_18.jpg" alt=""><span class="style-label" data-i18n="style_18">18</span></div>
+            <div class="style-item" data-style-id="19"><img src="../images/styles/style_19.jpg" alt=""><span class="style-label" data-i18n="style_19">19</span></div>
+            <div class="style-item" data-style-id="20"><img src="../images/styles/style_20.jpg" alt=""><span class="style-label" data-i18n="style_20">20</span></div>
+            <div class="style-item" data-style-id="21"><img src="../images/styles/style_21.jpg" alt=""><span class="style-label" data-i18n="style_21">21</span></div>
+            <div class="style-item" data-style-id="22"><img src="../images/styles/style_22.jpg" alt=""><span class="style-label" data-i18n="style_22">22</span></div>
+            <div class="style-item" data-style-id="23"><img src="../images/styles/style_23.jpg" alt=""><span class="style-label" data-i18n="style_23">23</span></div>
+            <div class="style-item" data-style-id="24"><img src="../images/styles/style_24.jpg" alt=""><span class="style-label" data-i18n="style_24">24</span></div>
+            <div class="style-item" data-style-id="25"><img src="../images/styles/style_25.jpg" alt=""><span class="style-label" data-i18n="style_25">25</span></div>
+            <div class="style-item" data-style-id="26"><img src="../images/styles/style_26.jpg" alt=""><span class="style-label" data-i18n="style_26">26</span></div>
+            <div class="style-item" data-style-id="27"><img src="../images/styles/style_27.jpg" alt=""><span class="style-label" data-i18n="style_27">27</span></div>
+            <div class="style-item" data-style-id="28"><img src="../images/styles/style_28.jpg" alt=""><span class="style-label" data-i18n="style_28">28</span></div>
+            <div class="style-item" data-style-id="29"><img src="../images/styles/style_29.jpg" alt=""><span class="style-label" data-i18n="style_29">29</span></div>
+            <div class="style-item" data-style-id="30"><img src="../images/styles/style_30.jpg" alt=""><span class="style-label" data-i18n="style_30">30</span></div>
+            <div class="style-item" data-style-id="31"><img src="../images/styles/style_31.jpg" alt=""><span class="style-label" data-i18n="style_31">31</span></div>
+            <div class="style-item" data-style-id="32"><img src="../images/styles/style_32.jpg" alt=""><span class="style-label" data-i18n="style_32">32</span></div>
+            <div class="style-item" data-style-id="33"><img src="../images/styles/style_33.jpg" alt=""><span class="style-label" data-i18n="style_33">33</span></div>
+            <div class="style-item" data-style-id="34"><img src="../images/styles/style_34.jpg" alt=""><span class="style-label" data-i18n="style_34">34</span></div>
+            <div class="style-item" data-style-id="35"><img src="../images/styles/style_35.jpg" alt=""><span class="style-label" data-i18n="style_35">35</span></div>
+            <div class="style-item" data-style-id="36"><img src="../images/styles/style_36.jpg" alt=""><span class="style-label" data-i18n="style_36">36</span></div>
+          </div>
+        </div>
+
+        <!-- ===== Custom Style Section ===== -->
+        <div class="custom-style-section">
+          <span class="label">
+            <span data-i18n="labelCustomStyles">My Custom Styles</span>
+            <span id="customStyleCount" class="count-badge">(0/6)</span>
+          </span>
+
+          <div id="customStyleGallery" class="custom-style-gallery">
+            <!-- 동적으로 추가됨 -->
+          </div>
+
+          <button id="addStyleBtn" class="btn-add-style">
+            <span data-i18n="btnAddStyle">+ ADD STYLE</span>
+          </button>
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <!-- 다운로드 경로 표시 + Chrome 다운로드 설정 열기 (Whisk와 동일, 패널 최하단) -->
+      <div class="download-path-row">
+        <p class="info-text" id="downloadPathDisplay">Download path: Downloads/FlowFactory/</p>
+        <button type="button" id="btnOpenDownloadSettings" class="btn-icon"
+          title="Open Chrome Download Settings">⚙️</button>
+      </div>
+
+      <!-- Save / Reset -->
+      <div class="settings-actions">
+        <button class="btn btn-primary" id="saveSettingsBtn" data-i18n="btnSave">SAVE SETTINGS</button>
+        <button class="btn btn-secondary" id="resetSettingsBtn" data-i18n="btnReset">RESET</button>
+      </div>
+
+    </div>
+
+    <!-- ============================== -->
+    <!-- CONTROL TAB                     -->
+    <!-- ============================== -->
+    <div id="content-control" class="content hidden">
+
+      <!-- Mode Select Section -->
+      <div class="section" id="section-mode-select">
+        <span class="section-title" data-i18n="sectionSelectMode">SELECT MODE</span>
+        <div class="mode-cards">
+          <div class="mode-card mode-image active" data-mode="scriptToImage">
+            <div class="mode-icon">📝 → ✏️ → 🖼</div>
+            <span class="mode-title" data-i18n="modeScriptToImage">Script → Prompt → Image</span>
+            <span class="mode-desc" data-i18n="modeScriptToImageDesc">AI generates prompts and images from script / Max
+              1hr script / 90 prompts / 180 free images</span>
+          </div>
+          <div class="mode-card mode-image" data-mode="textToImage">
+            <div class="mode-icon">✏️→🖼</div>
+            <span class="mode-title" data-i18n="modeTextToImage">Prompt → Image</span>
+            <span class="mode-desc" data-i18n="modeTextToImageDesc">Generate images from prompts / Max 90 prompts / 180
+              free images</span>
+          </div>
+          <div class="mode-card mode-video" data-mode="textToVideo">
+            <div class="mode-icon">✏️→🎬</div>
+            <span class="mode-title" data-i18n="modeTextToVideo">Prompt → Video</span>
+            <span class="mode-desc" data-i18n="modeTextToVideoDesc">Generate videos from prompts / 30 free videos/day /
+              Unlimited with paid plan</span>
+          </div>
+          <div class="mode-card mode-video" data-mode="imageToVideo">
+            <div class="mode-icon">🖼→🎬</div>
+            <span class="mode-title" data-i18n="modeImageToVideo">Image → Video</span>
+            <span class="mode-desc" data-i18n="modeImageToVideoDesc">Generate videos from images / 30 free videos/day /
+              Unlimited with paid plan</span>
+          </div>
+        </div>
+        <!-- FACTORY Mode Card (Full Width) -->
+        <div class="mode-card mode-factory" data-mode="factory">
+          <div class="mode-icon">📝 → ✏️ → 🖼 → ✏️ → 🎬</div>
+          <div style="display: flex; align-items: center; justify-content: center; gap: 6px;">
+            <span class="mode-title" style="margin-bottom: 0;" data-i18n="modeFactory">FACTORY MODE</span>
+            <div class="factory-badge hidden" id="factoryBadge" style="display: none;">PRO</div>
+          </div>
+          <span class="mode-desc" data-i18n="modeFactoryDesc" style="margin-top: 8px;">SCRIPT → IMAGE PROMPTS → IMAGES →
+            VIDEO PROMPTS → VIDEOS /
+            ONE-CLICK AUTOMATION</span>
+        </div>
+      </div>
+
+      <!-- 새 프로젝트 (모든 모드 공통 — 첫 시작·리셋용, Gemini API 호출 없음) -->
+      <div class="section section-new-project-top">
+        <button type="button" id="btn-new-project-top" class="btn btn-outline btn-large" data-i18n="btnNewProject">새 프로젝트</button>
+      </div>
+
+      <!-- 프로젝트명 (제어 탭에서 입력 → 다운로드 시 하위 폴더 자동 생성, Whisk와 동일) -->
+      <div class="section">
+        <span class="label" data-i18n="projectName">PROJECT NAME</span>
+        <input type="text" id="controlProjectName" class="input" placeholder="my_project"
+          data-i18n-placeholder="projectPlaceholder">
+        <span class="info-text" data-i18n="projectNameHint">A subfolder with this name will be created on
+          download</span>
+      </div>
+
+      <!-- ===== Mode-Specific Input ===== -->
+
+      <!-- Script Mode Input -->
+      <div class="section hidden" id="input-scriptToImage">
+        <span class="section-title" data-i18n="sectionScript">SCRIPT INPUT</span>
+        <textarea id="scriptInput" class="textarea" rows="6" placeholder="Enter script..."
+          data-i18n-placeholder="scriptPlaceholder" data-i18n-placeholder="scriptPlaceholder"></textarea>
+        <div class="button-row button-row-3 script-actions">
+          <button type="button" id="btn-script-edit" class="btn btn-secondary btn-sm"
+            data-i18n="btnScriptEdit">EDIT</button>
+          <button type="button" id="btn-script-del" class="btn btn-secondary btn-sm"
+            data-i18n="btnScriptDel">DEL</button>
+          <button type="button" id="btn-script-save" class="btn btn-secondary btn-sm"
+            data-i18n="btnScriptSave">SAVE</button>
+        </div>
+
+        <!-- ========== CUSTOM CHARACTER REFERENCES (PRO) ========== -->
+        <span class="section-title custom-char-refs-label">
+          <span data-i18n="customCharRefsLabel">커스텀 캐릭터 레퍼런스</span>
+          <span class="badge-pro">PRO</span>
+          <span class="badge-optional" data-i18n="customCharRefsOptional">선택</span>
+        </span>
+        <!-- 사용 체크박스 + 설명 박스 (프로젝트명 입력박스와 동일 스타일) -->
+        <div class="custom-char-refs-toggle-box">
+          <div class="custom-char-refs-toggle-row">
+            <input type="checkbox" id="useCustomCharRefsCheckbox" style="width:16px;height:16px;cursor:pointer;accent-color:#666;">
+            <label for="useCustomCharRefsCheckbox" class="custom-char-refs-toggle-label" data-i18n="customCharRefsUse">사용</label>
+          </div>
+          <p class="custom-char-refs-toggle-desc">
+            <span data-i18n="customCharRefsToggleDesc1">직접 생성하신 캐릭터이미지와 프롬프트를 사용하실수 있습니다.</span><br>
+            <span data-i18n="customCharRefsToggleDesc2">체크박스해제시는 자동생성됩니다.</span>
+          </p>
+        </div>
+
+        <div class="custom-char-refs-section hidden" id="customCharRefsSection">
+          <div class="brand-profile-toolbar">
+            <button type="button" id="saveBrandBtn" class="btn btn-secondary btn-sm" data-i18n="btnSaveBrand">브랜드 저장</button>
+            <button type="button" id="loadBrandBtn" class="btn btn-secondary btn-sm" data-i18n="btnLoadBrand">브랜드 불러오기</button>
+            <button type="button" id="exportBrandsBtn" class="btn btn-secondary btn-sm" data-i18n="btnExportBrands" title="" data-i18n-title="btnExportBrandsTooltip">브랜드목록 내보내기</button>
+            <button type="button" id="importBrandsBtn" class="btn btn-secondary btn-sm" data-i18n="btnImportBrands" title="" data-i18n-title="btnImportBrandsTooltip">브랜드목록 가져오기</button>
+            <button type="button" id="clearAllCustomRefsBtn" class="btn btn-secondary btn-sm" data-i18n="btnClearAllRefs">전체 초기화</button>
+            <input type="file" id="brandImportFileInput" accept="application/json,.json" style="display:none">
+          </div>
+
+          <div class="custom-ref-grid" id="customRefGrid">
+            <!-- 6 slots: MCR, SC1~SC5 (JS에서 동적 생성) -->
+          </div>
+
+          <p class="info-text custom-char-refs-help">
+            <span data-i18n="customCharRefsHelp1">이미지를 드래그하거나 클릭해서 올리고, 그 이미지를 생성했던 프롬프트를 그대로 붙여넣으세요</span><br>
+            <span data-i18n="customCharRefsHelp2">Gemini가 이 캐릭터를 재생성하지 않고 본문에 그대로 반영합니다</span><br>
+            <span data-i18n="customCharRefsHelp3">일부만 입력해도 하이브리드 모드로 동작 (나머지는 동일 스타일로 자동 생성)</span>
+          </p>
+        </div>
+        <!-- ========== /CUSTOM CHARACTER REFERENCES ========== -->
+
+        <span class="label" data-i18n="labelUserDirections">SPECIAL DIRECTIONS (OPTIONAL)</span>
+        <textarea id="userDirections" class="textarea" rows="2"
+          placeholder="e.g., medieval armor, space background, cute cat ears..."
+          data-i18n-placeholder="userDirectionsPlaceholder"
+          data-i18n-placeholder="userDirectionsPlaceholder"></textarea>
+        <span class="info-text" data-i18n="userDirectionsHint">Specify special costumes, backgrounds, props, etc.</span>
+
+        <!-- ========== SCRIPT SPLIT MODE (PRO 2.0) ========== -->
+        <span class="label" data-i18n="labelSplitMode">SCRIPT SPLIT MODE</span>
+        <select id="splitMode" class="input">
+          <option value="giseungjeongyeol" selected data-i18n="splitModeGiseungjeongyeol">Uniform Split (Specify count)</option>
+          <option value="sentence" data-i18n="splitModeSentence">Sentence Split (Shorts recommended)</option>
+          <option value="paragraph" data-i18n="splitModeParagraph">Paragraph Split (Mid-form recommended)</option>
+          <option value="semantic" data-i18n="splitModeSemantic">Semantic Split (Long-form recommended)</option>
+          <option value="lyrics" data-i18n="splitModeLyrics">Music Lyrics Split (MV recommended)</option>
+        </select>
+        <span class="info-text" data-i18n="splitModeHint">Only Uniform Split allows manual count. Others let AI decide based on script.</span>
+        <!-- ========== /SCRIPT SPLIT MODE ========== -->
+
+        <!-- ========== MUSIC OPTIONS (lyrics mode only) ========== -->
+        <div id="musicOptionsGroup" class="hidden" style="margin-top:12px;padding:12px 14px;background:rgba(74,222,128,0.06);border-left:3px solid #4ade80;border-radius:6px;">
+          <span class="label" data-i18n="labelMusicGenre">MUSIC GENRE</span>
+          <select id="musicGenre" class="input">
+            <option value="cinematic_ballad" selected data-i18n="genreCinematicBallad">💎 Cinematic Ballad/Pop</option>
+            <option value="korean_traditional" data-i18n="genreKoreanTraditional">🏯 Korean Traditional/Oriental</option>
+            <option value="hiphop_rap" data-i18n="genreHiphopRap">🎤 Hip-Hop/Rap</option>
+            <option value="rnb_soul" data-i18n="genreRnBSoul">🌃 R&B/Soul/Urban</option>
+            <option value="indie_folk" data-i18n="genreIndieFolk">🎹 Indie/Folk/Acoustic</option>
+            <option value="edm_dance" data-i18n="genreEdmDance">⚡ EDM/Dance/Electronic</option>
+            <option value="rock_alternative" data-i18n="genreRockAlternative">🎸 Rock/Alternative</option>
+            <option value="trot" data-i18n="genreTrot">🎤 Trot/Adult Contemporary</option>
+            <option value="children_fantasy" data-i18n="genreChildrenFantasy">🎨 Children/Fantasy</option>
+          </select>
+
+          <span class="label" data-i18n="labelHookVariation" style="margin-top:10px;">HOOK VARIATION INTENSITY</span>
+          <select id="hookVariation" class="input">
+            <option value="low" data-i18n="hookVariationLow">⚫⚪⚪ Low (nearly identical)</option>
+            <option value="medium" selected data-i18n="hookVariationMedium">⚫⚫⚪ Medium (lighting/angle shift)</option>
+            <option value="high" data-i18n="hookVariationHigh">⚫⚫⚫ High (composition/season variation)</option>
+          </select>
+
+          <label class="toggle-row" style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer;">
+            <input type="checkbox" id="applyNarrativeArc" checked>
+            <span data-i18n="labelNarrativeArc">Apply narrative arc (four-act structure)</span>
+          </label>
+          <span class="info-text" data-i18n="narrativeArcHint">Apply four-act emotional arc across lyrics</span>
+        </div>
+        <!-- ========== /MUSIC OPTIONS ========== -->
+
+        <span class="label" data-i18n="labelNumPrompts">NUMBER OF PROMPTS TO GENERATE</span>
+        <select id="numPrompts" class="input">
+          <option value="4" selected>4</option>
+          <option value="10">10</option>
+          <option value="15">15</option>
+          <option value="20">20</option>
+          <option value="25">25</option>
+          <option value="30">30</option>
+          <option value="40">40</option>
+          <option value="50">50</option>
+          <option value="60">60</option>
+          <option value="70">70</option>
+          <option value="74">74</option>
+          <option value="80">80</option>
+          <option value="100">100</option>
+          <option value="120">120</option>
+          <option value="150">150</option>
+          <option value="200">200</option>
+        </select>
+        <span class="info-text" data-i18n="scriptHint">AI will divide the script into the selected number of
+          prompts.</span>
+
+        <!-- AI 프롬프트 생성 버튼 그룹 -->
+        <div class="prompt-gen-buttons">
+          <button class="btn btn-primary btn-large" id="btn-generate-prompts" data-i18n="btnGeneratePrompts">GENERATE AI
+            PROMPTS</button>
+          <button class="btn btn-full-auto btn-large" id="btn-full-auto" data-i18n="btnFullAuto"
+            title="Auto: Prompt → Image → Video Prompt → Video">▶▶▶ FULL AUTO</button>
+        </div>
+
+        <!-- 업그레이드 모달: 버튼 하단 인라인 (팩토리 횟수 소진 시 표시) -->
+        <div id="password-screen" class="password-screen upgrade-modal-inline hidden">
+          <div class="upgrade-modal-wrap">
+            <div class="upgrade-modal modal">
+              <button type="button" id="btn-close-modal-x" class="upgrade-modal-close" aria-label="닫기" title="닫기">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+              <div class="hero">
+                <div class="hero-badge" data-i18n="upgradeModalBadge">FREE PASS MODE</div>
+                <div class="hero-title" id="t-title" data-i18n-html="upgradeModalTitleHtml">모든 모드를<br>무제한으로 사용하세요</div>
+                <div class="hero-sub" id="t-sub" data-i18n-html="upgradeModalSubHtml">스크립트 한 장으로 이미지 프롬프트,<br>영상 프롬프트, 이미지, 영상까지 자동 완성</div>
+              </div>
+              <div id="upgrade-info" class="limit-notice">
+                <div class="limit-dot"></div>
+                <span class="limit-text" id="t-limit" data-i18n-html="upgradeLimitHtml">월간 무료 사용량에 도달했습니다.<br>구독 플랜으로 무제한 사용하세요.</span>
+              </div>
+              <div class="price-features">
+                <div class="price-feature"><div class="check">✓</div><span id="f1" data-i18n="upgradeF1">모든 모드 무제한 사용</span></div>
+                <div class="price-feature"><div class="check">✓</div><span id="f2" data-i18n="upgradeF2">이미지 · 영상 프롬프트 자동 생성</span></div>
+                <div class="price-feature"><div class="check">✓</div><span id="f3" data-i18n="upgradeF3">커스텀 캐릭터 레퍼런스 무제한</span></div>
+                <div class="price-feature"><div class="check">✓</div><span id="f4" data-i18n="upgradeF4">언제든지 해지 가능</span></div>
+              </div>
+              <button type="button" id="btn-purchase-pro" class="btn-primary" data-i18n="upgradeCtaLabel">구독 플랜 보기</button>
+              <div id="payment-guide" class="payment-guide">
+                <span id="payment-guide-text" data-i18n-html="upgradeCheckoutNotice"></span>
+              </div>
+              <div class="divider">
+                <div class="divider-line"></div>
+                <span class="divider-text" id="t-divider" data-i18n="upgradeDivider">이미 구독 중이신가요?</span>
+                <div class="divider-line"></div>
+              </div>
+              <div class="password-input-wrapper">
+                <input type="password" id="pw-input" class="key-input" placeholder="라이선스 키를 입력하세요"
+                  autocomplete="off" data-i18n-placeholder="upgradeInputPlaceholder">
+                <button type="button" id="pw-toggle" class="password-toggle" tabindex="-1" aria-label="Show password">
+                  <svg class="eye-off" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                    <line x1="1" y1="1" x2="23" y2="23" />
+                  </svg>
+                  <svg class="eye-on hidden" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+                  </svg>
+                </button>
+              </div>
+              <button type="button" id="btn-unlock" class="btn-secondary">
+                <span data-i18n="upgradeActivate">활성화</span>
+              </button>
+              <p id="pw-error" class="password-error hidden">Wrong password</p>
+              <p id="pw-loading" class="password-loading hidden">
+                <span class="pw-spinner"></span>
+                <span>Verifying...</span>
+              </p>
+              <div class="modal-footer">
+                <a href="https://daparafactory.ai" target="_blank" rel="noopener" id="link-dapara-pw" class="footer-link">Daparafactory.ai</a>
+                <div class="footer-dot"></div>
+                <a href="https://daparafactory.ai/privacy#grok-factory" target="_blank" rel="noopener" id="link-privacy-pw" class="footer-link" data-i18n="upgradePrivacy">개인정보처리방침</a>
+                <div class="footer-dot"></div>
+                <button type="button" id="btn-close-upgrade" class="footer-link upgrade-footer-back" style="background:none;border:none;padding:0;cursor:pointer;font:inherit;">
+                  <span id="t-back" data-i18n="upgradeBack">돌아가기</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 생성된 프롬프트 섹션 (Whisk 동일) -->
+      <div id="generatedPromptsSection" class="section hidden">
+        <div class="success-badge">
+          ✅ <span data-i18n="promptsGenerated">프롬프트생성완료</span> (<span id="generatedCount">0</span>)
+        </div>
+        <label class="label" data-i18n="generatedPrompts">Generated Prompts</label>
+        <textarea id="generatedPromptsText" class="textarea textarea-large" rows="12" readonly></textarea>
+        <div class="button-row button-row-3">
+          <button id="btnCopyPrompts" class="btn btn-secondary btn-sm">📋 Copy</button>
+          <button id="btnEditPrompts" class="btn btn-secondary btn-sm">✏️ Edit</button>
+          <button id="btnDownloadPrompts" class="btn btn-secondary btn-sm" data-i18n="downloadPrompts">⬇️ Download</button>
+        </div>
+        <button id="btnResumeGeneration" class="btn btn-warning btn-large hidden" style="width:100%;margin-top:8px;">
+          🔄 <span data-i18n="btnResumePrompts">프롬프트 이어서 생성 (Resume)</span>
+        </button>
+      </div>
+
+      <!-- Text Prompt Input (textToImage / textToVideo) -->
+      <div class="section hidden" id="input-textPrompt">
+        <span class="section-title" data-i18n="sectionPrompts">PROMPT INPUT</span>
+        <div class="prompt-guide" id="promptInputGuide">
+          <p class="prompt-guide-title" data-i18n="promptGuideTitle">[예시 프롬프트 — 지우고 직접 입력하세요]</p>
+          <p class="prompt-guide-line" data-i18n="promptGuideLine1">※ 각 프롬프트는 반드시 빈 줄 하나로 구분해주세요.</p>
+          <p class="prompt-guide-line" data-i18n="promptGuideLine2">※ 프롬프트 안에 주연/조연/이름 등 커스텀 캐릭터 레퍼런스 설정 시 입력한 단어가 포함되어야 이미지가 첨부됩니다. 미포함 시 이미지 첨부 없이 텍스트 프롬프트만으로 생성됩니다.</p>
+        </div>
+        <textarea id="promptInput" class="textarea" rows="8"
+          placeholder="[01]MCR&#10;script text&#10;sceneDesc&#10;charProps&#10;action&#10;&#10;[02]MCR&#10;..."
+          data-i18n-placeholder="promptInputPlaceholder" data-i18n-placeholder="promptPlaceholder"></textarea>
+        <div class="button-row button-row-3 script-actions">
+          <button type="button" id="btn-prompt-edit" class="btn btn-secondary btn-sm"
+            data-i18n="btnScriptEdit">EDIT</button>
+          <button type="button" id="btn-prompt-del" class="btn btn-secondary btn-sm"
+            data-i18n="btnScriptDel">DEL</button>
+          <button type="button" id="btn-prompt-save" class="btn btn-secondary btn-sm"
+            data-i18n="btnScriptSave">SAVE</button>
+        </div>
+
+        <!-- ========== CUSTOM CHARACTER REFERENCES (PRO) — P2I (프롬프트→이미지 전용) ========== -->
+        <!-- textToImage 모드에서만 노출, textToVideo 모드에서는 숨김 (updateModeUI 제어) -->
+        <div id="p2i-ccr-wrapper">
+        <span class="section-title custom-char-refs-label">
+          <span data-i18n="customCharRefsLabel">커스텀 캐릭터 레퍼런스</span>
+          <span class="badge-pro">PRO</span>
+          <span class="badge-optional" data-i18n="customCharRefsOptional">선택</span>
+        </span>
+        <!-- 사용 체크박스 + 설명 박스 -->
+        <div class="custom-char-refs-toggle-box">
+          <div class="custom-char-refs-toggle-row">
+            <input type="checkbox" id="useCustomCharRefsCheckbox_p2i" style="width:16px;height:16px;cursor:pointer;accent-color:#666;">
+            <label for="useCustomCharRefsCheckbox_p2i" class="custom-char-refs-toggle-label" data-i18n="customCharRefsUse">사용</label>
+          </div>
+          <p class="custom-char-refs-toggle-desc">
+            <span data-i18n="customCharRefsToggleDesc1">직접 생성하신 캐릭터이미지와 프롬프트를 사용하실수 있습니다.</span><br>
+            <span data-i18n="customCharRefsToggleDesc2">체크박스해제시는 자동생성됩니다.</span>
+          </p>
+        </div>
+
+        <div class="custom-char-refs-section hidden" id="customCharRefsSection_p2i">
+          <div class="brand-profile-toolbar">
+            <button type="button" id="saveBrandBtn_p2i" class="btn btn-secondary btn-sm" data-i18n="btnSaveBrand">브랜드 저장</button>
+            <button type="button" id="loadBrandBtn_p2i" class="btn btn-secondary btn-sm" data-i18n="btnLoadBrand">브랜드 불러오기</button>
+            <button type="button" id="exportBrandsBtn_p2i" class="btn btn-secondary btn-sm" data-i18n="btnExportBrands" title="" data-i18n-title="btnExportBrandsTooltip">브랜드목록 내보내기</button>
+            <button type="button" id="importBrandsBtn_p2i" class="btn btn-secondary btn-sm" data-i18n="btnImportBrands" title="" data-i18n-title="btnImportBrandsTooltip">브랜드목록 가져오기</button>
+            <button type="button" id="clearAllCustomRefsBtn_p2i" class="btn btn-secondary btn-sm" data-i18n="btnClearAllRefs">전체 초기화</button>
+          </div>
+
+          <div class="custom-ref-grid" id="customRefGrid_p2i">
+            <!-- 6 slots: MCR, SC1~SC5 (JS에서 동적 생성) -->
+          </div>
+
+          <p class="info-text custom-char-refs-help">
+            <span data-i18n="customCharRefsHelp1">이미지를 드래그하거나 클릭해서 올리고, 그 이미지를 생성했던 프롬프트를 그대로 붙여넣으세요</span><br>
+            <span data-i18n="customCharRefsHelpP2I">프롬프트 안에 슬롯 이름 또는 코드(MCR, SC1~5)를 포함하면 해당 캐릭터 이미지가 자동 첨부됩니다</span><br>
+            <span data-i18n="customCharRefsHelp3">일부만 입력해도 해당 슬롯만 적용됩니다</span>
+          </p>
+        </div>
+        </div><!-- /#p2i-ccr-wrapper -->
+        <!-- ========== /CUSTOM CHARACTER REFERENCES (P2I) ========== -->
+      </div>
+
+      <!-- Image Upload Input (imageToVideo) -->
+      <div class="section" id="input-imageToVideo">
+        <span class="section-title" data-i18n="sectionImages">UPLOAD IMAGES</span>
+        <div class="drop-zone" id="dropZone">
+          <div class="drop-zone-plus">+</div>
+          <div class="drop-zone-text" data-i18n="dropText">Drag folder or images here, or click</div>
+          <div class="drop-zone-hint" data-i18n="dropHint">Supports folders, multiple images, single images</div>
+        </div>
+        <div class="upload-btn-row">
+          <button class="upload-option-btn" id="btnUploadFolder" data-i18n="btnUploadFolder">FOLDER</button>
+          <button class="upload-option-btn" id="btnUploadFiles" data-i18n="btnUploadFiles">IMAGES</button>
+          <button class="upload-option-btn" id="btnAddFiles" data-i18n="btnAddFiles">+ ADD</button>
+        </div>
+        <input type="file" id="folderInput" webkitdirectory directory multiple hidden>
+        <input type="file" id="imageInput" accept="image/*" multiple hidden>
+
+        <!-- 이미지 프리뷰 -->
+        <div class="image-preview-grid" id="imagePreview">
+          <!-- 동적으로 추가됨 -->
+        </div>
+        <button class="clear-btn hidden" id="clearImagesBtn" data-i18n="clearAllImages">DELETE ALL IMAGES</button>
+
+        <!-- 비디오 프롬프트 (선택사항) -->
+        <span class="label" data-i18n="labelVideoPrompt" style="margin-top:12px">VIDEO PROMPT (OPTIONAL)</span>
+        <textarea id="videoPromptInput" class="input video-prompt-textarea" placeholder="Dynamic action, Active camera angle (default)"
+          data-i18n-placeholder="videoPromptPlaceholder" data-i18n-placeholder="videoPromptPlaceholder"
+          rows="2"></textarea>
+        <button class="clear-btn hidden" id="clearPromptBtn" data-i18n="clearPrompt">DELETE PROMPT</button>
+        <span class="info-text" data-i18n-html="videoPromptHint">Default prompt will be used if empty</span>
+      </div>
+
+      <!-- ★ P2I v1.6: 중복 스타일 UI 제거 (설정 탭 스타일 자동 연동)
+           - 프롬프트→이미지 모드: 설정 스타일 기본 적용
+           - 커스텀 캐릭터 레퍼런스 체크 시: 스타일 무시, 사용자 프롬프트만 그대로 적용 -->
+
+      <!-- 캐릭터 레퍼런스 섹션 -->
+      <div id="charRefsSection" class="section hidden">
+        <div class="section-header" style="text-align:center">
+          <h3>👨 <span data-i18n="characterReferences">CHARACTER REFERENCES</span> 👩</h3>
+        </div>
+        <div id="charRefsList" class="character-refs-list"></div>
+        <div class="char-ref-action-row">
+          <button id="btnGenerateAllRefs" class="btn btn-primary" data-i18n="generateAllRefs">GENERATE CHARACTER
+            REFERENCES</button>
+          <button id="btnStopCharRefGen" class="btn btn-primary hidden" data-i18n="btnStopCharRefGen">⏹ 정지</button>
+        </div>
+        <div id="charRefCompletionMsg" class="charref-completion hidden">
+          <span class="charref-completion-icon">✅</span>
+          <span class="charref-completion-text" data-i18n="charRefComplete">CHARACTER REFERENCES GENERATED!</span>
+        </div>
+        <!-- 캐릭터 레퍼런스 썸네일 + 사용 체크박스 -->
+        <div id="charRefSection" class="hidden" style="margin-top:8px;">
+          <div id="charRefThumbnailList" style="display:flex;flex-wrap:wrap;flex-direction:row;gap:8px;padding:10px 12px;background:#1a1a1a;border-radius:8px;"></div>
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 12px 4px;">
+            <input type="checkbox" id="useCharRefCheckbox" checked style="width:16px;height:16px;cursor:pointer;accent-color:#4ade80;">
+            <label for="useCharRefCheckbox" id="useCharRefCheckboxLabel" class="char-ref-checkbox-label" data-i18n="useCharRefLabel">이미지 생성 시 캐릭터 레퍼런스 사용</label>
+          </div>
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <!-- Prompt Queue (Generated) -->
+      <div class="section hidden" id="section-queue">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+          <span class="section-title" data-i18n="sectionQueue">TASK QUEUE</span>
+          <span class="queue-count" id="queueCount">0</span>
+        </div>
+        <div class="prompt-list" id="promptList">
+          <!-- 동적으로 추가됨 -->
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="section" id="section-actions">
+        <!-- Default Start Button (non-FACTORY modes) -->
+        <button class="btn btn-primary btn-large" id="btn-start-generation" data-i18n="btnStartGeneration">▶ START IMAGE
+          GENERATION</button>
+
+        <!-- FACTORY Mode Split Buttons -->
+        <div class="factory-buttons hidden" id="factoryButtons">
+          <button class="btn btn-primary btn-factory-start" id="btn-factory-start" data-i18n="btnFactoryStart">▶ START
+            IMAGE</button>
+          <button class="btn btn-factory-auto" id="btn-factory-auto" data-i18n="btnFactoryAuto">▶▶ AUTO
+            GENERATION</button>
+        </div>
+
+        <!-- ★ 생성 중/완료 시 항상 하단 표시: 일시정지 + 새 프로젝트 (그록팩토리 동일) -->
+        <div class="progress-buttons hidden" id="controlButtons">
+          <button class="btn btn-secondary btn-large" id="btn-pause" data-i18n="btnPause">⏸ PAUSE</button>
+          <button class="btn btn-outline btn-large" id="btn-new-project-mid" data-i18n="btnNewProjectMid">NEW PROJECT</button>
+        </div>
+      </div>
+
+      <!-- Progress Section -->
+      <div class="section hidden" id="section-progress">
+        <div id="factoryPhaseStatus" class="factory-phase-status hidden"></div>
+        <span class="section-title" data-i18n="sectionProgress">PROGRESS</span>
+        <div class="progress-bar" style="margin-top:8px">
+          <div class="progress-fill" id="progressFill" style="width:0%"></div>
+        </div>
+        <div class="progress-text" id="progressText">0 / 0</div>
+        <div class="progress-log" id="progressLog">
+          <!-- 동적으로 추가됨 -->
+        </div>
+      </div>
+
+      <!-- Completion Section -->
+      <div class="section hidden" id="section-completion">
+        <div class="completion-section">
+          <div class="completion-icon">🎉</div>
+          <div class="completion-title" data-i18n="completionTitle">DONE!</div>
+          <div class="completion-stats" id="completionStats">
+            <span class="stat-success">0</span> Success / <span class="stat-fail">0</span> Failed
+          </div>
+          <div class="completion-actions">
+            <button class="btn btn-primary btn-large hidden" id="btn-completion-resume"
+              data-i18n="btnResume">RESUME</button>
+            <button class="btn btn-danger hidden" id="btn-retry-failed">
+              <span data-i18n="regenAllFailedImages">RETRY FAILED IMAGES</span>
+            </button>
+            <button class="btn btn-outline btn-large" id="btn-new-project" data-i18n="btnNewProject">NEW
+              PROJECT</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== FACTORY MODE: Video Generation Flow ========== -->
+      <div class="section hidden" id="section-factory-video">
+        <hr class="divider">
+
+        <!-- 이미지 완료 후: 전체 이미지 재생성 + 동영상 프롬프트 생성 -->
+        <div class="factory-video-header">
+          <button class="btn btn-secondary btn-full-width" id="btn-factory-regen-all-images"
+            data-i18n="btnRegenAllImages">▶ REGENERATE ALL IMAGES</button>
+          <div class="video-prompt-buttons">
+            <button class="btn btn-primary" id="btn-generate-video-prompts" data-i18n="btnGenerateVideoPrompts">GENERATE
+              VIDEO PROMPTS</button>
+            <button class="btn btn-video-auto" id="btn-video-auto" data-i18n="btnVideoAuto"
+              title="Auto: Video Prompt → Video Generation">▶▶ AUTO</button>
+          </div>
+        </div>
+
+        <!-- 생성된 동영상프롬프트 (이미지프롬프트 박스와 동일) -->
+        <div id="generatedVideoPromptsSection" class="section hidden" style="margin-top:12px;">
+          <label class="label" data-i18n="generatedVideoPrompts">생성된 동영상프롬프트</label>
+          <textarea id="generatedVideoPromptsText" class="textarea textarea-large" rows="10" readonly
+            placeholder="동영상 프롬프트 생성 후 여기에 표시됩니다."
+            data-i18n-placeholder="generatedVideoPromptsPlaceholder"></textarea>
+          <div class="button-row button-row-3">
+            <button id="btnCopyVideoPrompts" class="btn btn-secondary btn-sm">📋 Copy</button>
+            <button id="btnEditVideoPrompts" class="btn btn-secondary btn-sm">✏️ Edit</button>
+            <button id="btnDownloadVideoPrompts" class="btn btn-secondary btn-sm">⬇️ Download</button>
+          </div>
+        </div>
+
+        <!-- Video Prompt List -->
+        <div class="factory-video-list hidden" id="factoryVideoList">
+          <!-- Dynamic content: video prompt items with thumbnails -->
+        </div>
+
+        <!-- Video Generation Buttons -->
+        <div class="factory-video-actions hidden" id="factoryVideoActions">
+          <button class="btn btn-primary btn-large" id="btn-start-video-generation"
+            data-i18n="btnStartVideoGeneration">▶▶ START VIDEO GENERATION</button>
+        </div>
+
+        <!-- Factory Video Progress Bar -->
+        <div class="factory-video-progress hidden" id="factoryVideoProgress">
+          <span class="section-title" data-i18n="videoProgressTitle">VIDEO GENERATION PROGRESS</span>
+          <div class="progress-bar" style="margin-top:8px">
+            <div class="progress-fill" id="factoryProgressFill" style="width:0%"></div>
+          </div>
+          <div class="progress-text" id="factoryProgressText">0 / 0</div>
+        </div>
+
+        <!-- Factory Video Control Buttons -->
+        <div class="progress-buttons hidden" id="factoryControlButtons">
+          <button class="btn btn-secondary btn-large" id="btn-factory-pause" style="width: 100%;" data-i18n="btnPause">⏸
+            PAUSE</button>
+          <button class="btn btn-outline btn-large" id="btn-factory-new-project" style="width: 100%; margin-top: 8px;"
+            data-i18n="btnNewProject">🆕 NEW PROJECT</button>
+        </div>
+
+        <!-- Video Completion Section (imageToVideo 완료 UI와 동일한 스타일) -->
+        <div class="factory-video-completion hidden" id="factoryVideoCompletion">
+          <div class="completion-box">
+            <div class="completion-icon" id="factoryVideoCompletionIcon">✅</div>
+            <div class="completion-title" id="factoryVideoCompletionTitle">VIDEO GENERATION COMPLETE!</div>
+            <div class="completion-stats" id="factoryVideoCompletionStats">
+              <span class="stat-success">0</span> Success / <span class="stat-fail">0</span> Failed
+            </div>
+          </div>
+          <div class="completion-actions">
+            <button class="btn btn-primary" id="btn-factory-regen-all-videos" data-i18n="btnRegenAllVideos">▶ REGENERATE
+              ALL VIDEOS</button>
+            <button class="btn btn-secondary hidden" id="btn-retry-failed-videos">🔄 <span
+                data-i18n="btnRetryFailedVideos">RETRY FAILED VIDEOS</span> (<span
+                id="failedVideoCount">0</span>)</button>
+            <button class="btn btn-outline" id="btn-factory-new-project-completion" data-i18n="btnNewProject">🆕 NEW
+              PROJECT</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <!-- end #content-control -->
+
+  </div>
+  <!-- end .container -->
+
+  <!-- 커스텀 스타일 추가 모달 (Whisk와 동일) -->
+  <div id="customStyleModal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <span id="customModalTitle" data-i18n="addCustomStyleTitle">ADD CUSTOM STYLE</span>
+        <button type="button" class="modal-close" id="btnCloseCustomModal" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <label class="label" data-i18n="styleImage">STYLE IMAGE *</label>
+        <div class="image-upload-box" id="imageUploadArea" tabindex="0">
+          <img id="customImagePreview" class="image-preview hidden" alt="">
+          <div class="upload-placeholder" id="uploadPlaceholder">
+            <div class="upload-plus-btn" id="uploadPlusBtn">+</div>
+            <span class="upload-text" data-i18n="clickPlusToUpload">+ Click to upload image</span>
+            <span class="upload-hint" data-i18n="pasteHint">Ctrl+V to paste</span>
+          </div>
+          <input type="file" id="customImageInput" accept="image/jpeg,image/jpg,image/png" hidden>
+        </div>
+
+        <label class="label" data-i18n="styleName">STYLE NAME *</label>
+        <input type="text" id="customStyleName" class="input" maxlength="20"
+          data-i18n-placeholder="customStyleNamePlaceholder" placeholder="e.g., Ink painting, Neon cyberpunk">
+        <p class="info-text" data-i18n="styleNameHint">This name will be added to the style selection list</p>
+
+        <label class="label" data-i18n="stylePrompt">STYLE PROMPT (For Gemini) *</label>
+        <textarea id="customStylePrompt" class="textarea" rows="4"
+          placeholder="English style description required"></textarea>
+        <div class="prompt-guide-box">
+          <p class="guide-title" data-i18n="promptGuideTips">WRITING TIPS</p>
+          <ul class="guide-list">
+            <li data-i18n="promptGuide1">Write in English (required)</li>
+            <li data-i18n="promptGuide2">Include style, colors, mood</li>
+            <li data-i18n="promptGuide3">More specific = better results</li>
+            <li data-i18n="promptGuide4">⭐ Separate clothing/hair into distinct sentences (e.g., "Hanbok." on its own line) for non-human MCR support</li>
+            <li data-i18n="promptGuide5">⭐ For non-human protagonist projects (flower/animal), minimize human clothing descriptions</li>
+          </ul>
+          <p class="guide-example-title" data-i18n="promptGuideExample">Example:</p>
+          <code
+            class="guide-example">Traditional Korean ink wash painting style. Black and white. Brush stroke texture. Minimal composition.</code>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="btnCancelCustom" class="btn btn-secondary" data-i18n="cancel">CANCEL</button>
+        <button type="button" id="btnSaveCustom" class="btn btn-primary" data-i18n="save">SAVE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 브랜드 프로필 저장 모달 (PRO) ============ -->
+  <div id="saveBrandModal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <span data-i18n="brandSaveModalTitle">💾 브랜드 프로필 저장</span>
+        <button type="button" class="modal-close" id="btnCloseSaveBrandModal" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <label class="label" data-i18n="brandNameLabel">BRAND NAME *</label>
+        <input type="text" id="saveBrandName" class="input" maxlength="20"
+          data-i18n-placeholder="brandNamePlaceholder" placeholder="예: 머니열차, 요리채널, 아기상어팀">
+        <p class="info-text" data-i18n="brandSaveHint">현재 커스텀 캐릭터 레퍼런스 슬롯 전체가 이 이름으로 저장됩니다.</p>
+
+        <div class="save-brand-preview" id="saveBrandPreview">
+          <!-- 현재 슬롯 상태 프리뷰 (JS 렌더) -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="btnCancelSaveBrand" class="btn btn-secondary" data-i18n="btnCancel">CANCEL</button>
+        <button type="button" id="btnConfirmSaveBrand" class="btn btn-primary" data-i18n="btnSave">SAVE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 브랜드 프로필 불러오기 모달 (PRO) ============ -->
+  <div id="loadBrandModal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <span data-i18n="brandLoadModalTitle">📂 브랜드 프로필 불러오기</span>
+        <button type="button" class="modal-close" id="btnCloseLoadBrandModal" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="brandProfileList" class="brand-profile-list">
+          <!-- JS에서 저장된 브랜드 카드 렌더 -->
+        </div>
+        <div id="brandProfileEmpty" class="brand-profile-empty hidden">
+          <p data-i18n="brandEmpty1">💭 저장된 브랜드가 없습니다.</p>
+          <p class="info-text" data-i18n="brandEmpty2">커스텀 캐릭터 레퍼런스 슬롯에 이미지를 올린 후 "💾 브랜드 저장" 버튼으로 저장하세요.</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="btnCloseLoadBrand" class="btn btn-secondary" data-i18n="btnClose">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 브랜드 프로필 저장 모달 (P2I — 프롬프트→이미지 독립) ============ -->
+  <div id="saveBrandModal_p2i" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <span data-i18n="brandSaveModalTitle">💾 브랜드 프로필 저장</span>
+        <button type="button" class="modal-close" id="btnCloseSaveBrandModal_p2i" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <label class="label" data-i18n="brandNameLabel">BRAND NAME *</label>
+        <input type="text" id="saveBrandName_p2i" class="input" maxlength="20"
+          data-i18n-placeholder="brandNamePlaceholder" placeholder="예: 머니열차, 요리채널, 아기상어팀">
+        <p class="info-text" data-i18n="brandSaveHint">현재 커스텀 캐릭터 레퍼런스 슬롯 전체가 이 이름으로 저장됩니다.</p>
+
+        <div class="save-brand-preview" id="saveBrandPreview_p2i">
+          <!-- 현재 슬롯 상태 프리뷰 (JS 렌더) -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="btnCancelSaveBrand_p2i" class="btn btn-secondary" data-i18n="btnCancel">CANCEL</button>
+        <button type="button" id="btnConfirmSaveBrand_p2i" class="btn btn-primary" data-i18n="btnSave">SAVE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 브랜드 프로필 불러오기 모달 (P2I — 프롬프트→이미지 독립) ============ -->
+  <div id="loadBrandModal_p2i" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <span data-i18n="brandLoadModalTitle">📂 브랜드 프로필 불러오기</span>
+        <button type="button" class="modal-close" id="btnCloseLoadBrandModal_p2i" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="brandProfileList_p2i" class="brand-profile-list">
+          <!-- JS에서 저장된 브랜드 카드 렌더 (brandProfiles 공유 사용) -->
+        </div>
+        <div id="brandProfileEmpty_p2i" class="brand-profile-empty hidden">
+          <p data-i18n="brandEmpty1">💭 저장된 브랜드가 없습니다.</p>
+          <p class="info-text" data-i18n="brandEmpty2">커스텀 캐릭터 레퍼런스 슬롯에 이미지를 올린 후 "💾 브랜드 저장" 버튼으로 저장하세요.</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="btnCloseLoadBrand_p2i" class="btn btn-secondary" data-i18n="btnClose">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 비디오 생성 전 초기 설정 안내 모달 (Prompt→Video, Image→Video에서만 표시) -->
+  <div id="setup-modal-overlay" class="setup-modal-overlay hidden">
+    <div class="setup-modal-content">
+      <div class="setup-modal-header">
+        <span class="setup-modal-icon" aria-hidden="true">📌</span>
+        <h3 id="setup-modal-title" class="setup-modal-title"></h3>
+      </div>
+      <div class="setup-modal-body">
+        <p id="setup-modal-desc" class="setup-modal-desc"></p>
+        <ol id="setup-modal-steps" class="setup-modal-steps">
+          <li id="setup-modal-step1"></li>
+          <li id="setup-modal-step2"></li>
+          <li id="setup-modal-step3"></li>
+        </ol>
+      </div>
+      <div class="setup-modal-checkbox">
+        <label>
+          <input type="checkbox" id="setup-modal-dismiss" aria-describedby="setup-modal-dismiss-label">
+          <span id="setup-modal-dismiss-label"></span>
+        </label>
+      </div>
+      <button type="button" id="setup-modal-confirm" class="btn btn-primary setup-modal-confirm-btn"></button>
+    </div>
+  </div>
+
+  <!-- Flow 페이지 안내 모달 (현재 탭이 labs.google/fx가 아닐 때만 표시) -->
+  <div id="flow-only-modal" class="flow-only-modal-overlay hidden">
+    <div class="flow-only-modal">
+      <p class="flow-only-modal-text" data-i18n-html="flowOnlyModalText">This extension works on Flow (labs.google/fx) only.<br>Please open Flow.</p>
+      <div class="flow-only-modal-buttons">
+        <button type="button" id="flow-only-modal-open" class="btn btn-primary" data-i18n="flowOnlyModalOpen">Flow 열기</button>
+        <button type="button" id="flow-only-modal-close" class="btn btn-secondary" data-i18n="close">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  </div> <!-- /main-screen -->
+
+  <!-- Toast -->
+  <div id="toast" class="toast"></div>
+
+  <!-- 필수설정안내 모달 (사이드패널 첫 로드 시 표시) -->
+  <div id="essential-setup-modal" class="credit-modal-overlay" style="display:none;">
+    <div class="credit-modal-box">
+      <div class="credit-modal-header essential-setup-header">
+        <div class="essential-setup-header-left">
+          <span class="credit-modal-icon">📌</span>
+          <span id="essential-setup-title" class="credit-modal-title" data-ko="필수설정안내" data-en="SETUP GUIDE">SETUP GUIDE</span>
+        </div>
+        <div class="lang-switch essential-setup-lang">
+          <button class="lang-btn lang-btn-circle" data-lang="ko">KOR</button>
+          <button class="lang-btn lang-btn-circle active" data-lang="en">ENG</button>
+        </div>
+      </div>
+      <div class="credit-modal-body">
+        <!-- 🔔 최상단 핵심 공지 (v1.1.6): UI 업데이트 + 종 아이콘 확인 -->
+        <div class="setup-top-notice" style="margin:0 0 14px;padding:12px 14px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.35);border-left:4px solid #ef4444;border-radius:6px;font-size:12.5px;line-height:1.7;">
+          <span data-ko="<strong style='color:#ef4444;'>🔔 안내:</strong> 구글 플로우는 수시로 UI가 업데이트됩니다. 이에 맞추어 <strong>오토플로우팩토리</strong>도 패치하여 업그레이드해서 배포하고 있으니 <span class='essential-setup-highlight'>항상 앱 우상단의 종 모양 아이콘(공지사항)을 확인해주세요.</span>" data-en="<strong style='color:#ef4444;'>🔔 Notice:</strong> Google Flow updates its UI frequently. <strong>Auto Flow Factory</strong> ships patches and upgrades accordingly, so <span class='essential-setup-highlight'>please always check the bell icon (top right) for announcements.</span>"><strong style='color:#ef4444;'>🔔 안내:</strong> 구글 플로우는 수시로 UI가 업데이트됩니다. 이에 맞추어 <strong>오토플로우팩토리</strong>도 패치하여 업그레이드해서 배포하고 있으니 <span class='essential-setup-highlight'>항상 앱 우상단의 종 모양 아이콘(공지사항)을 확인해주세요.</span></span>
+        </div>
+
+        <ol class="credit-modal-list" style="margin:0 0 12px;padding-left:20px;line-height:1.8;">
+          <li><span data-ko="플로우 홈페이지 URL:" data-en="Flow homepage URL:">플로우 홈페이지 URL:</span> <a href="https://labs.google/fx/tools/flow" target="_blank" rel="noopener" class="api-key-link">labs.google/fx/tools/flow</a> <span data-ko="(클릭 시 새 탭에서 열기)" data-en="(click to open)">(클릭 시 새 탭에서 열기)</span></li>
+          <li data-ko="우상단 역삼각형 모양 필터 아이콘 클릭 후, <span class='essential-setup-highlight'>모든 필터 선택을 해제해주세요</span>." data-en="Click the inverted-triangle filter icon (top right), then <span class='essential-setup-highlight'>deselect all filters</span>.">우상단 역삼각형 모양 필터 아이콘 클릭 후, <span class='essential-setup-highlight'>모든 필터 선택을 해제해주세요</span>.</li>
+          <li data-ko="필터에서 정렬 기준을 '<span class='essential-setup-highlight'>최신순</span>'으로 체크하세요." data-en="In the filter, set Sort by to '<span class='essential-setup-highlight'>Newest</span>'.">필터에서 정렬 기준을 '<span class='essential-setup-highlight'>최신순</span>'으로 체크하세요.</li>
+          <li data-ko="Flow 초기 설정에서 <span class='essential-setup-highlight'>'제출 시 프롬프트 지우기' → '사용'</span> 으로 선택해주세요." data-en="In Flow's initial settings, set <span class='essential-setup-highlight'>'Clear prompt on submit' → 'On'</span>.">Flow 초기 설정에서 <span class='essential-setup-highlight'>'제출 시 프롬프트 지우기' → '사용'</span> 으로 선택해주세요.</li>
+          <li data-ko="원하시는 모드를 선택한 후 진행해주세요. (<span class='essential-setup-highlight'>대본투이미지모드 / 팩토리모드 추천</span>)" data-en="Select your desired mode and proceed. (<span class='essential-setup-highlight'>Script-to-Image / Factory mode recommended</span>)">원하시는 모드를 선택한 후 진행해주세요. (<span class='essential-setup-highlight'>대본투이미지모드 / 팩토리모드 추천</span>)</li>
+          <li data-ko="팩토리 실행이 안될 경우, 우상단 점세개 → 번역 → <span class='essential-setup-highlight'>이 사이트 번역 안함</span>" data-en="If Factory doesn't work: Top-right ⋮ → Translate → <span class='essential-setup-highlight'>Don't translate this site</span>">팩토리 실행이 안될 경우, 우상단 점세개 → 번역 → <span class='essential-setup-highlight'>이 사이트 번역 안함</span></li>
+          <li data-ko="'Content Script 주입 실패' 오류 발생 시, <span class='essential-setup-highlight'>chrome://extensions/ → FLOW FACTORY 세부정보</span> →<br>&nbsp;&nbsp;&nbsp;# 다음 사이트에서 <span class='essential-setup-highlight'>자동으로 액세스 권한 허용</span> 버튼을 활성화해주세요<br>&nbsp;&nbsp;&nbsp;# <span class='essential-setup-highlight'>파일 URL에 대한 액세스 허용</span> 버튼을 활성화해주세요" data-en="If 'Content Script injection failed' error occurs, go to <span class='essential-setup-highlight'>chrome://extensions/ → FLOW FACTORY Details</span> →<br>&nbsp;&nbsp;&nbsp;# Enable <span class='essential-setup-highlight'>'Allow access to the following sites'</span><br>&nbsp;&nbsp;&nbsp;# Enable <span class='essential-setup-highlight'>'Allow access to file URLs'</span>">'Content Script 주입 실패' 오류 발생 시, <span class='essential-setup-highlight'>chrome://extensions/ → FLOW FACTORY 세부정보</span> →<br>&nbsp;&nbsp;&nbsp;# 다음 사이트에서 <span class='essential-setup-highlight'>자동으로 액세스 권한 허용</span> 버튼을 활성화해주세요<br>&nbsp;&nbsp;&nbsp;# <span class='essential-setup-highlight'>파일 URL에 대한 액세스 허용</span> 버튼을 활성화해주세요</li>
+          <li data-ko="지정한 폴더에 파일이 저장이 안되거나 프롬프트 번호대로 파일명이 생성되지 않는 경우, <span class='essential-setup-highlight'>다른 확장프로그램 버튼을 비활성화</span>해주세요. (확장프로그램 간 경로 충돌이 원인입니다)" data-en="If files aren't saved to the designated folder or filenames aren't generated by prompt number, <span class='essential-setup-highlight'>disable other extensions</span>. (Extension path conflicts are the cause.)">지정한 폴더에 파일이 저장이 안되거나 프롬프트 번호대로 파일명이 생성되지 않는 경우, <span class='essential-setup-highlight'>다른 확장프로그램 버튼을 비활성화</span>해주세요. (확장프로그램 간 경로 충돌이 원인입니다)</li>
+        </ol>
+
+        <!-- ✨ 자주 묻는 질문 (v1.1.6) -->
+        <div class="setup-faq-box" style="margin-top:14px;padding:12px 14px;background:rgba(56,189,248,0.08);border-left:3px solid #38bdf8;border-radius:6px;">
+          <div style="font-weight:700;font-size:13px;color:#38bdf8;margin-bottom:10px;">
+            <span data-ko="✨ 자주 묻는 질문" data-en="✨ Frequently Asked Questions">✨ 자주 묻는 질문</span>
+          </div>
+          <div style="line-height:1.7;font-size:12.5px;">
+            <p style="margin:0 0 6px;font-weight:600;">
+              <span data-ko="Q. 대본분석 후 프롬프트 생성이 안돼요!" data-en="Q. Script analysis doesn't generate prompts!">Q. 대본분석 후 프롬프트 생성이 안돼요!</span>
+            </p>
+            <p style="margin:0 0 4px;padding-left:14px;" data-ko="→ 제미나이 <span class='essential-setup-highlight'>무료 키 사용 시</span>, 특정 시간대 사용자가 몰려 키 사용이 제한될 수 있습니다. 설정에서 무료키 모델을 다른 모델로 변경 후 재시도하세요." data-en="→ When using Gemini <span class='essential-setup-highlight'>free key</span>, key usage may be limited during peak hours. Switch to a different free model in settings and retry.">→ 제미나이 <span class='essential-setup-highlight'>무료 키 사용 시</span>, 특정 시간대 사용자가 몰려 키 사용이 제한될 수 있습니다. 설정에서 무료키 모델을 다른 모델로 변경 후 재시도하세요.</p>
+            <p style="margin:0 0 12px;padding-left:14px;" data-ko="→ <span class='essential-setup-highlight'>API key 일일 한도 소진</span>으로 생성이 안 될 수도 있습니다. 다른 계정의 API key를 새로 등록하거나, 유료 API key(더 똑똑한 모델)를 발급받아 사용하세요." data-en="→ Daily <span class='essential-setup-highlight'>API key quota may be exhausted</span>. Register a new API key from another account, or get a paid API key (smarter model).">→ <span class='essential-setup-highlight'>API key 일일 한도 소진</span>으로 생성이 안 될 수도 있습니다. 다른 계정의 API key를 새로 등록하거나, 유료 API key(더 똑똑한 모델)를 발급받아 사용하세요.</p>
+            <p style="margin:0 0 6px;font-weight:600;">
+              <span data-ko="Q. 커스텀 캐릭터 레퍼런스가 잘 안돼요!" data-en="Q. Custom character reference doesn't work properly!">Q. 커스텀 캐릭터 레퍼런스가 잘 안돼요!</span>
+            </p>
+            <p style="margin:0 0 4px;padding-left:14px;" data-ko="→ 대본 자동 모드가 아닌 개별 프롬프트 사용 시, 커스텀 캐릭터의 <span class='essential-setup-highlight'>네이밍 또는 MCR/SC1/SC2 등 주·조연 분별 코드</span>가 반드시 프롬프트에 들어가 있어야 매칭됩니다." data-en="→ When using individual prompts (not auto-script mode), the custom character's <span class='essential-setup-highlight'>naming or main/sub character codes (MCR/SC1/SC2 etc.)</span> must be included in the prompt for matching.">→ 대본 자동 모드가 아닌 개별 프롬프트 사용 시, 커스텀 캐릭터의 <span class='essential-setup-highlight'>네이밍 또는 MCR/SC1/SC2 등 주·조연 분별 코드</span>가 반드시 프롬프트에 들어가 있어야 매칭됩니다.</p>
+            <p style="margin:0;padding-left:14px;" data-ko="→ 대본투이미지/팩토리 모드는 AI가 자동으로 주·조연을 구분하지만, 대본 자체의 캐릭터 네이밍이 등록하신 네이밍과 <span class='essential-setup-highlight'>일치</span>해야 합니다." data-en="→ Script-to-Image / Factory modes auto-detect main/sub characters via AI, but the character names in your script must <span class='essential-setup-highlight'>match</span> your registered naming.">→ 대본투이미지/팩토리 모드는 AI가 자동으로 주·조연을 구분하지만, 대본 자체의 캐릭터 네이밍이 등록하신 네이밍과 <span class='essential-setup-highlight'>일치</span>해야 합니다.</p>
+          </div>
+        </div>
+
+        <!-- ☕ 한 달 사용 제한 안내 -->
+        <p style="margin:10px 2px 0;font-size:12px;color:var(--text-secondary);line-height:1.6;">
+          <span data-ko="💡 일부 기능은 한 달 사용 제한이 있습니다. 무제한 사용을 위한 유료 플랜을 권장합니다. (커피 한 잔! ☕)" data-en="💡 Some features have monthly usage limits. Premium plan recommended for unlimited use. (Just a coffee! ☕)">💡 일부 기능은 한 달 사용 제한이 있습니다. 무제한 사용을 위한 유료 플랜을 권장합니다. (커피 한 잔! ☕)</span>
+        </p>
+
+        <!-- 💳 PRO 구독자 안내 (v1.1.6) -->
+        <div class="setup-pro-box" style="margin-top:14px;padding:12px 14px;background:rgba(250,204,21,0.08);border-left:3px solid #facc15;border-radius:6px;">
+          <div style="font-weight:700;font-size:13px;color:#facc15;margin-bottom:10px;">
+            <span data-ko="💳 PRO 구독자분들께" data-en="💳 For PRO Subscribers">💳 PRO 구독자분들께</span>
+          </div>
+          <div style="line-height:1.7;font-size:12.5px;">
+            <p style="margin:0 0 4px;">
+              <span data-ko="▶ <strong>구독 취소</strong> — 아래 안내에 따라 직접 취소 가능" data-en="▶ <strong>Cancel subscription</strong> — Follow the guide below to cancel directly">▶ <strong>구독 취소</strong> — 아래 안내에 따라 직접 취소 가능</span>
+            </p>
+            <p style="margin:0 0 4px;" data-ko="▶ <strong>환불 요청</strong> — <span class='essential-setup-highlight'>SSABUFACTORY@GMAIL.COM</span> 으로 다음 정보 전송:" data-en="▶ <strong>Refund request</strong> — Email <span class='essential-setup-highlight'>SSABUFACTORY@GMAIL.COM</span> with:">▶ <strong>환불 요청</strong> — <span class='essential-setup-highlight'>SSABUFACTORY@GMAIL.COM</span> 으로 다음 정보 전송:</p>
+            <ul style="margin:0 0 8px;padding-left:32px;">
+              <li data-ko="결제 영수증" data-en="Payment receipt">결제 영수증</li>
+              <li data-ko="Lemon Squeezy 로그인 이메일 / 카드 결제자 성함" data-en="Lemon Squeezy login email / cardholder name">Lemon Squeezy 로그인 이메일 / 카드 결제자 성함</li>
+            </ul>
+            <p style="margin:0;padding-left:14px;font-size:12px;color:var(--text-secondary);">
+              <span data-ko="→ 사용량 확인 후 전액 또는 부분 환불 처리해드립니다." data-en="→ Full or partial refund will be processed after usage review.">→ 사용량 확인 후 전액 또는 부분 환불 처리해드립니다.</span>
+            </p>
+          </div>
+        </div>
+
+        <!-- 📋 구독 취소 방법 (v1.1.6) -->
+        <div class="setup-cancel-box" style="margin-top:14px;padding:12px 14px;background:rgba(167,139,250,0.08);border-left:3px solid #a78bfa;border-radius:6px;">
+          <div style="font-weight:700;font-size:13px;color:#a78bfa;margin-bottom:10px;">
+            <span data-ko="📋 구독 취소 방법" data-en="📋 How to Cancel Subscription">📋 구독 취소 방법</span>
+          </div>
+          <ol style="margin:0 0 8px;padding-left:20px;line-height:1.7;font-size:12.5px;">
+            <li data-ko="<span class='essential-setup-highlight'>app.lemonsqueezy.com/my-orders/login</span> 접속" data-en="Go to <span class='essential-setup-highlight'>app.lemonsqueezy.com/my-orders/login</span>"><span class='essential-setup-highlight'>app.lemonsqueezy.com/my-orders/login</span> 접속</li>
+            <li data-ko="결제하신 이메일 입력 → 폰으로 접속 링크 받기" data-en="Enter your payment email → receive login link via phone">결제하신 이메일 입력 → 폰으로 접속 링크 받기</li>
+            <li data-ko="폰으로 받은 이메일에서 접속 링크 클릭<br>&nbsp;&nbsp;&nbsp;💡 스마트폰에서 이메일을 열어 클릭하셔야 정상 작동합니다" data-en="Click the login link from your phone<br>&nbsp;&nbsp;&nbsp;💡 Open the email on your smartphone for the link to work correctly">폰으로 받은 이메일에서 접속 링크 클릭<br>&nbsp;&nbsp;&nbsp;💡 스마트폰에서 이메일을 열어 클릭하셔야 정상 작동합니다</li>
+            <li data-ko="<strong>&quot;My Orders&quot;</strong> 에서 해당 주문 선택" data-en="Select your order from <strong>&quot;My Orders&quot;</strong>"><strong>"My Orders"</strong> 에서 해당 주문 선택</li>
+            <li data-ko="<strong>&quot;Manage subscription&quot;</strong> 클릭" data-en="Click <strong>&quot;Manage subscription&quot;</strong>"><strong>"Manage subscription"</strong> 클릭</li>
+            <li data-ko="<strong>&quot;Cancel subscription&quot;</strong> 클릭 → 완료" data-en="Click <strong>&quot;Cancel subscription&quot;</strong> → Done"><strong>"Cancel subscription"</strong> 클릭 → 완료</li>
+          </ol>
+          <div style="margin-top:6px;padding-left:6px;font-size:12px;color:var(--text-secondary);line-height:1.6;">
+            <p style="margin:0 0 3px;">
+              <span data-ko="ℹ️ 안내사항:" data-en="ℹ️ Notice:">ℹ️ 안내사항:</span>
+            </p>
+            <p style="margin:0 0 3px;padding-left:12px;" data-ko="• 취소 후에도 <span class='essential-setup-highlight'>현재 결제 주기까지는 PRO 기능을 그대로 사용</span> 가능" data-en="• <span class='essential-setup-highlight'>PRO features remain available until the current billing cycle ends</span>">• 취소 후에도 <span class='essential-setup-highlight'>현재 결제 주기까지는 PRO 기능을 그대로 사용</span> 가능</p>
+            <p style="margin:0;padding-left:12px;">
+              <span data-ko="• 다음 결제일부터 자동 결제 중단" data-en="• Auto-billing stops from the next billing date">• 다음 결제일부터 자동 결제 중단</span>
+            </p>
+          </div>
+        </div>
+
+        <!-- 팀 푸터 -->
+        <p style="margin:14px 2px 0;text-align:center;font-size:11.5px;color:var(--text-secondary);line-height:1.6;">
+          <span data-ko="— Flow Factory 팀" data-en="— Flow Factory Team">— Flow Factory 팀</span><br>
+          <span data-ko="📧 문의: " data-en="📧 Contact: ">📧 문의: </span><span style="color:var(--mint);">SSABUFACTORY@GMAIL.COM</span>
+        </p>
+      </div>
+      <div class="credit-modal-footer">
+        <label class="credit-modal-check">
+          <input type="checkbox" id="essential-setup-dont-show">
+          <span data-ko="다시 표시 안 함" data-en="Don't show again">다시 표시 안 함</span>
+        </label>
+        <button id="essential-setup-close" class="credit-modal-btn" data-ko="확인" data-en="OK">확인</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 크레딧 소진 모달 -->
+  <div id="credit-exhausted-modal" class="credit-modal-overlay" style="display:none;">
+    <div class="credit-modal-box">
+      <div class="credit-modal-header">
+        <span class="credit-modal-icon">📌</span>
+        <span class="credit-modal-title" data-ko="유료기능" data-en="Paid Feature">유료기능</span>
+      </div>
+      <div class="credit-modal-body">
+        <p data-ko="Flow 동영상생성은 동영상 1생성당 20크레딧이 소모됩니다.<br>계정당 1일 2~7개 무료동영상 생성가능 (계정별 상이)"
+           data-en="Video generation costs 20 credits per video.<br>2–7 free videos per day per account (varies by account).">
+          Flow 동영상생성은 동영상 1생성당 20크레딧이 소모됩니다.<br>계정당 1일 2~7개 무료동영상 생성가능 (계정별 상이)
+        </p>
+        <ol>
+          <li data-ko="Google AI 무료사용자: 1일 50~150크레딧 할당, 매일 리셋 (계정별 상이)"
+              data-en="Google AI Free: 50–150 credits/day, resets daily (varies by account)">
+            Google AI 무료사용자: 1일 50~150크레딧 할당, 매일 리셋 (계정별 상이)
+          </li>
+          <li data-ko="Google AI Pro 사용자: 한 달 1000크레딧 할당"
+              data-en="Google AI Pro: 1,000 credits/month">
+            Google AI Pro 사용자: 한 달 1000크레딧 할당
+          </li>
+        </ol>
+      </div>
+      <div class="credit-modal-footer">
+        <label class="credit-modal-check">
+          <input type="checkbox" id="credit-modal-dont-show">
+          <span data-ko="다시 표시 안 함" data-en="Don't show again">다시 표시 안 함</span>
+        </label>
+        <button id="credit-modal-close" class="credit-modal-btn"
+                data-ko="닫기" data-en="Close">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="pp-footer">
+    <a href="https://daparafactory.ai"
+       target="_blank" rel="noopener noreferrer"
+       class="pp-link">DAPARAFACTORY</a>
+    <span class="pp-dot">·</span>
+    <a href="https://daparafactory.ai/privacy#flow-factory"
+       target="_blank" rel="noopener noreferrer"
+       class="pp-link">PRIVACY POLICY</a>
+    <span class="pp-dot">·</span>
+    <a href="https://chromewebstore.google.com/detail/grok-factory/ciegpeaonplpenadnjliolncmkalalck"
+       target="_blank" rel="noopener noreferrer"
+       class="pp-link">GROKFACTORY</a>
+  </footer>
+
+  <script src="../core/filename.js"></script>
+  <script src="../core/music-prompts.js"></script>
+  <script src="../core/gemini.js"></script>
+  <script src="custom-char-refs.js"></script>
+  <script src="custom-char-refs-p2i.js"></script>
+  <script src="notices.js"></script>
+  <script src="sidepanel.js"></script>
+</body>
+
+</html>

@@ -378,6 +378,8 @@ export async function startFlowBrowser(runtime: RuntimeConfig, input: FlowBrowse
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-sync",
+    "--hide-crash-restore-bubble",
+    "--disable-session-crashed-bubble",
     `--load-extension=${extensionPath}`,
     `--disable-extensions-except=${extensionPath}`,
     "--new-window",
@@ -422,16 +424,23 @@ function resolveFlowConnectorPath(): string | null {
     here = __dirname ?? process.cwd()
   }
   const candidates = [
-    // Development: flow-connector at project root (viu-auto-studio/flow-connector)
+    // Primary: 1.1.8_0 extension
+    "D:\\all_my_project\\viu-auto-studio\\1.1.8_0",
+    path.resolve(process.cwd(), "../1.1.8_0"),
+    path.resolve(process.cwd(), "1.1.8_0"),
+    path.resolve(here, "../../../1.1.8_0"),
+    path.resolve(here, "../../1.1.8_0"),
+    path.resolve(here, "../1.1.8_0"),
+    path.resolve(here, "1.1.8_0"),
+    path.join(process.resourcesPath || "", "1.1.8_0"),
+    path.join(process.resourcesPath || "", "app.asar.unpacked", "1.1.8_0"),
+    // Development fallback
     path.resolve(process.cwd(), "flow-connector"),
     path.resolve(process.cwd(), "../flow-connector"),
-    // Relative to bundled dist-electron/main.mjs → ../../flow-connector
     path.resolve(here, "../../flow-connector"),
     path.resolve(here, "../flow-connector"),
     path.resolve(here, "flow-connector"),
-    // Electron packaged app: resources/flow-connector
     path.join(process.resourcesPath || "", "flow-connector"),
-    // app.asar.unpacked
     path.join(process.resourcesPath || "", "app.asar.unpacked", "flow-connector"),
   ]
   return candidates.find((candidate) => existsSync(path.join(candidate, "manifest.json"))) || null
