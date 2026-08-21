@@ -162,11 +162,13 @@ def flow_login():
 # ===========================================================================
 
 @router.get("/tts/voices", response_model=List[TTSVoice])
-def tts_list_voices(provider: str = Query(""), db: Session = Depends(get_db)):
+def tts_list_voices(provider: str = Query(""), api_key: str = Query(""), db: Session = Depends(get_db)):
     """List voices for the given provider, falling back to the configured TTS provider."""
     cfg = get_tts_config(db)
     if provider:
         cfg = {**cfg, "provider": provider}
+    if api_key:
+        cfg = {**cfg, "api_key": api_key}
     return list_voices(cfg)
 
 
@@ -1371,9 +1373,18 @@ def regenerate_scene_voice(project_id: int, scene_id: int, payload: SceneVoiceRe
 @router.get("/tts/config", response_model=TTSConfigRead)
 def tts_get_config(db: Session = Depends(get_db)):
     cfg = get_tts_config(db)
+    api_keys = cfg.get("api_keys", {})
+    masked = {}
+    for k, v in api_keys.items():
+        if v and len(v) > 8:
+            masked[k] = ("*" * 8) + v[-4:]
+        elif v:
+            masked[k] = "********"
+        else:
+            masked[k] = ""
+    cfg["api_keys_masked"] = masked
     key = cfg.get("cloud_api_key", "")
     cfg["cloud_api_key_masked"] = ("*" * 8) + key[-4:] if len(key) > 8 else ""
-    cfg.pop("cloud_api_key", None)
     return cfg
 
 
@@ -1383,8 +1394,9 @@ def tts_save_config(payload: TTSConfigRequest = Body(...), db: Session = Depends
 
 
 @router.get("/tts/providers")
-def tts_list_providers():
-    return list_tts_providers()
+def tts_list_providers(db: Session = Depends(get_db)):
+    cfg = get_tts_config(db)
+    return list_tts_providers(cfg)
 
 
 @router.post("/tts/test-connection")

@@ -513,16 +513,36 @@ export function ChannelConfigDialog({
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium text-slate-400">Giọng đọc (TTS)</Label>
-                  <Select value={String(config.tts_provider || "default")} onValueChange={(v) => set("tts_provider", v === "default" ? "" : v)}>
+                  <Select
+                    value={String(config.tts_provider || "default")}
+                    onValueChange={async (v) => {
+                      const prov = v === "default" ? "" : v
+                      set("tts_provider", prov)
+                      try {
+                        const vs = await api.ttsListVoices(prov || undefined)
+                        setVoices(vs)
+                        set("voice", vs.length > 0 ? vs[0].id : "")
+                      } catch {
+                        setVoices([])
+                        set("voice", "")
+                      }
+                    }}
+                  >
                     <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="default">Mặc định (theo Cài đặt chung)</SelectItem>
-                      <SelectItem value="edge">Edge TTS (giọng thật)</SelectItem>
-                      <SelectItem value="kokoro">Kokoro TTS (local)</SelectItem>
+                      <SelectItem value="edge">Edge TTS (miễn phí, cloud)</SelectItem>
+                      <SelectItem value="elevenlabs">ElevenLabs (cao cấp, AI)</SelectItem>
+                      <SelectItem value="kokoro_vi">Kokoro Việt Nam (local offline)</SelectItem>
+                      <SelectItem value="gemini_tts">Gemini TTS (AI Studio)</SelectItem>
+                      <SelectItem value="vbee">Vbee (giọng Việt đa vùng miền)</SelectItem>
+                      <SelectItem value="google_cloud_tts">Google Cloud TTS</SelectItem>
+                      <SelectItem value="azure_tts">Azure TTS</SelectItem>
+                      <SelectItem value="kokoro">Kokoro TTS (Anh/Mỹ/..., local)</SelectItem>
                       <SelectItem value="omnivoice">OmniVoice (voice clone/design)</SelectItem>
-                      <SelectItem value="cloud">Cloud TTS</SelectItem>
+                      <SelectItem value="local">Piper / Local TTS</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

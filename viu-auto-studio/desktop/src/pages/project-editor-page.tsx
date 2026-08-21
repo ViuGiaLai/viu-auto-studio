@@ -1827,6 +1827,19 @@ function RenderPanel({ project }: { project: Project }) {
     })
   }, [job?.id, job?.status])
 
+  useEffect(() => {
+    api.settingsGet().then((settings) => {
+      const values = settings as unknown as Record<string, unknown>
+      if (typeof values.output_preset === "string") setOutputPreset(values.output_preset)
+      if (typeof values.voice_volume === "number") setVoiceVol(values.voice_volume)
+      if (typeof values.music_volume === "number") setMusicVol(values.music_volume)
+      if (typeof values.enable_ducking === "boolean") setDucking(values.enable_ducking)
+      if (typeof values.normalize_audio === "boolean") setNormalize(values.normalize_audio)
+      if (typeof values.subtitle_style === "string") setSubtitleStyle(values.subtitle_style)
+      if (typeof values.subtitle_output_format === "string") setSubtitleFormat(values.subtitle_output_format)
+    }).catch(() => undefined)
+  }, [project.id])
+
   const applyProfile = (id: string) => {
     setProfileId(id)
     const values: Record<string, { crf: number; preset: string }> = {
@@ -1849,7 +1862,7 @@ function RenderPanel({ project }: { project: Project }) {
       setPreflight(result)
       return result
     } catch (error) {
-      toast({ title: "KhÃ´ng kiá»ƒm tra Ä‘Æ°á»£c trÆ°á»›c khi xuáº¥t", description: String(error), variant: "destructive" })
+      toast({ title: "Preflight failed", description: String(error), variant: "destructive" })
       setPreflight(null)
       return null
     } finally {
@@ -1879,19 +1892,16 @@ function RenderPanel({ project }: { project: Project }) {
     if (inProgress || rendering) return
     const check = await runPreflight()
     if (!check?.ok) {
-      toast({ title: "ChÆ°a thá»ƒ xuáº¥t video", description: "HÃ£y xá»­ lÃ½ cÃ¡c má»¥c chÆ°a Ä‘áº¡t trong checklist trÆ°á»›c khi render.", variant: "destructive" })
+      toast({ title: "Render is not ready", description: "Resolve the failed preflight checks before rendering.", variant: "destructive" })
       return
     }
     setRendering(true)
     try {
       const res = await api.renderStart(project.id, renderConfig())
-      if (res.ok && res.job_id) {
-        toast({ title: "ÄÃ£ thÃªm vÃ o hÃ ng Ä‘á»£i render", description: "Pipeline sáº½ render vÃ  verify output báº±ng FFprobe." })
-      } else {
-        toast({ title: "KhÃ´ng thá»ƒ báº¯t Ä‘áº§u", description: res.message, variant: "destructive" })
-      }
+      if (res.ok && res.job_id) toast({ title: "Render queued", description: "Output will be verified with FFprobe before completion." })
+      else toast({ title: "Cannot start render", description: res.message, variant: "destructive" })
     } catch (error) {
-      toast({ title: "Báº¯t Ä‘áº§u render tháº¥t báº¡i", description: String(error), variant: "destructive" })
+      toast({ title: "Render failed to start", description: String(error), variant: "destructive" })
     } finally {
       setRendering(false)
     }
@@ -1901,9 +1911,9 @@ function RenderPanel({ project }: { project: Project }) {
     if (!job) return
     try {
       await api.cancelJob(job.id)
-      toast({ title: "ÄÃ£ há»§y render" })
+      toast({ title: "Render cancelled" })
     } catch (error) {
-      toast({ title: "Há»§y render tháº¥t báº¡i", description: String(error), variant: "destructive" })
+      toast({ title: "Cancel failed", description: String(error), variant: "destructive" })
     }
   }
 
@@ -1911,27 +1921,26 @@ function RenderPanel({ project }: { project: Project }) {
     if (!job) return
     try {
       await api.retryJob(job.id, renderConfig())
-      toast({ title: "Äang thá»­ láº¡i render", description: "Tiáº¿p tá»¥c tá»« bÆ°á»›c lá»—i vá»›i cáº¥u hÃ¬nh hiá»‡n táº¡i." })
+      toast({ title: "Retry started", description: "Continuing from the failed step." })
     } catch (error) {
-      toast({ title: "Retry tháº¥t báº¡i", description: String(error), variant: "destructive" })
+      toast({ title: "Retry failed", description: String(error), variant: "destructive" })
     }
   }
-
   return (
     <div id="render-panel" className="space-y-5">
       <div className="vas-card p-5">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-medium uppercase tracking-[0.18em] text-amber-300/80">Dá»±ng & Xuáº¥t video</p>
-            <h3 className="mt-1 text-lg font-semibold text-slate-100">Cáº¥u hÃ¬nh Ä‘áº§u ra</h3>
-            <p className="mt-1 text-xs text-slate-500">Timeline váº«n lÃ  nÆ¡i chá»‰nh scene. Khu vá»±c nÃ y chá»‰ chá»n Ä‘áº§u ra vÃ  thá»±c thi render.</p>
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-amber-300/80">Dựng & Xuất video</p>
+            <h3 className="mt-1 text-lg font-semibold text-slate-100">Cấu hình đầu ra</h3>
+            <p className="mt-1 text-xs text-slate-500">Timeline vẫn là nơi chỉnh scene. Khu vực này chỉ chọn đầu ra và thực thi render.</p>
           </div>
-          <Badge variant="outline">MP4 Â· H.264 + AAC</Badge>
+          <Badge variant="outline">MP4 · H.264 + AAC</Badge>
         </div>
 
         <div className="space-y-5">
           <section>
-            <div className="mb-2 flex items-center justify-between"><Label className="text-sm font-semibold">1. Output Preset</Label><span className="text-xs text-slate-500">Chá»n trÆ°á»›c, tinh chá»‰nh sau</span></div>
+            <div className="mb-2 flex items-center justify-between"><Label className="text-sm font-semibold">1. Output Preset</Label><span className="text-xs text-slate-500">Chọn trước, tinh chỉnh sau</span></div>
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               {OUTPUT_PRESETS.map((item) => (
                 <button key={item.id} type="button" onClick={() => { setOutputPreset(item.id); invalidatePreflight() }} className={cn("rounded-xl border p-3 text-left transition", outputPreset === item.id ? "border-amber-400/70 bg-amber-400/10" : "border-white/10 bg-white/[0.02] hover:border-white/25")}>
@@ -1944,7 +1953,7 @@ function RenderPanel({ project }: { project: Project }) {
           </section>
 
           <section>
-            <div className="mb-2 flex items-center justify-between"><Label className="text-sm font-semibold">2. Render Profile</Label><span className="text-xs text-slate-500">Thiáº¿t láº­p ká»¹ thuáº­t Ä‘Æ°á»£c áº©n trong NÃ¢ng cao</span></div>
+            <div className="mb-2 flex items-center justify-between"><Label className="text-sm font-semibold">2. Render Profile</Label><span className="text-xs text-slate-500">Thiết lập kỹ thuật được ẩn trong Nâng cao</span></div>
             <div className="grid gap-2 sm:grid-cols-3">
               {RENDER_PROFILES.map((item) => (
                 <button key={item.id} type="button" onClick={() => applyProfile(item.id)} className={cn("rounded-xl border p-3 text-left transition", profileId === item.id ? "border-sky-400/70 bg-sky-400/10" : "border-white/10 bg-white/[0.02] hover:border-white/25")}>
@@ -1953,35 +1962,35 @@ function RenderPanel({ project }: { project: Project }) {
                 </button>
               ))}
             </div>
-            <p className="mt-2 text-[11px] text-slate-500">Äang chá»n: <span className="text-slate-300">{selectedProfile.title}</span>. Codec, CRF vÃ  FPS chá»‰ dÃ nh cho trÆ°á»ng há»£p cáº§n tinh chá»‰nh.</p>
+            <p className="mt-2 text-[11px] text-slate-500">Đang chọn: <span className="text-slate-300">{selectedProfile.title}</span>. Codec, CRF và FPS chỉ dành cho trường hợp cần tinh chỉnh.</p>
           </section>
 
           <section className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
             <Label className="text-sm font-semibold">3. Audio Mix</Label>
             <div className="mt-3 grid gap-4 md:grid-cols-2">
-              <div><div className="mb-1 flex justify-between text-xs"><span>Giá»ng Ä‘á»c</span><span>{Math.round(voiceVol * 100)}%</span></div><Slider value={[voiceVol]} min={0} max={2} step={0.05} onValueChange={(v) => { setVoiceVol(v[0]); invalidatePreflight() }} /></div>
-              <div><div className="mb-1 flex justify-between text-xs"><span>Nháº¡c ná»n</span><span>{Math.round(musicVol * 100)}%</span></div><Slider value={[musicVol]} min={0} max={1} step={0.05} onValueChange={(v) => { setMusicVol(v[0]); invalidatePreflight() }} /></div>
+              <div><div className="mb-1 flex justify-between text-xs"><span>Giọng đọc</span><span>{Math.round(voiceVol * 100)}%</span></div><Slider value={[voiceVol]} min={0} max={2} step={0.05} onValueChange={(v) => { setVoiceVol(v[0]); invalidatePreflight() }} /></div>
+              <div><div className="mb-1 flex justify-between text-xs"><span>Nhạc nền</span><span>{Math.round(musicVol * 100)}%</span></div><Slider value={[musicVol]} min={0} max={1} step={0.05} onValueChange={(v) => { setMusicVol(v[0]); invalidatePreflight() }} /></div>
             </div>
             <div className="mt-4 flex flex-wrap gap-x-6 gap-y-3 text-xs">
-              <label className="flex items-center gap-2"><Switch checked={ducking} onCheckedChange={(v) => { setDucking(v); invalidatePreflight() }} /> Tá»± giáº£m nháº¡c khi cÃ³ giá»ng</label>
-              <label className="flex items-center gap-2"><Switch checked={normalize} onCheckedChange={(v) => { setNormalize(v); invalidatePreflight() }} /> Chuáº©n hÃ³a Ã¢m lÆ°á»£ng</label>
+              <label className="flex items-center gap-2"><Switch checked={ducking} onCheckedChange={(v) => { setDucking(v); invalidatePreflight() }} /> Tự giảm nhạc khi có giọng</label>
+              <label className="flex items-center gap-2"><Switch checked={normalize} onCheckedChange={(v) => { setNormalize(v); invalidatePreflight() }} /> Chuẩn hóa âm lượng</label>
             </div>
           </section>
 
           <section className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
             <div className="flex items-center justify-between"><Label className="text-sm font-semibold">4. Subtitle</Label><Switch checked={enableSubs} onCheckedChange={(v) => { setEnableSubs(v); invalidatePreflight() }} /></div>
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
-              {[{ id: "highlight", title: "Ná»•i báº­t", detail: "Chá»¯ lá»›n, tÆ°Æ¡ng pháº£n cao", cfg: { font_size: 64, position: "center", primary_color: "#FFD700", border_width: 4, granularity: "phrase" } }, { id: "basic", title: "CÆ¡ báº£n", detail: "Dá»… Ä‘á»c, gá»n gÃ ng", cfg: { font_size: 48, position: "bottom", primary_color: "#FFFFFF", border_width: 2, granularity: "sentence" } }, { id: "karaoke", title: "Karaoke", detail: "BÃ¡m theo tá»«ng nhá»‹p cÃ¢u", cfg: { font_size: 56, position: "bottom", primary_color: "#00E5FF", border_width: 3, granularity: "phrase" } }].map((item) => (
+              {[{ id: "highlight", title: "Nổi bật", detail: "Chữ lớn, tương phản cao", cfg: { font_size: 64, position: "center", primary_color: "#FFD700", border_width: 4, granularity: "phrase" } }, { id: "basic", title: "Cơ bản", detail: "Dễ đọc, gọn gàng", cfg: { font_size: 48, position: "bottom", primary_color: "#FFFFFF", border_width: 2, granularity: "sentence" } }, { id: "karaoke", title: "Karaoke", detail: "Bám theo từng nhịp câu", cfg: { font_size: 56, position: "bottom", primary_color: "#00E5FF", border_width: 3, granularity: "phrase" } }].map((item) => (
                 <button key={item.id} type="button" disabled={!enableSubs} onClick={() => { setSubtitleStyle(item.id); setSubtitleConfig(item.cfg); invalidatePreflight() }} className={cn("rounded-lg border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50", subtitleStyle === item.id ? "border-fuchsia-400/70 bg-fuchsia-400/10" : "border-white/10 hover:border-white/25")}><div className="text-sm font-medium">{item.title}</div><div className="mt-1 text-[11px] text-slate-500">{item.detail}</div></button>
               ))}
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
-              {[{ id: "embed", label: "NhÃºng vÃ o video" }, { id: "srt", label: "Xuáº¥t file .SRT" }, { id: "ass", label: "Xuáº¥t file .ASS" }].map((item) => <label key={item.id} className={cn("flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs", subtitleFormat === item.id && enableSubs ? "border-fuchsia-400/60 bg-fuchsia-400/10" : "border-white/10", !enableSubs && "opacity-50")}><input type="radio" name="subtitle-format" value={item.id} checked={subtitleFormat === item.id} disabled={!enableSubs} onChange={() => { setSubtitleFormat(item.id); invalidatePreflight() }} />{item.label}</label>)}
+              {[{ id: "embed", label: "Nhúng vào video" }, { id: "srt", label: "Xuất file .SRT" }, { id: "ass", label: "Xuất file .ASS" }].map((item) => <label key={item.id} className={cn("flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs", subtitleFormat === item.id && enableSubs ? "border-fuchsia-400/60 bg-fuchsia-400/10" : "border-white/10", !enableSubs && "opacity-50")}><input type="radio" name="subtitle-format" value={item.id} checked={subtitleFormat === item.id} disabled={!enableSubs} onChange={() => { setSubtitleFormat(item.id); invalidatePreflight() }} />{item.label}</label>)}
             </div>
           </section>
 
           <details className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
-            <summary className="cursor-pointer text-sm font-medium text-slate-300">NÃ¢ng cao Â· CRF, preset, FPS, codec, bitrate</summary>
+            <summary className="cursor-pointer text-sm font-medium text-slate-300">Nâng cao · CRF, preset, FPS, codec, bitrate</summary>
             <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
               <div><Label className="text-xs">CRF</Label><Input type="number" min={15} max={40} value={crf} onChange={(e) => { setCrf(Number(e.target.value)); invalidatePreflight() }} /></div>
               <div><Label className="text-xs">FPS</Label><Input type="number" min={15} max={60} value={fps} onChange={(e) => { setFps(Number(e.target.value)); invalidatePreflight() }} /></div>
@@ -1991,21 +2000,22 @@ function RenderPanel({ project }: { project: Project }) {
             </div>
           </details>
 
-          <div className="rounded-xl border border-amber-300/20 bg-amber-300/[0.05] p-4 text-xs text-slate-400">Output dá»± kiáº¿n: <span className="font-medium text-slate-200">{selectedPreset.title}</span> Â· {selectedPreset.detail}. Render thá»±c táº¿ sáº½ dÃ¹ng media/voice tá»« Timeline vÃ  chá»‰ Ä‘Æ°á»£c Ä‘Ã¡nh dáº¥u hoÃ n táº¥t sau khi FFprobe xÃ¡c minh.</div>
+          <div className="rounded-xl border border-amber-300/20 bg-amber-300/[0.05] p-4 text-xs text-slate-400">Output dự kiến: <span className="font-medium text-slate-200">{selectedPreset.title}</span> · {selectedPreset.detail}. Render thực tế sẽ dùng media/voice từ Timeline và chỉ được đánh dấu hoàn tất sau khi FFprobe xác minh.</div>
         </div>
       </div>
 
       <div className="vas-card p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-base font-semibold text-slate-100">Kiá»ƒm tra trÆ°á»›c khi xuáº¥t</h3><p className="mt-1 text-xs text-slate-500">KhÃ´ng cÃ³ checklist Ä‘áº¡t thÃ¬ khÃ´ng thá»ƒ báº¯t Ä‘áº§u render.</p></div><Button variant="outline" onClick={runPreflight} disabled={preflightLoading || inProgress}><RefreshCw className={cn("h-4 w-4", preflightLoading && "animate-spin")} />{preflightLoading ? "Äang kiá»ƒm tra..." : "Kiá»ƒm tra láº¡i"}</Button></div>
-        {preflight ? <div className="mt-4 space-y-2">{preflight.checks.map((check) => <div key={check.label} className="flex items-start gap-2 rounded-lg border border-white/5 px-3 py-2 text-xs"><span className={cn("mt-0.5", check.ok ? "text-emerald-400" : "text-red-400")}>{check.ok ? "âœ“" : "Ã—"}</span><div><div className="font-medium text-slate-200">{check.label}</div><div className="text-slate-500">{check.detail}</div></div></div>)}<div className="flex flex-wrap gap-4 pt-2 text-xs text-slate-400"><span>Dung lÆ°á»£ng: {preflight.disk_free_gb.toFixed(2)} GB trá»‘ng</span><span>Æ¯á»›c tÃ­nh: ~{preflight.estimated_size_gb.toFixed(2)} GB</span></div>{preflight.missing_scenes.length > 0 && <div className="text-xs text-red-300">Scene cáº§n xá»­ lÃ½: {preflight.missing_scenes.join(", ")}</div>}</div> : <div className="mt-4 rounded-lg border border-dashed border-white/10 p-4 text-center text-xs text-slate-500">Nháº¥n â€œKiá»ƒm tra láº¡iâ€ Ä‘á»ƒ kiá»ƒm tra media, voice, subtitle, FFmpeg, FFprobe vÃ  dung lÆ°á»£ng trá»‘ng.</div>}
-        <div className="mt-4 flex flex-wrap gap-2"><Button onClick={start} disabled={!canRender || rendering || inProgress || !preflight?.ok} className="bg-gradient-to-r from-amber-500 to-amber-300 text-slate-950 hover:from-amber-400 hover:to-amber-200"><Play className="h-4 w-4" />{inProgress ? "Äang xá»­ lÃ½..." : "Báº¯t Ä‘áº§u render"}</Button>{inProgress && <Button variant="destructive" onClick={cancel}><Square className="h-4 w-4" />Há»§y</Button>}{(job?.status === "failed" || job?.status === "completed") && <Button variant="outline" onClick={retry}><RotateCcw className="h-4 w-4" />{job.status === "failed" ? "Thá»­ láº¡i tá»« bÆ°á»›c lá»—i" : "Xuáº¥t láº¡i sau chá»‰nh sá»­a"}</Button>}</div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-base font-semibold text-slate-100">Kiểm tra trước khi xuất</h3><p className="mt-1 text-xs text-slate-500">Không có checklist đạt thì không thể bắt đầu render.</p></div><Button variant="outline" onClick={runPreflight} disabled={preflightLoading || inProgress}><RefreshCw className={cn("h-4 w-4", preflightLoading && "animate-spin")} />{preflightLoading ? "Đang kiểm tra..." : "Kiểm tra lại"}</Button></div>
+        {preflight ? <div className="mt-4 space-y-2">{preflight.checks.map((check) => <div key={check.label} className="flex items-start gap-2 rounded-lg border border-white/5 px-3 py-2 text-xs"><span className={cn("mt-0.5", check.ok ? "text-emerald-400" : "text-red-400")}>{check.ok ? "✓" : "×"}</span><div><div className="font-medium text-slate-200">{check.label}</div><div className="text-slate-500">{check.detail}</div></div></div>)}<div className="flex flex-wrap gap-4 pt-2 text-xs text-slate-400"><span>Dung lượng: {preflight.disk_free_gb.toFixed(2)} GB trống</span><span>Ước tính: ~{preflight.estimated_size_gb.toFixed(2)} GB</span></div>{preflight.missing_scenes.length > 0 && <div className="text-xs text-red-300">Scene cần xử lý: {preflight.missing_scenes.join(", ")}</div>}</div> : <div className="mt-4 rounded-lg border border-dashed border-white/10 p-4 text-center text-xs text-slate-500">Nhấn “Kiểm tra lại” để kiểm tra media, voice, subtitle, FFmpeg, FFprobe và dung lượng trống.</div>}
+        <div className="mt-4 flex flex-wrap gap-2"><Button onClick={start} disabled={!canRender || rendering || inProgress || !preflight?.ok} className="bg-gradient-to-r from-amber-500 to-amber-300 text-slate-950 hover:from-amber-400 hover:to-amber-200"><Play className="h-4 w-4" />{inProgress ? "Đang xử lý..." : "Bắt đầu render"}</Button>{inProgress && <Button variant="destructive" onClick={cancel}><Square className="h-4 w-4" />Hủy</Button>}{(job?.status === "failed" || job?.status === "completed") && <Button variant="outline" onClick={retry}><RotateCcw className="h-4 w-4" />{job.status === "failed" ? "Thử lại từ bước lỗi" : "Xuất lại sau chỉnh sửa"}</Button>}</div>
       </div>
 
-      {job && <div className="vas-card p-5"><div className="mb-3 flex items-center justify-between"><h3 className="text-base font-semibold text-slate-100">HÃ ng Ä‘á»£i render</h3><Badge variant={job.status === "completed" ? "success" : job.status === "failed" || job.status === "cancelled" ? "destructive" : "warning"}>{STATUS_LABELS[job.status] || job.status}</Badge></div><div className="space-y-3"><div className="flex justify-between text-sm"><span>BÆ°á»›c: <strong>{job.current_step || "â€”"}</strong></span><span>{job.progress}%</span></div><Progress value={job.progress} />{job.error_message && <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-xs"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" /><span className="whitespace-pre-wrap">{job.error_message}</span></div>}{job.status === "completed" && job.output_path && <div className="space-y-3"><video src={outputVideoUrl(project.id, "output")} controls className="w-full max-h-[50vh] rounded-lg border" />{verifyResult && <div className={cn("rounded-lg border p-3 text-xs", verifyResult.ok ? "border-emerald-400/30 bg-emerald-400/5" : "border-red-400/30 bg-red-400/5")}><div className="font-medium">{verifyResult.ok ? "âœ“ Output Ä‘Ã£ verify báº±ng FFprobe" : "Ã— Verify output tháº¥t báº¡i"}</div><div className="mt-1 text-slate-500">{verifyResult.resolution || "â€”"} Â· {verifyResult.fps || 0} FPS Â· {verifyResult.duration.toFixed(2)} giÃ¢y Â· {verifyResult.file_size_mb.toFixed(2)} MB</div></div>}<Button variant="outline" onClick={async () => { try { const result = await api.openProjectFolder(project.id); const opened = await openLocalPath(result.path); if (!opened.ok) throw new Error(opened.message) } catch (error) { toast({ title: "KhÃ´ng má»Ÿ Ä‘Æ°á»£c thÆ° má»¥c Ä‘áº§u ra", description: String(error), variant: "destructive" }) } }}><FolderOpen className="h-4 w-4" />Má»Ÿ thÆ° má»¥c Ä‘áº§u ra</Button></div>}</div></div>}
-      {!job && <div className="vas-card p-5"><div className="flex flex-col items-center gap-3 py-8"><FileVideo className="h-10 w-10 text-slate-500/40" /><div className="text-sm text-slate-500">ChÆ°a cÃ³ job render. HoÃ n thÃ nh checklist Ä‘á»ƒ báº¯t Ä‘áº§u.</div></div></div>}
+      {job && <div className="vas-card p-5"><div className="mb-3 flex items-center justify-between"><h3 className="text-base font-semibold text-slate-100">Hàng đợi render</h3><Badge variant={job.status === "completed" ? "success" : job.status === "failed" || job.status === "cancelled" ? "destructive" : "warning"}>{STATUS_LABELS[job.status] || job.status}</Badge></div><div className="space-y-3"><div className="flex justify-between text-sm"><span>Bước: <strong>{job.current_step || "—"}</strong></span><span>{job.progress}%</span></div><Progress value={job.progress} />{job.error_message && <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-xs"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" /><span className="whitespace-pre-wrap">{job.error_message}</span></div>}{job.status === "completed" && job.output_path && <div className="space-y-3"><video src={outputVideoUrl(project.id, "output")} controls className="w-full max-h-[50vh] rounded-lg border" />{verifyResult && <div className={cn("rounded-lg border p-3 text-xs", verifyResult.ok ? "border-emerald-400/30 bg-emerald-400/5" : "border-red-400/30 bg-red-400/5")}><div className="font-medium">{verifyResult.ok ? "✓ Output đã verify bằng FFprobe" : "× Verify output thất bại"}</div><div className="mt-1 text-slate-500">{verifyResult.resolution || "—"} · {verifyResult.fps || 0} FPS · {verifyResult.duration.toFixed(2)} giây · {verifyResult.file_size_mb.toFixed(2)} MB</div></div>}<Button variant="outline" onClick={async () => { try { const result = await api.openProjectFolder(project.id); const opened = await openLocalPath(result.path); if (!opened.ok) throw new Error(opened.message) } catch (error) { toast({ title: "Không mở được thư mục đầu ra", description: String(error), variant: "destructive" }) } }}><FolderOpen className="h-4 w-4" />Mở thư mục đầu ra</Button></div>}</div></div>}
+      {!job && <div className="vas-card p-5"><div className="flex flex-col items-center gap-3 py-8"><FileVideo className="h-10 w-10 text-slate-500/40" /><div className="text-sm text-slate-500">Chưa có job render. Hoàn thành checklist để bắt đầu.</div></div></div>}
     </div>
   )
 }
+
 // ---------------------------------------------------------------------------
 // Main editor page
 // ---------------------------------------------------------------------------

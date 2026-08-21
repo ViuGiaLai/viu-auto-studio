@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -270,7 +270,6 @@ class SceneVoiceRequest(BaseModel):
     speed: float = Field(default=1.0, ge=0.25, le=4.0)
     pitch: float = Field(default=0.0, ge=-12.0, le=12.0)
     volume: float = Field(default=1.0, ge=0.0, le=2.0)
-
     provider: Optional[str] = None
 
 
@@ -290,6 +289,8 @@ class TTSConfigRequest(BaseModel):
     volume: float = Field(default=1.0, ge=0.0, le=2.0)
     model_dir: str = ""
     cloud_api_key: Optional[str] = None
+    api_key: Optional[str] = None
+    api_keys: Optional[Dict[str, str]] = None
     # Optional OmniVoice controls; ignored by other providers.
     reference_audio: str = ""
     reference_text: str = ""
@@ -313,6 +314,9 @@ class TTSConfigRead(BaseModel):
     volume: float
     model_dir: str
     cloud_api_key_masked: str = ""
+    api_key: str = ""
+    api_keys: Dict[str, str] = {}
+    api_keys_masked: Dict[str, str] = {}
     reference_audio: str = ""
     reference_text: str = ""
     voice_clone_prompt: str = ""
@@ -343,9 +347,6 @@ class TTSTestConnectionRequest(BaseModel):
     model_dir: str = ""
 
 
-# ---------------------------------------------------------------------------
-# Subtitles
-# ---------------------------------------------------------------------------
 class SubtitleConfig(BaseModel):
     font: str = "DejaVuSans"
     font_size: int = Field(default=48, ge=8, le=400)

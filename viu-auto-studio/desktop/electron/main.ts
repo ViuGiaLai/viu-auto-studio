@@ -119,6 +119,12 @@ function createWindow(): void {
       console.error(`[RendererConsole] ${message} (${sourceId}:${line})`)
     }
   })
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    console.error(`[RendererGone] reason=${details.reason} exitCode=${details.exitCode}`)
+  })
+  mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    console.error(`[PageLoadError] code=${errorCode} description=${errorDescription} url=${validatedURL} mainFrame=${isMainFrame}`)
+  })
 
   mainWindow.on("ready-to-show", () => {
     if (!captureDir) mainWindow.show()
@@ -306,18 +312,43 @@ function createWindow(): void {
         if (process.env.VIU_SETTINGS_WORKFLOW_SMOKE === "1") {
           const waitSettings = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
           await mainWindow.loadURL(`${base}/settings`)
+          await waitSettings(1800)
+          const settingsRuntimeErrors = await mainWindow.webContents.executeJavaScript(`window.__viuRuntimeErrors || []`)
+          const settingsInitialBody = String(await mainWindow.webContents.executeJavaScript(`document.body.innerText`))
+          fs.writeFileSync(path.join(captureDir, "settings-runtime-errors.json"), JSON.stringify({ errors: settingsRuntimeErrors, body: settingsInitialBody.slice(0, 1200) }, null, 2), "utf8")
+          if (settingsRuntimeErrors.length > 0) throw new Error(`Settings runtime errors: ${JSON.stringify(settingsRuntimeErrors)}`)
           await mainWindow.webContents.executeJavaScript(`new Promise((resolve, reject) => { const started = Date.now(); const check = () => { const body = document.body.innerText || ''; const tabs = [...document.querySelectorAll('button[role="tab"]')]; if (body.includes('Thiết lập nhanh') && tabs.length >= 8) resolve(true); else if (Date.now() - started > 15000) reject(new Error('Settings workflow không render đủ tab; tabs=' + tabs.map((node) => node.textContent).join('|'))); else setTimeout(check, 100); }; check(); })()`)
           const tabLabels = ["Thiết lập nhanh", "Nội dung & AI", "Giọng & Âm thanh", "Hình ảnh & Video", "Dựng & Xuất video", "Tài khoản & Kết nối", "Hiệu năng", "Nâng cao"]
           const tabResults: Array<{ label: string; selected: string; bodyHasLabel: boolean }> = []
           for (const label of tabLabels) {
             await mainWindow.webContents.executeJavaScript(`(() => { const target = [...document.querySelectorAll('button[role="tab"]')].find((node) => (node.textContent || '').includes(${JSON.stringify(label)})); if (!target) throw new Error('Không tìm thấy tab: ' + ${JSON.stringify(label)}); target.click(); return true })()`)
             await waitSettings(350)
+            const tabRuntimeErrors = await mainWindow.webContents.executeJavaScript(`window.__viuRuntimeErrors || []`)
+            fs.writeFileSync(path.join(captureDir, `settings-tab-${tabLabels.indexOf(label) + 1}-runtime-errors.json`), JSON.stringify({ label, errors: tabRuntimeErrors }, null, 2), "utf8")
+            if (tabRuntimeErrors.length > 0) throw new Error(`Settings runtime errors after ${label}: ${JSON.stringify(tabRuntimeErrors)}`)
             const state = await mainWindow.webContents.executeJavaScript(`(() => { const target = [...document.querySelectorAll('button[role="tab"]')].find((node) => (node.textContent || '').includes(${JSON.stringify(label)})); return { selected: target?.getAttribute('aria-selected') || '', bodyHasLabel: (document.body.innerText || '').includes(${JSON.stringify(label)}) }; })()`)
             tabResults.push({ label, selected: state.selected, bodyHasLabel: state.bodyHasLabel })
             fs.writeFileSync(path.join(captureDir, `settings-tab-${tabLabels.indexOf(label) + 1}.png`), (await mainWindow.webContents.capturePage()).toPNG())
             if (state.selected !== "true" || !state.bodyHasLabel) throw new Error(`Tab Settings không active: ${label}`)
           }
-          fs.writeFileSync(path.join(captureDir, "settings-workflow-result.json"), JSON.stringify({ tabResults, url: mainWindow.webContents.getURL() }, null, 2), "utf8")
+          await mainWindow.webContents.executeJavaScript(`(() => { const target = [...document.querySelectorAll('button[role="tab"]')].find((node) => (node.textContent || '').includes('Dựng & Xuất video')); if (!target) throw new Error('Không tìm thấy tab Dựng & Xuất video'); target.click(); return true })()`)
+          await waitSettings(500)
+          const originalPreset = await mainWindow.webContents.executeJavaScript(`(() => [...document.querySelectorAll('button[aria-pressed="true"]')].find((node) => ['YouTube ngang','Shorts / TikTok','Video vuông','Chất lượng cao'].some((label) => (node.textContent || '').includes(label)))?.textContent || 'YouTube ngang')`)
+          const originalSubtitle = await mainWindow.webContents.executeJavaScript(`(() => [...document.querySelectorAll('button[aria-pressed="true"]')].find((node) => ['Nổi bật','Cơ bản','Karaoke'].some((label) => (node.textContent || '').includes(label)))?.textContent || 'Nổi bật')`)
+          await mainWindow.webContents.executeJavaScript(`(() => { const target = [...document.querySelectorAll('button')].find((node) => (node.textContent || '').includes('Shorts / TikTok')); if (!target) throw new Error('Không tìm thấy Output Preset Shorts'); target.click(); const subtitle = [...document.querySelectorAll('button')].find((node) => (node.textContent || '').includes('Karaoke')); if (!subtitle) throw new Error('Không tìm thấy Subtitle Karaoke'); subtitle.click(); return true })()`)
+          await waitSettings(250)
+          await mainWindow.webContents.executeJavaScript(`(() => { const save = [...document.querySelectorAll('button')].find((node) => (node.textContent || '').trim().includes('Lưu cài đặt')); if (!save) throw new Error('Không tìm thấy nút Lưu cài đặt'); save.click(); return true })()`)
+          await waitSettings(700)
+          await mainWindow.loadURL(`${base}/settings?tab=edit`)
+          await waitSettings(900)
+          const persistedRenderSettings = await mainWindow.webContents.executeJavaScript(`(() => ({ preset: [...document.querySelectorAll('button[aria-pressed="true"]')].find((node) => (node.textContent || '').includes('Shorts / TikTok'))?.textContent || '', subtitle: [...document.querySelectorAll('button[aria-pressed="true"]')].find((node) => (node.textContent || '').includes('Karaoke'))?.textContent || '', sliders: document.querySelectorAll('[role="slider"]').length }))()`)
+          if (!persistedRenderSettings.preset || !persistedRenderSettings.subtitle || persistedRenderSettings.sliders < 2) throw new Error('Cấu hình xuất Settings không persistence hoặc thiếu control thật')
+          const restorePresetLabel = originalPreset.includes('Shorts / TikTok') ? 'Shorts / TikTok' : originalPreset.includes('Video vuông') ? 'Video vuông' : originalPreset.includes('Chất lượng cao') ? 'Chất lượng cao' : 'YouTube ngang'
+          const restoreSubtitleLabel = originalSubtitle.includes('Karaoke') ? 'Karaoke' : originalSubtitle.includes('Cơ bản') ? 'Cơ bản' : 'Nổi bật'
+          await mainWindow.webContents.executeJavaScript(`(() => { const preset = [...document.querySelectorAll('button')].find((node) => (node.textContent || '').includes(${JSON.stringify(restorePresetLabel)})); const subtitle = [...document.querySelectorAll('button')].find((node) => (node.textContent || '').includes(${JSON.stringify(restoreSubtitleLabel)})); if (!preset || !subtitle) throw new Error('Không thể khôi phục Output/Subtitle Settings'); preset.click(); subtitle.click(); const save = [...document.querySelectorAll('button')].find((node) => (node.textContent || '').trim().includes('Lưu cài đặt')); if (!save) throw new Error('Không tìm thấy Lưu cài đặt khi khôi phục'); save.click(); return true })()`)
+          await waitSettings(700)
+          fs.writeFileSync(path.join(captureDir, "settings-render-config-result.json"), JSON.stringify({ originalPreset, originalSubtitle, persistedRenderSettings, restored: true }, null, 2), "utf8")
+          fs.writeFileSync(path.join(captureDir, "settings-workflow-result.json"), JSON.stringify({ tabResults, url: mainWindow.webContents.getURL(), persistedRenderSettings }, null, 2), "utf8")
         }
 
         if (process.env.VIU_CHANNEL_CONFIG_SMOKE === "1") {
@@ -493,12 +524,21 @@ function createWindow(): void {
           if (!renderProjectId) throw new Error("VIU_RENDER_SMOKE cần VIU_CAPTURE_PROJECT_ID")
           await mainWindow.loadURL(`${base}/projects/${renderProjectId}`)
           await new Promise((resolve) => setTimeout(resolve, 1800))
+          const initialRuntimeErrors = await mainWindow.webContents.executeJavaScript(`window.__viuRuntimeErrors || []`)
+          fs.writeFileSync(path.join(captureDir, "render-option-d-runtime-errors.json"), JSON.stringify(initialRuntimeErrors, null, 2), "utf8")
+          const initialBody = String(await mainWindow.webContents.executeJavaScript(`document.body.innerText`))
+          if (initialRuntimeErrors.length > 0) throw new Error(`Renderer runtime errors: ${JSON.stringify(initialRuntimeErrors)} body=${initialBody.slice(0, 500)}`)
           const publishButton = await mainWindow.webContents.executeJavaScript(`Boolean([...document.querySelectorAll('button')].find((node) => (node.textContent || '').includes('Xuất bản'))) `)
           if (!publishButton) throw new Error("Không tìm thấy bước Xuất bản để kiểm tra Option D")
           await mainWindow.webContents.executeJavaScript(`(() => { const el = [...document.querySelectorAll('button')].find((node) => (node.textContent || '').includes('Xuất bản')); if (!el) throw new Error('Không tìm thấy nút Xuất bản'); el.click(); return true; })()`)
-          await new Promise((resolve) => setTimeout(resolve, 1000))
-          const before = String(await mainWindow.webContents.executeJavaScript(`document.body.innerText`))
-          for (const label of ["Dựng & Xuất video", "Output Preset", "Render Profile", "Audio Mix", "Subtitle", "Kiểm tra trước khi xuất", "FFprobe"]) {
+          await new Promise((resolve) => setTimeout(resolve, 2500))
+          const afterClickRuntimeErrors = await mainWindow.webContents.executeJavaScript(`window.__viuRuntimeErrors || []`)
+          const afterClickBody = String(await mainWindow.webContents.executeJavaScript(`document.body.innerText`))
+          fs.writeFileSync(path.join(captureDir, "render-option-d-after-click.json"), JSON.stringify({ errors: afterClickRuntimeErrors, body: afterClickBody }, null, 2), "utf8")
+          if (afterClickRuntimeErrors.length > 0) throw new Error(`Renderer runtime errors after Xuất bản: ${JSON.stringify(afterClickRuntimeErrors)}`)
+          if (!afterClickBody.includes("Cấu hình đầu ra")) throw new Error(`Project Editor không render panel xuất kịp; body=${afterClickBody.slice(0, 500)}`)
+          const before = afterClickBody
+          for (const label of ["Cấu hình đầu ra", "Output Preset", "Render Profile", "Audio Mix", "Subtitle", "Kiểm tra trước khi xuất", "FFprobe"]) {
             if (!before.includes(label)) throw new Error(`Render UI thiếu: ${label}`)
           }
           const detailsCount = await mainWindow.webContents.executeJavaScript(`document.querySelectorAll('details').length`)
@@ -526,7 +566,8 @@ function createWindow(): void {
           }
         }
       } catch (error) {
-        console.error("[Capture] failed:", error)
+        const details = error instanceof Error ? { message: error.message, stack: error.stack } : error
+        console.error("[Capture] failed:", JSON.stringify(details))
         process.exitCode = 1
       } finally {
         app.quit()

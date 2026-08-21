@@ -213,6 +213,9 @@ export interface TTSConfig {
   volume: number
   model_dir: string
   cloud_api_key_masked: string
+  api_key?: string
+  api_keys?: Record<string, string>
+  api_keys_masked?: Record<string, string>
   reference_audio?: string
   reference_text?: string
   voice_clone_prompt?: string
