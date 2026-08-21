@@ -2034,11 +2034,38 @@ def render_output(project_id: int, kind: str = "output", db: Session = Depends(g
     if not project:
         raise HTTPException(404, "Project không tồn tại")
     project_dir = Path(project.project_directory) if project.project_directory else (Path(PROJECTS_DIR) / f"project_{project_id}")
-    file_name = "preview.mp4" if kind == "preview" else "output.mp4"
-    path = project_dir / file_name
-    if not path.exists():
-        raise HTTPException(404, "Video chưa được render")
-    return FileResponse(str(path), media_type="video/mp4")
+
+    candidates: list[Path] = []
+    # 1. Check completed render jobs first
+    jobs = db.query(RenderJob).filter(RenderJob.project_id == project_id, RenderJob.status == "completed").order_by(RenderJob.id.desc()).all()
+    for j in jobs:
+        if j.output_path:
+            candidates.append(Path(j.output_path))
+
+    # 2. Check standard filenames
+    if kind == "preview":
+        candidates += [project_dir / "preview.mp4", project_dir / "output.mp4"]
+    else:
+        candidates += [project_dir / "output.mp4", project_dir / "final_output.mp4", project_dir / "final.mp4", project_dir / "preview.mp4"]
+
+    # 3. Check any .mp4 files in project folder
+    if project_dir.exists():
+        for p in project_dir.glob("*.mp4"):
+            if p not in candidates:
+                candidates.append(p)
+
+    found = next((c for c in candidates if c.is_file() and c.stat().st_size > 0), None)
+    if not found:
+        raise HTTPException(404, "Video chưa được render hoặc file output không tồn tại")
+
+    return FileResponse(
+        str(found),
+        media_type="video/mp4",
+        headers={
+            "Accept-Ranges": "bytes",
+            "Content-Disposition": f"inline; filename={found.name}",
+        },
+    )
 
 
 # ===========================================================================
