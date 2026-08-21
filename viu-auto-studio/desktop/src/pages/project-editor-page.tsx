@@ -94,26 +94,14 @@ const SUBTITLE_PRESETS: Array<{ name: string; cfg: Partial<SubtitleConfig> }> = 
 function NewProjectForm({ onCreated }: { onCreated: (id: number) => void }) {
   const [name, setName] = useState("")
   const [topic, setTopic] = useState("")
-    const [channelType, setChannelType] = useState<"recap" | "ai_studio">("ai_studio")
-  const [channelId, setChannelId] = useState<number | null>(null)
-  const [channels, setChannels] = useState<Array<{ id: number; name: string }>>([])
+  const [channelType, setChannelType] = useState<"recap" | "ai_studio">("ai_studio")
   const [videoType, setVideoType] = useState("long")
-
   const [aspect, setAspect] = useState("16:9")
   const [language, setLanguage] = useState("vi")
-  const [duration, setDuration] = useState(120)
   const [outputFolder, setOutputFolder] = useState("")
   const [loading, setLoading] = useState(false)
 
-    useEffect(() => {
-    api.listChannels().then((items) => {
-      setChannels(items)
-      if (items.length === 1) setChannelId(items[0].id)
-    }).catch(() => undefined)
-  }, [])
-
   const submit = async (e: React.FormEvent) => {
-
     e.preventDefault()
     if (!name.trim()) {
       toast({ title: "Thiếu tên dự án", variant: "destructive" })
@@ -122,14 +110,12 @@ function NewProjectForm({ onCreated }: { onCreated: (id: number) => void }) {
     setLoading(true)
     try {
       const p = await api.createProject({
-                name: name.trim(),
-        channel_id: channelId,
+        name: name.trim(),
         topic: topic.trim() || undefined,
-
         video_type: videoType,
         aspect_ratio: aspect,
         language,
-        target_duration: duration,
+        target_duration: videoType === "short" ? 60 : 180,
         project_type: channelType === "recap" ? "recap" : "ai_studio",
         output_folder: outputFolder.trim() || undefined,
       })
@@ -142,29 +128,55 @@ function NewProjectForm({ onCreated }: { onCreated: (id: number) => void }) {
     }
   }
 
+  const chooseDir = async () => {
+    try {
+      const res = await selectDirectory()
+      if (res?.path) setOutputFolder(res.path)
+    } catch {
+      // User cancelled
+    }
+  }
+
   return (
-    <form onSubmit={submit} className="mx-auto mt-10 max-w-2xl space-y-5 rounded-lg border bg-[#141d22] p-8">
+    <form onSubmit={submit} className="mx-auto mt-10 max-w-2xl space-y-6 rounded-2xl border border-white/10 bg-[#121B22] p-8 shadow-2xl">
       <div className="text-center">
-        <Clapperboard className="mx-auto h-10 w-10 text-amber-400" />
-        <h2 className="mt-2 text-xl font-bold">Tạo Project Mới</h2>
-        <p className="mt-1 text-sm text-slate-500">Định nghĩa video bạn muốn tạo</p>
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-400 font-bold shadow-lg shadow-amber-500/10">
+          <Clapperboard className="h-6 w-6" />
+        </div>
+        <h2 className="mt-3 text-xl font-bold text-white">Tạo Dự Án Mới</h2>
+        <p className="mt-1 text-xs text-slate-400">Khởi tạo video mới. Cấu hình chi tiết có thể chỉnh sửa trong Studio.</p>
       </div>
-      <div className="space-y-1.5">
-        <Label>Tên Project *</Label>
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="VD: Series AI cho người mới" />
-      </div>
-      <div className="space-y-1.5">
-        <Label>Chủ đề video</Label>
-        <Input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="VD: Trí tuệ nhân tạo là gì?" />
+
+      <div className="space-y-4">
+        <div className="space-y-1.5">
+          <Label className="text-sm font-semibold text-slate-200">Tên dự án *</Label>
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="VD: Bí ẩn đại dương sâu thẳm · Tập 1"
+            className="h-10 border-white/10 bg-white/[0.03] text-sm text-slate-100 placeholder:text-slate-500 focus:border-amber-500/60"
+            autoFocus
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label className="text-sm font-semibold text-slate-200">Chủ đề / Ý tưởng video <span className="text-xs font-normal text-slate-500">(Tùy chọn)</span></Label>
+          <Input
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            placeholder="VD: Khám phá những loài sinh vật kỳ bí dưới rãnh Mariana"
+            className="h-10 border-white/10 bg-white/[0.03] text-sm text-slate-100 placeholder:text-slate-500 focus:border-amber-500/60"
+          />
+        </div>
       </div>
 
       {/* Channel type selection cards */}
       <div className="space-y-2">
-        <Label>Loại kênh</Label>
+        <Label className="text-sm font-semibold text-slate-200">Loại quy trình</Label>
         <div className="grid grid-cols-2 gap-3">
           {([
+            { value: "ai_studio" as const, icon: "🤖", title: "AI Studio", desc: "Tự động kịch bản & phân cảnh AI" },
             { value: "recap" as const, icon: "🎬", title: "Recap", desc: "Tóm tắt nội dung, phim, sự kiện" },
-            { value: "ai_studio" as const, icon: "🤖", title: "AI Studio", desc: "Kịch bản gốc do AI sáng tác" },
           ] as const).map((card) => (
             <button
               key={card.value}
@@ -187,97 +199,64 @@ function NewProjectForm({ onCreated }: { onCreated: (id: number) => void }) {
 
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1.5">
-          <Label>Loại video</Label>
-          <Select value={videoType} onValueChange={setVideoType}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {VIDEO_TYPES.map((t) => (
-                <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-              ))}
+          <Label className="text-sm font-semibold text-slate-200">Định dạng khung hình</Label>
+          <Select
+            value={aspect}
+            onValueChange={(v) => {
+              setAspect(v)
+              setVideoType(v === "16:9" ? "long" : "short")
+            }}
+          >
+            <SelectTrigger className="h-10 border-white/10 bg-[#101920] text-sm"><SelectValue /></SelectTrigger>
+            <SelectContent className="bg-[#101920] border-white/10 text-sm">
+              <SelectItem value="16:9">16:9 · Video ngang (YouTube)</SelectItem>
+              <SelectItem value="9:16">9:16 · Video dọc (TikTok/Shorts)</SelectItem>
             </SelectContent>
           </Select>
         </div>
+
         <div className="space-y-1.5">
-          <Label>Tỷ lệ khung hình</Label>
-          <Select value={aspect} onValueChange={setAspect}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {ASPECT_RATIOS.map((a) => (
-                <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5">
-          <Label>Ngôn ngữ</Label>
+          <Label className="text-sm font-semibold text-slate-200">Ngôn ngữ</Label>
           <Select value={language} onValueChange={setLanguage}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
+            <SelectTrigger className="h-10 border-white/10 bg-[#101920] text-sm"><SelectValue /></SelectTrigger>
+            <SelectContent className="bg-[#101920] border-white/10 text-sm">
               {LANGUAGES.map((l) => (
                 <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-1.5">
-          <Label>Độ dài mục tiêu (giây)</Label>
-          <Input type="number" min={15} max={1800} value={duration} onChange={(e) => setDuration(Number(e.target.value))} />
-        </div>
-      </div>
-
-            <div className="space-y-1.5">
-        <Label>Kênh sản xuất</Label>
-        <Select value={channelId ? String(channelId) : "none"} onValueChange={(value) => setChannelId(value === "none" ? null : Number(value))}>
-          <SelectTrigger><SelectValue placeholder="Chọn kênh" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">Không gắn kênh</SelectItem>
-            {channels.map((channel) => <SelectItem key={channel.id} value={String(channel.id)}>{channel.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <p className="text-[11px] text-slate-500">Kênh quyết định giọng, phong cách viết, model media và chế độ duyệt.</p>
       </div>
 
       {/* Output folder */}
       <div className="space-y-1.5">
-
-        <Label>Output Folder (tuỳ chọn)</Label>
+        <Label className="text-sm font-semibold text-slate-200">Thư mục dự án</Label>
         <div className="flex gap-2">
           <Input
             value={outputFolder}
             onChange={(e) => setOutputFolder(e.target.value)}
-            placeholder="Mặc định: thư mục projects trong app"
+            placeholder="Để trống để dùng thư mục riêng tự động"
+            className="h-10 flex-1 border-white/10 bg-white/[0.03] text-xs text-slate-200 font-mono placeholder:text-slate-600"
           />
-          <button
+          <Button
             type="button"
-            onClick={async () => {
-              try {
-                const folder = await selectDirectory()
-                if (folder) setOutputFolder(folder)
-              } catch { /* noop */ }
-            }}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs text-slate-300 transition-colors hover:bg-white/[0.08]"
+            variant="outline"
+            onClick={chooseDir}
+            className="gap-1.5 shrink-0 text-xs border-white/10 hover:bg-white/5"
           >
             <FolderOpen className="h-4 w-4" />
-            Browse
-          </button>
+            Chọn thư mục
+          </Button>
         </div>
       </div>
 
-      <div className="flex gap-3">
-        <Button
-          type="button"
-          variant="outline"
-          className="flex-1"
-          onClick={() => window.history.back()}
-        >
-          Huỷ
-        </Button>
+      <div className="pt-2">
         <Button
           type="submit"
-          className="flex-1 bg-gradient-to-r from-[#6d28d9] to-[#8b5cf6] text-white shadow-lg shadow-purple-500/20 hover:brightness-110"
-          disabled={loading}
+          disabled={loading || !name.trim()}
+          className="w-full h-11 bg-gradient-to-r from-[#d9940a] to-[#faaa02] text-[#121820] font-bold text-sm shadow-lg shadow-amber-500/20 hover:brightness-110"
         >
-          {loading ? "Đang tạo..." : "Tạo Project"}
+          {loading ? "Đang tạo..." : "🚀 Tạo dự án & Bắt đầu"}
         </Button>
       </div>
     </form>
@@ -554,24 +533,27 @@ function ScriptEditor({ project, onBuildScenes, onApproveAndContinue }: { projec
   const [text, setText] = useState("")
 
   useEffect(() => {
-    if (script) return
     api
       .getScript(project.id)
       .then((s) => {
-        if (s?.full_script !== undefined) setScript(s)
+        if (s && s.exists && s.full_script !== undefined) {
+          setScript(s)
+          setText(s.full_script || "")
+        } else {
+          setScript(null)
+          setText("")
+        }
       })
-      .catch(() => undefined)
-  }, [project.id, script, setScript])
+      .catch(() => {
+        setScript(null)
+        setText("")
+      })
+  }, [project.id, setScript])
+
   const [saving, setSaving] = useState(false)
   const [autoSaveTimer, setAutoSaveTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
   const [seoGenerating, setSeoGenerating] = useState(false)
   const [approving, setApproving] = useState(false)
-
-  useEffect(() => {
-    if (script?.full_script !== undefined) {
-      setText(script.full_script || "")
-    }
-  }, [script])
 
   const startAutoSave = (value: string) => {
     setText(value)
@@ -580,11 +562,25 @@ function ScriptEditor({ project, onBuildScenes, onApproveAndContinue }: { projec
     setAutoSaveTimer(
       setTimeout(() => {
         void (async () => {
-          if (!script) return
           setSaving(true)
           try {
-            await api.saveScript(project.id, { ...script, full_script: value })
-            setScript({ ...script, full_script: value })
+            await api.saveScript(project.id, {
+              title: script?.title || project.name,
+              hook: script?.hook || "",
+              angle: script?.angle || "",
+              outline: script?.outline || [],
+              full_script: value,
+              thumbnail_concept: script?.thumbnail_concept || "",
+              thumbnail_prompt: script?.thumbnail_prompt || "",
+              seo: script?.seo || { youtube_title: project.name, description: "", hashtags: [], tags: [] },
+            })
+            setScript({
+              ...(script || {}),
+              project_id: project.id,
+              exists: true,
+              title: script?.title || project.name,
+              full_script: value,
+            } as ScriptData)
             setDirtyScript(false)
           } catch (e) {
             toast({ title: "Lưu tự động thất bại", description: String(e) })
@@ -2597,11 +2593,11 @@ function RenderPanel({ project }: { project: Project }) {
 export default function ProjectEditorPage() {
   const { id } = useParams()
   const navigate = useNavigate()
-    const { pathname, search } = useLocation()
+  const { pathname, search } = useLocation()
 
   const isNew = pathname.endsWith("/projects/new") || id === "new"
   const projectId = isNew ? null : Number(id)
-  const { project, setProject, setScenes, setJob } = useEditorStore()
+  const { project, setProject, setScript, setScenes, setJob } = useEditorStore()
   const { backendOnline } = useAppStore()
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState("idea")
@@ -2612,11 +2608,15 @@ export default function ProjectEditorPage() {
   }
   const [channels, setChannels] = useState<Array<{ id: number; name: string }>>([])
 
-    const [configDialogOpen, setConfigDialogOpen] = useState(false)
+  const [configDialogOpen, setConfigDialogOpen] = useState(false)
 
   const job = useJobPolling(projectId, projectId !== null)
 
   useEffect(() => {
+    setProject(null)
+    setScript(null)
+    setScenes([])
+    setJob(null)
     if (isNew) {
       setLoading(false)
       return

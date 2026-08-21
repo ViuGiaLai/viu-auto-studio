@@ -35,4 +35,11 @@ def effective_project_config(db: Session, project: Project) -> dict:
     private_channel = raw.get("channel") if isinstance(raw.get("channel"), dict) else {}
     media = raw.get("media") if isinstance(raw.get("media"), dict) else {}
     voice = raw.get("voice") if isinstance(raw.get("voice"), dict) else {}
-    return {**inherited, **private_channel, **media, **voice}
+    flat_keys = {k: v for k, v in raw.items() if not isinstance(v, dict)}
+
+    merged = {**inherited, **private_channel, **media, **voice, **flat_keys}
+    # Sanitize default placeholders so global settings aren't clobbered by string "default"
+    for k in list(merged.keys()):
+        if merged[k] in ("default", "__default__", "none", ""):
+            merged.pop(k, None)
+    return merged

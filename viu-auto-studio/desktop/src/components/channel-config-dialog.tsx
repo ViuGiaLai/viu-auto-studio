@@ -1,6 +1,6 @@
 import { getCountryBadge, getSampleTextForVoice } from "@/components/voice-studio-panel"
 import { useEffect, useState } from "react"
-import { Play, RefreshCw } from "lucide-react"
+import { Play, RefreshCw, Sparkles, Wand2, Mic2, Image as ImageIcon, Video, Bot, Globe } from "lucide-react"
 
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
@@ -15,7 +15,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/design-system"
 import { api, mediaUrl } from "@/services/api"
-import type { TTSVoice } from "@/types"
+import type { TTSVoice, TTSConfig } from "@/types"
 import { toast } from "@/hooks/use-toast"
 import { cn } from "@/utils/cn"
 
@@ -51,7 +51,13 @@ const VOICE_STYLE_5AXES = [
 
 type Config = Record<string, unknown>
 
-const CONFIG_KEYS = new Set(["image_source", "video_style", "niche", "series_type", "description", "direction", "script_style", "hook", "long_video_duration", "short_video_duration", "target_audience", "content_rating", "thumbnail_style", "subtitle_style", "ai_provider", "tts_provider", "voice", "character_sync", "image_generator", "image_mode", "static_image_seconds", "video_model", "review_mode", "suggested_time", "language"])
+const CONFIG_KEYS = new Set([
+  "image_source", "video_style", "niche", "series_type", "description", "direction",
+  "script_style", "hook", "long_video_duration", "short_video_duration", "target_audience",
+  "content_rating", "thumbnail_style", "subtitle_style", "ai_provider", "tts_provider",
+  "voice", "character_sync", "image_generator", "image_mode", "static_image_seconds",
+  "video_model", "review_mode", "suggested_time", "language"
+])
 
 const DEFAULT_CONFIG: Config = {
   image_source: "ai",
@@ -69,7 +75,7 @@ const DEFAULT_CONFIG: Config = {
   thumbnail_style: "auto",
   subtitle_style: "default",
   ai_provider: "default",
-  tts_provider: "",
+  tts_provider: "default",
   voice: "",
   character_sync: "channel",
   image_generator: "google_flow",
@@ -97,6 +103,7 @@ export function ChannelConfigDialog({
   onSaved?: (config: Config) => void
 }) {
   const [config, setConfig] = useState<Config>(DEFAULT_CONFIG)
+  const [originalVoice, setOriginalVoice] = useState<string>("")
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
@@ -105,6 +112,10 @@ export function ChannelConfigDialog({
   const [previewingVoice, setPreviewingVoice] = useState(false)
   const [voices, setVoices] = useState<TTSVoice[]>([])
   const [styles, setStyles] = useState<Array<{ key: string; name: string; desc: string; tier: string }>>([])
+  
+  // Global settings reflection
+  const [globalSettings, setGlobalSettings] = useState<Record<string, unknown>>({})
+  const [globalTtsConfig, setGlobalTtsConfig] = useState<TTSConfig | null>(null)
 
   useEffect(() => {
     if (!open || (!channelId && !projectId)) return
@@ -112,11 +123,16 @@ export function ChannelConfigDialog({
     setLoading(true)
     const load = async () => {
       try {
-        const [source, st] = await Promise.all([
+        const [source, st, gSettings, gTts] = await Promise.all([
           channelId ? api.channelGetConfig(channelId) : api.getProjectConfig(projectId),
           api.videoStyles(),
+          api.getSettings().catch(() => ({})),
+          api.ttsGetConfig().catch(() => null),
         ])
         if (cancelled) return
+        setGlobalSettings(gSettings || {})
+        setGlobalTtsConfig(gTts)
+
         let loaded: Config = {}
         if ("config" in source) {
           loaded = source.config
@@ -137,8 +153,13 @@ export function ChannelConfigDialog({
         if (loaded.image_mode === "mixed") loaded.image_mode = "mix"
         if (loaded.image_mode === "images") loaded.image_mode = "image_only"
         if (loaded.image_mode === "video") loaded.image_mode = "video_only"
+        if (!loaded.ai_provider) loaded.ai_provider = "default"
+        if (!loaded.tts_provider) loaded.tts_provider = "default"
+
         setStyles(st)
-        setConfig({ ...DEFAULT_CONFIG, ...loaded })
+        const finalConfig = { ...DEFAULT_CONFIG, ...loaded }
+        setConfig(finalConfig)
+        setOriginalVoice(String(finalConfig.voice || ""))
         setDirty(false)
         setSavedAt(Date.now())
       } catch (error) {
@@ -154,7 +175,8 @@ export function ChannelConfigDialog({
   useEffect(() => {
     if (!open) return
     const provider = String(config.tts_provider || "").trim()
-    api.ttsListVoices(provider || undefined).then(setVoices).catch(() => setVoices([]))
+    const resolvedProv = provider === "default" || !provider ? undefined : provider
+    api.ttsListVoices(resolvedProv).then(setVoices).catch(() => setVoices([]))
   }, [open, config.tts_provider])
 
   const set = (key: string, value: unknown) => {
@@ -170,7 +192,9 @@ export function ChannelConfigDialog({
   const testVoiceConnection = async () => {
     setTestingVoice(true)
     try {
-      const result = await api.ttsTestConnection({ provider: String(config.tts_provider || "") || undefined })
+      const prov = String(config.tts_provider || "")
+      const resolvedProv = prov === "default" || !prov ? undefined : prov
+      const result = await api.ttsTestConnection({ provider: resolvedProv })
       if (!result.ok) throw new Error(result.message || "Provider TTS chưa sẵn sàng")
       toast({ title: "TTS sẵn sàng", description: result.message || "Đã kiểm tra kết nối thành công" })
     } catch (e) {
@@ -185,8 +209,10 @@ export function ChannelConfigDialog({
     try {
       const selectedVoice = voices.find((v) => v.id === String(config.voice))
       const text = getSampleTextForVoice(selectedVoice)
+      const prov = String(config.tts_provider || "")
+      const resolvedProv = prov === "default" || !prov ? undefined : prov
       const result = await api.ttsPreview(text, {
-        provider: String(config.tts_provider || "") || undefined,
+        provider: resolvedProv,
         voice: String(config.voice || "") || undefined,
       })
       if (!result.ok || !result.audio_path) throw new Error(result.message || "Không tạo được audio mẫu")
@@ -225,19 +251,41 @@ export function ChannelConfigDialog({
         }
         await api.updateProjectConfig(projectId, { ...projectConfig, channel: nextConfig })
       }
+
       const currentProject = await api.getProject(projectId)
       const targetDuration = currentProject.video_type === "short"
         ? (String(nextConfig.short_video_duration || "").startsWith("30") ? 45 : 105)
         : String(nextConfig.long_video_duration || "").startsWith("3") ? 240
           : String(nextConfig.long_video_duration || "").startsWith("10") ? 900 : 450
+
       await api.updateProject(projectId, {
         language: String(nextConfig.language || "vi"),
         target_duration: targetDuration,
       })
+
+      // If voice or TTS provider was modified, clear existing voice audio on scenes so next pipeline run re-synthesizes with the new voice!
+      const currentVoice = String(nextConfig.voice || "")
+      if (originalVoice && currentVoice && originalVoice !== currentVoice) {
+        try {
+          const scenes = await api.listScenes(projectId)
+          for (const sc of scenes) {
+            if (sc.audio_path) {
+              await api.updateScene(projectId, sc.id, { audio_path: "", status: "pending" })
+            }
+          }
+        } catch {
+          // Ignore
+        }
+      }
+
       setConfig({ ...DEFAULT_CONFIG, ...nextConfig })
+      setOriginalVoice(currentVoice)
       setDirty(false)
       setSavedAt(Date.now())
-      toast({ title: "Đã lưu cấu hình kênh", description: channelId ? "Cấu hình channel hiện tại đã được đồng bộ." : "Cấu hình riêng của project đã được lưu." })
+      toast({
+        title: "Đã lưu cấu hình kênh & áp dụng",
+        description: "Mọi thay đổi về giọng đọc, AI và nguồn hình sẽ được áp dụng ngay vào quy trình tiếp theo.",
+      })
       onSaved?.(nextConfig)
       onOpenChange(false)
     } catch (e) {
@@ -247,455 +295,432 @@ export function ChannelConfigDialog({
     }
   }
 
+  // Compute display names for global defaults
+  const globalAiName = (() => {
+    const prov = String(globalSettings.ai_translation_provider || "gemini").toLowerCase()
+    const geminiModel = String(globalSettings.gemini_model || "3.5 Flash")
+    if (prov === "deepseek") return "DeepSeek (API key)"
+    if (prov === "chatgpt") return "ChatGPT (tài khoản)"
+    if (prov === "openrouter") return "OpenRouter"
+    if (prov === "local") return "Cục bộ"
+    return `Gemini (${geminiModel})`
+  })()
+
+  const globalTtsName = (() => {
+    const prov = String(globalTtsConfig?.provider || "edge").toLowerCase()
+    if (prov === "elevenlabs") return "ElevenLabs"
+    if (prov === "kokoro_vi") return "Kokoro VN"
+    if (prov === "gemini_tts") return "Gemini TTS"
+    if (prov === "vbee") return "Vbee"
+    if (prov === "azure_tts") return "Azure TTS"
+    return "Edge TTS (Miễn phí)"
+  })()
+
+  const globalVoiceName = globalTtsConfig?.voice || "Hoài My (Nữ Bắc)"
+
   return (
-    <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : close())}>
-      <DialogContent className="max-h-[92vh] max-w-7xl overflow-y-auto rounded-2xl border border-cyan-400/20 bg-[#071017] p-0 shadow-2xl shadow-cyan-950/30">
-        <DialogHeader className="sticky top-0 z-20 border-b border-white/10 bg-[#071017]/95 px-7 py-5 backdrop-blur-xl">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <DialogTitle className="flex flex-wrap items-center gap-2 text-xl tracking-tight text-white">
-                <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-400/20 bg-cyan-400/10 text-lg">⚙️</span>
-                <span>Cấu hình kênh</span>
-                {channelName && <span className="text-sm font-normal text-slate-400">— {channelName}</span>}
-              </DialogTitle>
-              <DialogDescription className="mt-2 text-xs text-slate-500">Bộ não AI, giọng đọc, hình ảnh và lịch sản xuất cho project hiện tại.</DialogDescription>
+    <Dialog open={open} onOpenChange={close}>
+      <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto border border-white/10 bg-[#080d11] p-0 text-slate-100 shadow-2xl">
+        {/* Header */}
+        <div className="sticky top-0 z-20 flex items-center justify-between border-b border-white/10 bg-[#0c1419]/95 px-6 py-4 backdrop-blur-md">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400">
+              <Bot className="h-5 w-5" />
             </div>
-            <Badge variant="outline" className={dirty ? "shrink-0 border-amber-400/40 bg-amber-400/10 text-amber-300" : "shrink-0 border-emerald-400/30 bg-emerald-400/10 text-emerald-300"}>
-              {dirty ? "Đã thay đổi · Chưa lưu" : "Đã đồng bộ"}
-            </Badge>
+            <div>
+              <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
+                ⚙️ Cấu hình kênh
+                <span className="text-xs font-normal text-amber-400/90 font-mono">
+                  — {channelName} · cấu hình riêng
+                </span>
+              </DialogTitle>
+              <DialogDescription className="text-xs text-slate-400">
+                Bộ não AI, giọng đọc, hình ảnh và lịch sản xuất cho project hiện tại.
+              </DialogDescription>
+            </div>
           </div>
-        </DialogHeader>
-
-        {loading ? (
-          <div className="space-y-2 py-6">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-12 animate-pulse rounded-md bg-muted" />
-            ))}
+          <div className="flex items-center gap-2">
+            {savedAt && !dirty && (
+              <Badge variant="outline" className="border-emerald-500/40 text-emerald-400 bg-emerald-500/10 text-xs">
+                ✓ Đã đồng bộ
+              </Badge>
+            )}
+            {dirty && (
+              <Badge variant="outline" className="border-amber-500/40 text-amber-400 bg-amber-500/10 text-xs animate-pulse">
+                Có thay đổi chưa lưu
+              </Badge>
+            )}
           </div>
-        ) : (
-          <div className="space-y-5 bg-[#071017] px-7 py-6">
-            {/* 🧠 Nội dung & Bộ não */}
-            <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5 shadow-lg shadow-black/10">
-              <h3 className="mb-4 flex items-center gap-2 text-base font-semibold tracking-tight text-slate-100">🧠 Nội dung & Bộ não — quyết định chủ đề & chất riêng của kênh</h3>
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-slate-400">Nguồn hình</Label>
-                  <Select value={String(config.image_source)} onValueChange={(v) => set("image_source", v)}>
-                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ai">🤖 Google Flow tự động</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-slate-400">Kiểu video (bộ não AI)</Label>
-                  <Select value={String(config.video_style)} onValueChange={(v) => set("video_style", v)}>
-                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
-                      <SelectValue placeholder="— Chọn kiểu —" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {styles.map((s) => (
-                        <SelectItem key={s.key} value={s.key}>
-                          <span className="flex w-full items-center justify-between">
-                            {s.name}
-                            <Badge
-                              variant={s.tier === "FREE" ? "secondary" : "outline"}
-                              className="ml-2 text-[9px]"
-                            >
-                              {s.tier}
-                            </Badge>
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-slate-400">Ngách của kênh (gõ cụ thể để khác biệt)</Label>
-                  <Input
-                    className="border-white/10 bg-[#0c1419] text-slate-200 placeholder:text-slate-500"
-                    placeholder="Vd: Sinh tồn của thợ săn voi mùa đông vùng Siberia"
-                    value={String(config.niche || "")}
-                    onChange={(e) => set("niche", e.target.value)}
-                  />
-                </div>
+        </div>
+
+        <div className="space-y-6 p-6">
+          {/* SECTION 1: NỘI DUNG & BỘ NÃO */}
+          <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5 shadow-lg shadow-black/10 space-y-4">
+            <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-amber-300">
+              <Sparkles className="h-4 w-4" />
+              1. Nội dung & Bộ não — quyết định chủ đề & chất riêng của kênh
+            </h3>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-slate-400">Kiểu video (bộ não AI)</Label>
+                <Select value={String(config.video_style || "")} onValueChange={(v) => set("video_style", v)}>
+                  <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
+                    <SelectValue placeholder="— Chọn kiểu —" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#0c1419] border-white/10 text-slate-200">
+                    {styles.map((s) => (
+                      <SelectItem key={s.key} value={s.key}>
+                        {s.name} ({s.desc})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-slate-400">Kiểu chuỗi tập (chống trùng chủ đề)</Label>
-                  <Select value={String(config.series_type)} onValueChange={(v) => set("series_type", v)}>
-                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="anthology">Tuyển tập — mỗi tập một chủ đề MỚI (khuyên dùng)</SelectItem>
-                      <SelectItem value="series">Chuỗi — các tập liên quan nhau</SelectItem>
-                      <SelectItem value="random">Ngẫu nhiên</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              {!config.description && !config.direction && (
-                <p className="mt-3 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
-                  ⚠ Bạn chưa nhập Mô tả & Định hướng — ý tưởng sẽ dễ chung chung và trùng với kênh khác. Nên điền 2 ô dưới.
-                </p>
-              )}
-
-              <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-slate-400">Đối tượng xem mặc định</Label>
-                  <Input
-                    className="border-white/10 bg-[#0c1419] text-slate-200 placeholder:text-slate-500"
-                    placeholder="Vd: Người mới bắt đầu, 18–35 tuổi"
-                    value={String(config.target_audience || "")}
-                    onChange={(e) => set("target_audience", e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-slate-400">Phân loại nội dung</Label>
-                  <Select value={String(config.content_rating || "general")} onValueChange={(v) => set("content_rating", v)}>
-                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="general">Phổ thông — phù hợp đa số</SelectItem>
-                      <SelectItem value="teen">13+ — có chủ đề trưởng thành nhẹ</SelectItem>
-                      <SelectItem value="mature">18+ — nội dung trưởng thành</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-slate-400">Kiểu thumbnail</Label>
-                  <Select value={String(config.thumbnail_style || "auto")} onValueChange={(v) => set("thumbnail_style", v)}>
-                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="auto">Tự động theo nội dung</SelectItem>
-                      <SelectItem value="custom">Theo concept/prompt tùy chỉnh</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-slate-400">Kiểu phụ đề mặc định</Label>
-                  <Select value={String(config.subtitle_style || "default")} onValueChange={(v) => set("subtitle_style", v)}>
-                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="default">Mặc định theo Cài đặt chung</SelectItem>
-                      <SelectItem value="clean">Sạch, dễ đọc</SelectItem>
-                      <SelectItem value="bold">Đậm, tương phản cao</SelectItem>
-                      <SelectItem value="cinematic">Điện ảnh, tối giản</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-slate-400">Mô tả chi tiết kênh (nói cụ thể về gì)</Label>
-                  <Textarea
-                    className="border-white/10 bg-[#0c1419] font-mono text-sm text-slate-200 placeholder:text-slate-500"
-                    placeholder="Vd: Kênh kể chuyện sinh tồn của người tiền sử ở vùng băng giá..."
-                    value={String(config.description || "")}
-                    onChange={(e) => set("description", e.target.value)}
-                    rows={3}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-slate-400">Định hướng kênh (thiên về điều gì hơn)</Label>
-                  <Textarea
-                    className="border-white/10 bg-[#0c1419] font-mono text-sm text-slate-200 placeholder:text-slate-500"
-                    placeholder="Vd: Nghiêng về cảm xúc & kịch tính sinh tồn hơn là số liệu khoa học; khán giả phổ thông yêu thích lịch sử."
-                    value={String(config.direction || "")}
-                    onChange={(e) => set("direction", e.target.value)}
-                    rows={3}
-                  />
-                </div>
-              </div>
-
-              <div className="mt-4 space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Label className="text-xs font-medium text-slate-400">Phong cách viết kịch bản (giọng riêng của kênh)</Label>
-                </div>
-                  <Textarea
-                    className="border-white/10 bg-[#0c1419] font-mono text-sm text-slate-200 placeholder:text-slate-500"
-                    placeholder="Viết thành quy tắc cụ thể. Tránh các tính từ chung chung như 'hấp dẫn, chuyên nghiệp, cuốn hút'."
-                    value={String(config.script_style || "")}
-                  onChange={(e) => set("script_style", e.target.value)}
-                  rows={5}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-slate-400">Ngách của kênh (gõ cụ thể để khác biệt)</Label>
+                <Input
+                  className="border-white/10 bg-[#0c1419] text-sm text-slate-200 placeholder:text-slate-600"
+                  placeholder="Vd: Sinh tồn của thợ săn voi mùa đông vùng Siberia"
+                  value={String(config.niche || "")}
+                  onChange={(e) => set("niche", e.target.value)}
                 />
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs text-muted-foreground">Mẫu nhanh — bấm để điền rồi sửa tiếp:</span>
-                  {STYLE_CHIPS.map((chip) => (
-                    <Button variant="ghost"
-                      key={chip}
-                      type="button"
-                      onClick={() => set("script_style", chip)}
-                      className="rounded-full border px-3 py-1 text-xs transition-colors hover:bg-primary/15 hover:text-primary"
-                    >
-                      {chip}
-                    </Button>
-                  ))}
-                </div>
               </div>
-            </section>
 
-            <hr className="border-white/10" />
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-slate-400">Kiểu chuỗi tập (chống trùng chủ đề)</Label>
+                <Select value={String(config.series_type)} onValueChange={(v) => set("series_type", v)}>
+                  <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#0c1419] border-white/10 text-slate-200">
+                    <SelectItem value="anthology">Tuyển tập — mỗi tập một chủ đề MỚI (khuyên dùng)</SelectItem>
+                    <SelectItem value="sequential">Nối tiếp — tập sau tiếp cốt truyện tập trước</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-            {/* 📝 5 trục + Hook */}
-            <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5 shadow-lg shadow-black/10">
-              <h3 className="mb-4 flex items-center gap-2 text-base font-semibold tracking-tight text-slate-100">📝 Cách viết để AI thật sự rõ giọng — 5 trục</h3>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                {VOICE_STYLE_5AXES.map((a) => (
-                  <div key={a.title} className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-xs shadow-sm shadow-black/10">
-                    <div className="font-bold">{a.title}</div>
-                    <div className="mt-1 text-muted-foreground">{a.bad}</div>
-                    <div className="mt-0.5 text-emerald-300">{a.good}</div>
-                  </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-slate-400">Đối tượng xem mặc định</Label>
+                <Input
+                  className="border-white/10 bg-[#0c1419] text-sm text-slate-200 placeholder:text-slate-600"
+                  placeholder="Vd: Người mới bắt đầu, 18–35 tuổi"
+                  value={String(config.target_audience || "")}
+                  onChange={(e) => set("target_audience", e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-slate-400">Mô tả chi tiết kênh (nói cụ thể về gì)</Label>
+                <Textarea
+                  className="border-white/10 bg-[#0c1419] font-mono text-sm text-slate-200 placeholder:text-slate-600"
+                  placeholder="Vd: Kênh kể chuyện sinh tồn của người tiền sử ở vùng băng giá..."
+                  value={String(config.description || "")}
+                  onChange={(e) => set("description", e.target.value)}
+                  rows={3}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-slate-400">Định hướng kênh (thiên về điều gì hơn)</Label>
+                <Textarea
+                  className="border-white/10 bg-[#0c1419] font-mono text-sm text-slate-200 placeholder:text-slate-600"
+                  placeholder="Vd: Nghiêng về cảm xúc & kịch tính sinh tồn hơn là số liệu khoa học; khán giả phổ thông yêu thích lịch sử."
+                  value={String(config.direction || "")}
+                  onChange={(e) => set("direction", e.target.value)}
+                  rows={3}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs font-medium text-slate-400">Phong cách viết kịch bản (giọng riêng của kênh)</Label>
+              <Textarea
+                className="border-white/10 bg-[#0c1419] font-mono text-sm text-slate-200 placeholder:text-slate-600"
+                placeholder="Viết thành quy tắc cụ thể. Tránh các tính từ chung chung như 'hấp dẫn, chuyên nghiệp, cuốn hút'."
+                value={String(config.script_style || "")}
+                onChange={(e) => set("script_style", e.target.value)}
+                rows={4}
+              />
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <span className="text-xs text-slate-500">Mẫu nhanh:</span>
+                {STYLE_CHIPS.map((chip) => (
+                  <Button
+                    variant="ghost"
+                    key={chip}
+                    type="button"
+                    onClick={() => set("script_style", chip)}
+                    className="rounded-full border border-white/10 px-3 py-1 text-xs text-slate-300 hover:bg-amber-500/15 hover:text-amber-300"
+                  >
+                    {chip}
+                  </Button>
                 ))}
               </div>
-              <div className="mt-4 space-y-1.5">
-                <Label className="text-xs font-medium text-slate-400">Hook của kênh (câu chốt thương hiệu — AI lồng sau đoạn mở đầu)</Label>
-                <Textarea
-                    className="border-white/10 bg-[#0c1419] font-mono text-sm text-slate-200 placeholder:text-slate-500"
-                  placeholder="Vd: Mình là recap — kể cho bạn nghe chuyện thật mà không cần xem hết cả bộ phim."
-                  value={String(config.hook || "")}
-                  onChange={(e) => set("hook", e.target.value)}
-                  rows={2}
-                />
-              </div>
-            </section>
+            </div>
 
-            <hr className="border-white/10" />
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-slate-400">Hook của kênh (câu chốt thương hiệu — AI lồng sau đoạn mở đầu)</Label>
+              <Input
+                className="border-white/10 bg-[#0c1419] text-sm text-slate-200 placeholder:text-slate-600"
+                placeholder="Vd: Mình là recap — kể cho bạn nghe chuyện thật mà không cần xem hết cả bộ phim."
+                value={String(config.hook || "")}
+                onChange={(e) => set("hook", e.target.value)}
+              />
+            </div>
+          </section>
 
-            {/* Độ dài */}
-            <section className="grid gap-4 rounded-2xl border border-white/10 bg-white/[0.025] p-5 shadow-lg shadow-black/10 sm:grid-cols-2">
+          {/* SECTION 2: GIỌNG ĐỌC & HÌNH ẢNH (ĐỒNG BỘ THẬT SỰ) */}
+          <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5 shadow-lg shadow-black/10 space-y-5">
+            <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-amber-300">
+              <Mic2 className="h-4 w-4" />
+              2. Giọng đọc & Nguồn hình — áp dụng trực tiếp khi duyệt & xuất video
+            </h3>
+
+            <div className="grid gap-5 sm:grid-cols-2">
+              {/* AI Provider */}
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-slate-400">Độ dài Video dài mục tiêu</Label>
-                <Select value={String(config.long_video_duration)} onValueChange={(v) => set("long_video_duration", v)}>
+                <Label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                  <Wand2 className="h-3.5 w-3.5 text-amber-400" />
+                  Nhà cung cấp AI (Kịch bản & Phân tích)
+                </Label>
+                <Select value={String(config.ai_provider || "default")} onValueChange={(v) => set("ai_provider", v)}>
                   <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="3 - 5 phút">3 - 5 phút</SelectItem>
-                    <SelectItem value="5 - 10 phút">5 - 10 phút</SelectItem>
-                    <SelectItem value="10 - 20 phút">10 - 20 phút</SelectItem>
+                  <SelectContent className="bg-[#0c1419] border-white/10 text-slate-200">
+                    <SelectItem value="default">
+                      Mặc định (theo Cài đặt: {globalAiName})
+                    </SelectItem>
+                    <SelectItem value="gemini">Gemini (Google AI / Tài khoản)</SelectItem>
+                    <SelectItem value="chatgpt">ChatGPT (OpenAI / Tài khoản)</SelectItem>
+                    <SelectItem value="deepseek">DeepSeek (API key)</SelectItem>
+                    <SelectItem value="openrouter">OpenRouter</SelectItem>
+                    <SelectItem value="local">Cục bộ (không cần key)</SelectItem>
                   </SelectContent>
                 </Select>
+                <p className="text-[11px] text-slate-500">Được dùng khi sinh kịch bản, chia cảnh semantic và tạo visual prompt.</p>
               </div>
+
+              {/* TTS Provider */}
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-slate-400">Độ dài Shorts mục tiêu</Label>
-                <Select value={String(config.short_video_duration)} onValueChange={(v) => set("short_video_duration", v)}>
+                <Label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                  <Mic2 className="h-3.5 w-3.5 text-sky-400" />
+                  Nhà cung cấp Giọng đọc (TTS)
+                </Label>
+                <Select
+                  value={String(config.tts_provider || "default")}
+                  onValueChange={async (v) => {
+                    const prov = v === "default" ? "" : v
+                    set("tts_provider", v)
+                    try {
+                      const vs = await api.ttsListVoices(prov || undefined)
+                      setVoices(vs)
+                      set("voice", vs.length > 0 ? vs[0].id : "")
+                    } catch {
+                      setVoices([])
+                      set("voice", "")
+                    }
+                  }}
+                >
                   <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="30 - 60 giây">30 - 60 giây</SelectItem>
-                    <SelectItem value="90 - 120 giây">90 - 120 giây (Mặc định)</SelectItem>
+                  <SelectContent className="bg-[#0c1419] border-white/10 text-slate-200">
+                    <SelectItem value="default">
+                      Mặc định (theo Cài đặt: {globalTtsName})
+                    </SelectItem>
+                    <SelectItem value="edge">Edge TTS (miễn phí, chất lượng cao)</SelectItem>
+                    <SelectItem value="elevenlabs">ElevenLabs (cao cấp, AI)</SelectItem>
+                    <SelectItem value="kokoro_vi">Kokoro Việt Nam (local offline)</SelectItem>
+                    <SelectItem value="gemini_tts">Gemini TTS (AI Studio)</SelectItem>
+                    <SelectItem value="vbee">Vbee (giọng Việt đa vùng miền)</SelectItem>
+                    <SelectItem value="azure_tts">Azure TTS (Microsoft)</SelectItem>
+                    <SelectItem value="kokoro">Kokoro TTS (Anh/Mỹ/..., local)</SelectItem>
+                    <SelectItem value="local">Piper / Local TTS</SelectItem>
                   </SelectContent>
                 </Select>
+                <p className="text-[11px] text-slate-500">Tạo file âm thanh thật cho từng phân cảnh trong quy trình sản xuất.</p>
               </div>
-            </section>
 
-            <hr className="border-white/10" />
+              {/* Giọng cụ thể */}
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label className="text-xs font-semibold text-slate-300">
+                  Giọng đọc cụ thể
+                </Label>
+                <Select value={String(config.voice || "__default__")} onValueChange={(v) => set("voice", v === "__default__" ? "" : v)}>
+                  <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#0c1419] border-white/10 text-slate-200 max-h-60">
+                    <SelectItem value="__default__">Mặc định (Cài đặt chung: {globalVoiceName})</SelectItem>
+                    {String(config.voice || "").trim() && !voices.some((v) => v.id === String(config.voice)) && (
+                      <SelectItem value={String(config.voice)}>Đang chọn: {String(config.voice)}</SelectItem>
+                    )}
+                    {voices.map((voice) => {
+                      const badge = getCountryBadge(voice.language, voice.id)
+                      return (
+                        <SelectItem key={voice.id} value={voice.id}>
+                          {badge.flag} {voice.name} ({voice.gender === "female" ? "Nữ" : "Nam"}) · {voice.language}
+                        </SelectItem>
+                      )
+                    })}
+                  </SelectContent>
+                </Select>
 
-            {/* 🎙 Giọng & Hình */}
-            <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5 shadow-lg shadow-black/10">
-              <h3 className="mb-4 flex items-center gap-2 text-base font-semibold tracking-tight text-slate-100">🎙 Giọng & Hình</h3>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-slate-400">AI provider (văn bản)</Label>
-                  <Select value={String(config.ai_provider)} onValueChange={(v) => set("ai_provider", v)}>
-                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="default">Mặc định (theo Cài đặt chung)</SelectItem>
-                      <SelectItem value="openrouter">OpenRouter</SelectItem>
-                      <SelectItem value="gemini">Gemini</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-slate-400">Giọng đọc (TTS)</Label>
-                  <Select
-                    value={String(config.tts_provider || "default")}
-                    onValueChange={async (v) => {
-                      const prov = v === "default" ? "" : v
-                      set("tts_provider", prov)
-                      try {
-                        const vs = await api.ttsListVoices(prov || undefined)
-                        setVoices(vs)
-                        set("voice", vs.length > 0 ? vs[0].id : "")
-                      } catch {
-                        setVoices([])
-                        set("voice", "")
-                      }
-                    }}
+                <div className="flex gap-2 pt-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 h-9 text-xs border-white/10 bg-white/[0.02] hover:bg-white/10 gap-1.5 text-slate-200"
+                    disabled={previewingVoice}
+                    onClick={previewVoice}
                   >
-                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="default">Mặc định (theo Cài đặt chung)</SelectItem>
-                      <SelectItem value="edge">Edge TTS (miễn phí, cloud)</SelectItem>
-                      <SelectItem value="elevenlabs">ElevenLabs (cao cấp, AI)</SelectItem>
-                      <SelectItem value="kokoro_vi">Kokoro Việt Nam (local offline)</SelectItem>
-                      <SelectItem value="gemini_tts">Gemini TTS (AI Studio)</SelectItem>
-                      <SelectItem value="vbee">Vbee (giọng Việt đa vùng miền)</SelectItem>
-                      <SelectItem value="google_cloud_tts">Google Cloud TTS</SelectItem>
-                      <SelectItem value="azure_tts">Azure TTS</SelectItem>
-                      <SelectItem value="kokoro">Kokoro TTS (Anh/Mỹ/..., local)</SelectItem>
-                      <SelectItem value="omnivoice">OmniVoice (voice clone/design)</SelectItem>
-                      <SelectItem value="local">Piper / Local TTS</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-slate-400">Giọng cụ thể</Label>
-                  <Select value={String(config.voice || "__default__")} onValueChange={(v) => set("voice", v === "__default__" ? "" : v)}>
-                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__default__">Mặc định hệ thống</SelectItem>
-                      {String(config.voice || "").trim() && !voices.some((voice) => voice.id === String(config.voice)) && (
-                        <SelectItem value={String(config.voice)}>Đang dùng: {String(config.voice)}</SelectItem>
-                      )}
-                      {voices.map((voice) => {
-                        const badge = getCountryBadge(voice.language, voice.id)
-                        return (
-                          <SelectItem key={voice.id} value={voice.id}>
-                            {badge.flag} {voice.name}
-                          </SelectItem>
-                        )
-                      })}
-                    </SelectContent>
-                  </Select>
-
-                  <div className="flex gap-2 pt-1">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 h-8 text-xs border-white/10 bg-white/[0.02] hover:bg-white/10 gap-1.5"
-                      disabled={previewingVoice}
-                      onClick={previewVoice}
-                    >
-                      {previewingVoice ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5 fill-current" />}
-                      {previewingVoice ? "Đang tạo..." : "▶ Nghe thử"}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 h-8 text-xs border-white/10 bg-white/[0.02] hover:bg-white/10 gap-1.5"
-                      disabled={testingVoice}
-                      onClick={testVoiceConnection}
-                    >
-                      <RefreshCw className={cn("h-3.5 w-3.5", testingVoice && "animate-spin text-amber-400")} />
-                      {testingVoice ? "Đang test..." : "Test kết nối"}
-                    </Button>
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-slate-400">Đồng bộ nhân vật</Label>
-                  <Select value={String(config.character_sync)} onValueChange={(v) => set("character_sync", v)}>
-                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="channel">Cả kênh (dùng lại mọi video)</SelectItem>
-                      <SelectItem value="video">Từng video</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-slate-400">Tạo ảnh/video bằng</Label>
-                  <Select value={String(config.image_generator)} onValueChange={(v) => set("image_generator", v)}>
-                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="google_flow">Google Flow (Veo/Imagen)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-slate-400">Chế độ hình</Label>
-                  <Select value={String(config.image_mode)} onValueChange={(v) => set("image_mode", v)}>
-                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="mix">Trộn ảnh + video</SelectItem>
-                      <SelectItem value="image_only">Chỉ ảnh</SelectItem>
-                      <SelectItem value="video_only">Chỉ video</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-slate-400">Model video</Label>
-                  <Select value={String(config.video_model)} onValueChange={(v) => set("video_model", v)}>
-                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Veo 3.1 Lite">Veo 3.1 Lite · 10 credits</SelectItem>
-                      <SelectItem value="Veo 3.1 Fast">Veo 3.1 Fast · 20 credits</SelectItem>
-                      <SelectItem value="Veo 3.1 Quality">Veo 3.1 Quality · 100 credits</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    {previewingVoice ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5 fill-current" />}
+                    {previewingVoice ? "Đang phát..." : "▶ Nghe thử giọng đã chọn"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 h-9 text-xs border-white/10 bg-white/[0.02] hover:bg-white/10 gap-1.5 text-slate-200"
+                    disabled={testingVoice}
+                    onClick={testVoiceConnection}
+                  >
+                    <RefreshCw className={cn("h-3.5 w-3.5", testingVoice && "animate-spin text-amber-400")} />
+                    {testingVoice ? "Đang kiểm tra..." : "Kiểm tra kết nối TTS"}
+                  </Button>
                 </div>
               </div>
-              <div className="mt-4 flex flex-wrap items-center gap-2 rounded-md border border-cyan-500/20 bg-cyan-500/5 p-3">
-                <Button type="button" variant="outline" size="sm" onClick={() => void previewVoice()} disabled={previewingVoice}>
-                  {previewingVoice ? "Đang tạo mẫu..." : "▶ Nghe thử"}
-                </Button>
-                <Button type="button" variant="outline" size="sm" onClick={() => void testVoiceConnection()} disabled={testingVoice}>
-                  {testingVoice ? "Đang kiểm tra..." : "Test kết nối"}
-                </Button>
-                <span className="text-[11px] text-muted-foreground">Thao tác gọi TTS backend thật; lỗi provider sẽ hiển thị ngay tại đây.</span>
-              </div>
-            </section>
 
-            <hr className="border-white/10" />
-
-            {/* Ngôn ngữ project */}
-            <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5 shadow-lg shadow-black/10">
-              <h3 className="mb-4 flex items-center gap-2 text-base font-semibold tracking-tight text-slate-100">🌐 Ngôn ngữ sản xuất</h3>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-slate-400">Ngôn ngữ sản xuất</Label>
-                  <Select value={String(config.language)} onValueChange={(v) => set("language", v)}>
-                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="vi">Tiếng Việt (vi)</SelectItem>
-                      <SelectItem value="en">English (en)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+              {/* Nguồn hình & Chế độ hình */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                  <ImageIcon className="h-3.5 w-3.5 text-emerald-400" />
+                  Nguồn hình ảnh & Video
+                </Label>
+                <Select value={String(config.image_generator || "google_flow")} onValueChange={(v) => set("image_generator", v)}>
+                  <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#0c1419] border-white/10 text-slate-200">
+                    <SelectItem value="google_flow">🤖 Google Flow (Veo / Imagen tự động)</SelectItem>
+                    <SelectItem value="local_library">📁 Kho media cục bộ / Tải lên thủ công</SelectItem>
+                    <SelectItem value="mixed">🔀 Chế độ hỗn hợp (Flow + Kho media)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <p className="mt-4 rounded-xl border border-cyan-400/15 bg-cyan-400/[0.06] px-4 py-3 text-xs leading-5 text-slate-300">
-                Nút “Duyệt kịch bản & chạy tiếp” luôn chạy toàn bộ TTS → Flow → dựng phim. Không còn tùy chọn chỉ hiển thị nhưng không điều khiển pipeline.
-              </p>
-            </section>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                  <Video className="h-3.5 w-3.5 text-purple-400" />
+                  Chế độ kết hợp media
+                </Label>
+                <Select value={String(config.image_mode || "mix")} onValueChange={(v) => set("image_mode", v)}>
+                  <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#0c1419] border-white/10 text-slate-200">
+                    <SelectItem value="mix">Trộn ảnh + video (Khuyên dùng)</SelectItem>
+                    <SelectItem value="image_only">Chỉ hình ảnh (Ken Burns chuyển động)</SelectItem>
+                    <SelectItem value="video_only">Chỉ video AI (Veo 3.1)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Model video & Đồng bộ nhân vật */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-300">Model Video Google Flow</Label>
+                <Select value={String(config.video_model || "Veo 3.1 Lite")} onValueChange={(v) => set("video_model", v)}>
+                  <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#0c1419] border-white/10 text-slate-200">
+                    <SelectItem value="Veo 3.1 Lite">Veo 3.1 Lite · 10 credits (Nhanh, tiết kiệm)</SelectItem>
+                    <SelectItem value="Veo 3.1 Fast">Veo 3.1 Fast · 20 credits (Cân bằng)</SelectItem>
+                    <SelectItem value="Veo 3.1 Quality">Veo 3.1 Quality · 100 credits (Chất lượng cao nhất)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-300">Đồng bộ nhân vật</Label>
+                <Select value={String(config.character_sync || "channel")} onValueChange={(v) => set("character_sync", v)}>
+                  <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#0c1419] border-white/10 text-slate-200">
+                    <SelectItem value="channel">Cả kênh (dùng lại ảnh tham chiếu mọi video)</SelectItem>
+                    <SelectItem value="video">Từng video riêng biệt</SelectItem>
+                    <SelectItem value="off">Tắt đồng bộ nhân vật</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </section>
+
+          {/* SECTION 3: NGÔN NGỮ & PHỤ ĐỀ */}
+          <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5 shadow-lg shadow-black/10 space-y-4">
+            <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-amber-300">
+              <Globe className="h-4 w-4" />
+              3. Ngôn ngữ sản xuất
+            </h3>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-slate-400">Ngôn ngữ sản xuất</Label>
+                <Select value={String(config.language || "vi")} onValueChange={(v) => set("language", v)}>
+                  <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#0c1419] border-white/10 text-slate-200">
+                    <SelectItem value="vi">🇻🇳 Tiếng Việt (vi)</SelectItem>
+                    <SelectItem value="en">🇺🇸 Tiếng Anh (en)</SelectItem>
+                    <SelectItem value="ja">🇯🇵 Tiếng Nhật (ja)</SelectItem>
+                    <SelectItem value="ko">🇰🇷 Tiếng Hàn (ko)</SelectItem>
+                    <SelectItem value="zh">🇨🇳 Tiếng Trung (zh)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-slate-400">Kiểu phụ đề</Label>
+                <Select value={String(config.subtitle_style || "default")} onValueChange={(v) => set("subtitle_style", v)}>
+                  <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#0c1419] border-white/10 text-slate-200">
+                    <SelectItem value="default">Mặc định theo Cài đặt chung</SelectItem>
+                    <SelectItem value="highlight">Nổi bật (Viền vàng đen bắt mắt)</SelectItem>
+                    <SelectItem value="karaoke">Karaoke (Từng từ phát sáng)</SelectItem>
+                    <SelectItem value="simple">Đơn giản (Trắng viền đen)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        {/* Footer */}
+        <div className="sticky bottom-0 z-20 flex items-center justify-between border-t border-white/10 bg-[#0c1419]/95 px-6 py-4 backdrop-blur-md">
+          <div className="text-xs text-slate-500">
+            {savedAt ? `Đã lưu & đồng bộ lúc ${new Date(savedAt).toLocaleTimeString("vi-VN")}` : "Chưa lưu thay đổi"}
           </div>
-        )}
-
-        <DialogFooter className="sticky bottom-0 z-20 flex items-center justify-between gap-4 border-t border-white/10 bg-[#071017]/95 px-7 py-4 backdrop-blur-xl">
-          <div className="mr-auto text-xs text-slate-500">
-            {saving ? "Đang lưu vào project..." : dirty ? "Có thay đổi chưa lưu" : savedAt ? `Đã đồng bộ lúc ${new Date(savedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}` : "Đã tải cấu hình"}
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" onClick={close} disabled={saving} className="text-slate-400 hover:text-slate-200">
+              Đóng
+            </Button>
+            <Button
+              onClick={save}
+              disabled={saving}
+              className="bg-gradient-to-r from-[#d9940a] to-[#faaa02] text-[#121820] font-bold text-sm shadow-lg shadow-amber-500/20 hover:brightness-110"
+            >
+              {saving ? "Đang lưu..." : "💾 Lưu cấu hình & Áp dụng"}
+            </Button>
           </div>
-          <Button variant="ghost" onClick={close} disabled={saving} className="text-slate-300 hover:bg-white/[0.06]">
-            Đóng
-          </Button>
-          <Button onClick={save} disabled={saving || loading || !dirty} className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-900/30 hover:brightness-110 disabled:opacity-40">
-            {saving ? "Đang lưu..." : "💾 Lưu cấu hình"}
-          </Button>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   )

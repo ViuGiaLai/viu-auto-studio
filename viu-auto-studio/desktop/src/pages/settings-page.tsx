@@ -6,7 +6,7 @@ import {
   Settings as SettingsIcon, Play, RefreshCw, AlertTriangle, CheckCircle2,
   KeyRound, Image, Zap, ExternalLink, FolderOpen, Folder, Send, ShieldCheck,
   Globe, Bot, Sparkles, MessageSquare, Eye, EyeOff, LogOut, Chrome, Check,
-  Moon, Sun, ArrowRight, Mic
+  Moon, Sun, ArrowRight, Mic, Wrench
 } from "lucide-react"
 import { api, openExternalUrl, selectDirectory, openAiBrowser, getAiBrowserStatus, logoutAiBrowser, mediaUrl, startFlowBrowser, logoutFlowBrowser, flowGoogleStatus } from "@/services/api"
 
@@ -30,9 +30,9 @@ const SAMPLE_TEXT_VI = "Xin chào, đây là giọng đọc mẫu của Viu Auto
 
 const TABS = [
   { key: "quick", label: "⚡ Thiết lập nhanh" },
+  { key: "engine", label: "⚙️ Engine & Công cụ" },
   { key: "content", label: "🧠 Nội dung & AI" },
   { key: "voice", label: "🎙 Giọng & Âm thanh" },
-  { key: "visual", label: "🎨 Hình ảnh & Video" },
   { key: "connections", label: "🔗 Tài khoản & Kết nối" },
   { key: "performance", label: "⚡ Hiệu năng" },
   { key: "advanced", label: "🛠 Nâng cao" },
@@ -161,9 +161,54 @@ export default function SettingsPage() {
   const [ffmpegBusy, setFfmpegBusy] = useState(false)
   const [ttsStorageStats, setTtsStorageStats] = useState<Awaited<ReturnType<typeof api.ttsStorage>> | null>(null)
 
+  // Smart Render Engine Hardware State
+  const [hardwareInfo, setHardwareInfo] = useState<{
+    capabilities?: { nvenc: boolean; qsv: boolean; amf: boolean; vaapi: boolean }
+    recommended_encoder?: string
+    recommended_preset?: string
+    optimal_threads?: number
+    cpu_count?: number
+  } | null>(null)
+  const [hardwareLoading, setHardwareLoading] = useState(false)
+  // Preset package selection & tool installer
+  const [selectedPackage, setSelectedPackage] = useState<"basic" | "balanced" | "performance">("balanced")
+  const [installingTool, setInstallingTool] = useState<string | null>(null)
+
+  const handleInstallTool = async (depIds: string[]) => {
+    setInstallingTool(depIds.join(","))
+    try {
+      const res = await api.installCapability(depIds)
+      if (res.ok) {
+        toast({ title: "Cài đặt thành công", description: `Đã cài: ${depIds.join(", ")}` })
+        await refreshCapabilities()
+        await checkFfmpegTools()
+      } else {
+        throw new Error(res.output || "Cài đặt thất bại")
+      }
+    } catch (e) {
+      toast({ title: "Lỗi cài đặt", description: String(e), variant: "destructive" })
+    } finally {
+      setInstallingTool(null)
+    }
+  }
 
 
-    const setOperatorProfile = useAppStore((s) => s.setOperatorProfile)
+  const refreshHardware = async (showToast = false) => {
+    setHardwareLoading(true)
+    try {
+      const info = await api.getRenderHardware()
+      setHardwareInfo(info)
+      if (showToast) {
+        toast({ title: "Đã quét lại phần cứng", description: `Encoder tối ưu: ${info.recommended_encoder || "libx264"}` })
+      }
+    } catch (err) {
+      if (showToast) toast({ title: "Không thể quét phần cứng", description: String(err), variant: "destructive" })
+    } finally {
+      setHardwareLoading(false)
+    }
+  }
+
+  const setOperatorProfile = useAppStore((s) => s.setOperatorProfile)
 
   const refreshCapabilities = async () => {
     setCapabilitiesLoading(true)
@@ -284,6 +329,7 @@ export default function SettingsPage() {
         .then(setTtsStorageStats)
         .catch(() => {})
       void refreshCapabilities()
+      void refreshHardware()
 
 
 
@@ -931,9 +977,18 @@ export default function SettingsPage() {
         </div>
 
         <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setSearchParams({ tab: value }, { replace: true }) }}>
-          <TabsList className="flex w-full justify-start overflow-x-auto bg-[#141d22] border border-white/8 p-1 rounded-lg">
+          <TabsList className="flex w-full justify-start gap-1.5 overflow-x-auto bg-[#0c1318] border border-amber-500/30 p-1.5 rounded-2xl shadow-lg shadow-black/40">
             {TABS.map((t) => (
-              <TabsTrigger key={t.key} value={t.key} className="whitespace-nowrap data-[state=active]:bg-amber-500/20 data-[state=active]:text-amber-300 data-[state=active]:border-amber-500/30 rounded-md border border-transparent text-xs py-1.5 px-3">
+              <TabsTrigger
+                key={t.key}
+                value={t.key}
+                className={cn(
+                  "whitespace-nowrap rounded-xl text-xs py-2 px-4 font-semibold border border-transparent transition-colors duration-150 shrink-0",
+                  "text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]",
+                  "data-[state=active]:bg-[#0f2532] data-[state=active]:text-amber-400",
+                  "data-[state=active]:border-amber-400 data-[state=active]:shadow-md data-[state=active]:shadow-amber-500/20"
+                )}
+              >
                 {t.label}
               </TabsTrigger>
             ))}
@@ -1050,25 +1105,9 @@ export default function SettingsPage() {
           </div>
         </TabsContent>
 
-                {/* Hình ảnh & Video */}
-        <TabsContent value="visual" className="space-y-6">
-          <div className="vas-card p-5">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div><h3 className="text-base font-semibold text-slate-100">🎨 Hình ảnh & Video</h3><p className="mt-1 text-sm text-slate-400">Cấu hình Flow, Chrome Profile và năng lực tạo media cho AI Video Factory.</p></div>
-              <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", flowLoggedIn ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300")}>{flowLoggedIn ? "Flow sẵn sàng" : "Cần đăng nhập Flow"}</span>
-            </div>
-            <div className="mt-5 rounded-xl border border-indigo-400/20 bg-indigo-500/[0.06] p-4">
-              <div className="flex flex-wrap items-start justify-between gap-4"><div><div className="flex items-center gap-2 text-sm font-semibold text-slate-100"><Chrome className="h-4 w-4 text-indigo-300" /> Google Flow & Chrome Profile</div><p className="mt-1 text-xs leading-5 text-slate-400">Viu tự mở Chrome Profile riêng, kết nối Flow Connector và tiếp tục queue sau khi đăng nhập.</p></div><span className="text-xs text-slate-400">{flowConnection?.profile_name ? `Profile: ${flowConnection.profile_name}` : "Chưa có profile"}</span></div>
-              <div className="mt-4 flex flex-wrap gap-2"><Button type="button" size="sm" disabled={flowAccountLoading} onClick={() => void (flowLoggedIn ? logoutFlowAccount() : openFlowAccount())} className={flowLoggedIn ? "gap-1.5 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25" : "gap-1.5 bg-indigo-500 text-white hover:bg-indigo-400"}>{flowLoggedIn ? <LogOut className="h-3.5 w-3.5" /> : <Chrome className="h-3.5 w-3.5" />}{flowAccountLoading ? "Đang xử lý…" : flowLoggedIn ? "Đăng xuất" : "Mở Chrome Profile riêng"}</Button><Button type="button" size="sm" variant="outline" onClick={() => void prepareCapability("factory")}>Kiểm tra Factory</Button></div>
-            </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4"><div className="text-sm font-semibold text-slate-100">Image generation</div><p className="mt-1 text-xs text-slate-400">Prompt hình ảnh, style và media policy được lấy từ cấu hình project/kênh khi chạy Factory.</p></div><div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4"><div className="text-sm font-semibold text-slate-100">Video generation</div><p className="mt-1 text-xs text-slate-400">Video được tạo theo queue Flow của project; không cần copy/paste prompt thủ công.</p></div></div>
-          </div>
-        </TabsContent>
-
-        {/* Nội dung & AI */}
-                <TabsContent value="content" className="space-y-6">
+                                {/* 🧠 Nội dung & AI */}
+        <TabsContent value="content" className="space-y-6">
           {/* Card 1: Dịch & SEO (AI) */}
-
           <div className="vas-card p-6 border border-white/10 bg-[#0d1527] rounded-xl shadow-xl space-y-6">
             <div>
               <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
@@ -1202,10 +1241,21 @@ export default function SettingsPage() {
                         Mở trình duyệt
                       </Button>
                       <Button
-                        variant="destructive"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleRefreshAiStatus("chatgpt")}
+                        disabled={chatgptLoading}
+                        className="gap-1 text-xs border-white/15 hover:bg-white/10"
+                      >
+                        <RefreshCw className={cn("h-3.5 w-3.5", chatgptLoading && "animate-spin")} />
+                        Kiểm tra lại
+                      </Button>
+                      <Button
+                        variant="ghost"
                         size="sm"
                         onClick={() => handleLogoutAiBrowser("chatgpt")}
-                        className="gap-1 text-xs bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 border border-rose-500/30"
+                        disabled={chatgptLoading}
+                        className="gap-1 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
                       >
                         <LogOut className="h-3.5 w-3.5" />
                         Đăng xuất
@@ -1213,58 +1263,47 @@ export default function SettingsPage() {
                     </>
                   ) : (
                     <>
-                      <button
-                        type="button"
+                      <Button
+                        size="sm"
                         onClick={() => handleOpenAiBrowser("chatgpt")}
                         disabled={chatgptLoading}
-                        className={cn(
-                          "flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold text-white shadow-md transition-all",
-                          "bg-[#d9822b] hover:bg-[#c47220] active:scale-[0.98] cursor-pointer",
-                          chatgptLoading && "opacity-80 cursor-wait"
-                        )}
+                        className="gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 text-white"
                       >
-                        <Chrome className={cn("h-4 w-4 shrink-0", chatgptLoading && "animate-spin")} />
-                        <span>{chatgptLoading ? "Đang chờ đăng nhập…" : "Đăng nhập bằng Chrome/Edge"}</span>
-                      </button>
+                        <Chrome className="h-3.5 w-3.5" />
+                        {chatgptLoading ? "Đang mở…" : "Mở trình duyệt để đăng nhập"}
+                      </Button>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => handleRefreshAiStatus("chatgpt")}
                         disabled={chatgptLoading}
-                        className="h-8 w-8 p-0 text-xs border-white/15 hover:bg-white/10"
-                        title="Kiểm tra lại trạng thái đăng nhập"
+                        className="gap-1 text-xs border-white/15 hover:bg-white/10"
                       >
                         <RefreshCw className={cn("h-3.5 w-3.5", chatgptLoading && "animate-spin")} />
+                        Kiểm tra lại
                       </Button>
                     </>
                   )}
                 </div>
               </div>
-
-              <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-200/90 leading-relaxed flex items-start gap-2">
-                <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
-                <span>
-                  ⚠️ Dùng endpoint nội bộ không chính thức của ChatGPT: có thể gián đoạn khi OpenAI thay đổi, và có rủi ro với tài khoản. Gói Free bị giới hạn rất nặng — nên dùng gói trả phí (Plus/Pro).
-                </span>
-              </div>
             </div>
 
-            {/* Section: Tài khoản Gemini (Google) */}
+            {/* Section: Tài khoản Gemini */}
             <div className="rounded-xl border border-white/10 bg-black/20 p-5 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="space-y-1">
                   <h4 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
                     <Sparkles className="h-4 w-4 text-indigo-400" />
-                    Tài khoản Gemini (Google)
+                    Tài khoản Gemini
                   </h4>
                   {geminiStatus.connected ? (
                     <div className="flex items-center gap-2 text-xs text-emerald-300">
                       <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                      <span>Đã kết nối: <strong className="font-semibold text-slate-100">{geminiStatus.email || "Tài khoản Google"}</strong></span>
+                      <span>Đã kết nối: <strong className="font-semibold text-slate-100">{geminiStatus.email || "Tài khoản Gemini"}</strong></span>
                     </div>
                   ) : (
                     <p className="text-xs text-slate-400">
-                      Chưa đăng nhập — mở Chrome/Edge để đăng nhập tài khoản Google.
+                      Chưa đăng nhập — mở Chrome/Edge để đăng nhập tài khoản Google Gemini.
                     </p>
                   )}
                 </div>
@@ -1283,10 +1322,21 @@ export default function SettingsPage() {
                         Mở trình duyệt
                       </Button>
                       <Button
-                        variant="destructive"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleRefreshAiStatus("gemini")}
+                        disabled={geminiLoading}
+                        className="gap-1 text-xs border-white/15 hover:bg-white/10"
+                      >
+                        <RefreshCw className={cn("h-3.5 w-3.5", geminiLoading && "animate-spin")} />
+                        Kiểm tra lại
+                      </Button>
+                      <Button
+                        variant="ghost"
                         size="sm"
                         onClick={() => handleLogoutAiBrowser("gemini")}
-                        className="gap-1 text-xs bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 border border-rose-500/30"
+                        disabled={geminiLoading}
+                        className="gap-1 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
                       >
                         <LogOut className="h-3.5 w-3.5" />
                         Đăng xuất
@@ -1294,75 +1344,58 @@ export default function SettingsPage() {
                     </>
                   ) : (
                     <>
-                      <button
-                        type="button"
+                      <Button
+                        size="sm"
                         onClick={() => handleOpenAiBrowser("gemini")}
                         disabled={geminiLoading}
-                        className={cn(
-                          "flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold text-white shadow-md transition-all",
-                          "bg-[#d9822b] hover:bg-[#c47220] active:scale-[0.98] cursor-pointer",
-                          geminiLoading && "opacity-80 cursor-wait"
-                        )}
+                        className="gap-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white"
                       >
-                        <Chrome className={cn("h-4 w-4 shrink-0", geminiLoading && "animate-spin")} />
-                        <span>{geminiLoading ? "Đang chờ đăng nhập…" : "Đăng nhập bằng Chrome/Edge"}</span>
-                      </button>
+                        <Chrome className="h-3.5 w-3.5" />
+                        {geminiLoading ? "Đang mở…" : "Mở trình duyệt để đăng nhập"}
+                      </Button>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => handleRefreshAiStatus("gemini")}
                         disabled={geminiLoading}
-                        className="h-8 w-8 p-0 text-xs border-white/15 hover:bg-white/10"
-                        title="Kiểm tra lại trạng thái đăng nhập"
+                        className="gap-1 text-xs border-white/15 hover:bg-white/10"
                       >
                         <RefreshCw className={cn("h-3.5 w-3.5", geminiLoading && "animate-spin")} />
+                        Kiểm tra lại
                       </Button>
                     </>
                   )}
                 </div>
               </div>
 
-              {/* Model Gemini Selector */}
-              <div className="space-y-2 pt-1 border-t border-white/5">
-                <Label className="text-xs font-medium text-slate-300">Model Gemini</Label>
-                <div className="grid gap-2.5 sm:grid-cols-3">
+              {/* Gemini Model Selector */}
+              <div className="pt-2 border-t border-white/5 space-y-2">
+                <Label className="text-xs text-slate-400">Chọn model Gemini</Label>
+                <div className="grid gap-2 sm:grid-cols-3">
                   {[
-                    { id: "3.1 Flash-Lite", label: "3.1 Flash-Lite", desc: "Nhanh nhất." },
-                    { id: "3.5 Flash", label: "3.5 Flash", desc: "Mặc định, toàn diện." },
-                    { id: "3.1 Pro", label: "3.1 Pro", desc: "Chất lượng cao, chậm hơn." },
-                  ].map((m) => {
-                    const isSelected = geminiModelTier === m.id || (!geminiModelTier && m.id === "3.5 Flash")
-                    return (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => handleSelectGeminiModel(m.id)}
-                        className={cn(
-                          "flex flex-col items-start p-3 rounded-lg border text-left transition-all",
-                          isSelected
-                            ? "border-indigo-500/80 bg-indigo-500/15 ring-1 ring-indigo-500/40"
-                            : "border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]"
-                        )}
-                      >
-                        <div className="flex items-center justify-between w-full">
-                          <span className="text-xs font-semibold text-slate-100">{m.label}</span>
-                          {isSelected && <Check className="h-3.5 w-3.5 text-indigo-400" />}
-                        </div>
-                        <span className="text-[11px] text-slate-400 mt-0.5">{m.desc}</span>
-                      </button>
-                    )
-                  })}
+                    { id: "3.5 Flash", label: "Gemini 3.5 Flash", desc: "Nhanh nhất, tối ưu viết kịch bản & chia cảnh" },
+                    { id: "2.5 Flash", label: "Gemini 2.5 Flash", desc: "Cân bằng tốc độ và chất lượng" },
+                    { id: "2.5 Pro", label: "Gemini 2.5 Pro", desc: "Sâu sắc nhất, cho kịch bản phức tạp" },
+                  ].map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => handleSelectGeminiModel(m.id)}
+                      className={cn(
+                        "flex flex-col items-start p-3 rounded-lg border text-left transition-all text-xs",
+                        geminiModelTier === m.id
+                          ? "border-indigo-500/60 bg-indigo-500/10 text-slate-100"
+                          : "border-white/10 bg-white/[0.02] text-slate-400 hover:border-white/20"
+                      )}
+                    >
+                      <div className="flex items-center justify-between w-full font-medium text-slate-200">
+                        <span>{m.label}</span>
+                        {geminiModelTier === m.id && <Check className="h-3.5 w-3.5 text-indigo-400" />}
+                      </div>
+                      <span className="text-[11px] text-slate-500 mt-1">{m.desc}</span>
+                    </button>
+                  ))}
                 </div>
-                <p className="text-[11px] text-slate-400 italic">
-                  App dùng đúng model bạn đang chọn sẵn trên tài khoản gemini.google.com. Muốn đổi model, hãy chọn lại ở trình duyệt Gemini (lựa chọn ở đây chỉ để ghi nhớ).
-                </p>
-              </div>
-
-              <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-200/90 leading-relaxed flex items-start gap-2">
-                <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
-                <span>
-                  ⚠️ Dùng endpoint nội bộ không chính thức của Gemini: có thể gián đoạn khi Google thay đổi, và có rủi ro với tài khoản. Phiên có thể hết hạn theo thời gian — khi đó đăng nhập lại.
-                </span>
               </div>
             </div>
 
@@ -1371,17 +1404,20 @@ export default function SettingsPage() {
               <div className="flex items-center justify-between">
                 <Label className="text-sm font-semibold text-slate-200 flex items-center gap-2">
                   <KeyRound className="h-4 w-4 text-purple-400" />
-                  DeepSeek API Key
+                  API key DeepSeek
                 </Label>
-                {Boolean(settings.deepseek_api_key_set) && (
-                  <span className="text-xs text-emerald-400 flex items-center gap-1">
-                    <CheckCircle2 className="h-3.5 w-3.5" /> Đã có key lưu trong máy
-                  </span>
-                )}
+                <a
+                  href="https://platform.deepseek.com/api_keys"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs text-purple-400 hover:underline flex items-center gap-1"
+                >
+                  Lấy key tại platform.deepseek.com <ExternalLink className="h-3 w-3" />
+                </a>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <div className="relative flex-1 min-w-[260px]">
+                <div className="relative flex-1 min-w-[280px]">
                   <Input
                     type={showDeepseekKey ? "text" : "password"}
                     placeholder="sk-..."
@@ -1389,7 +1425,6 @@ export default function SettingsPage() {
                     onChange={(e) => {
                       setDeepseekKey(e.target.value)
                       setDirty(true)
-                      setDeepseekResult(null)
                     }}
                     className="pr-16 bg-black/40 border-white/10 text-sm font-mono"
                   />
@@ -1517,12 +1552,467 @@ export default function SettingsPage() {
               <p className="mt-2 text-xs text-slate-400">
                 Lấy key miễn phí tại <a className="text-amber-400 underline hover:text-amber-300" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">aistudio.google.com/apikey</a> — key này chỉ dùng để Gemini viết kịch bản, phân tích chia cảnh và tạo prompt ảnh.
               </p>
-                        </div>
+            </div>
+          </div>
+
+          {/* Card 3: Google Flow & Chrome Profile (AI Video Factory) */}
+          <div className="vas-card p-6 border border-white/10 bg-[#0d1527] rounded-xl shadow-xl space-y-5">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                  <Chrome className="h-5 w-5 text-emerald-400" />
+                  Google Flow & Chrome Profile (AI Video Factory)
+                </h3>
+                <p className="mt-1 text-xs text-slate-400">
+                  Tự động kết nối Flow Connector, đồng bộ prompt của từng cảnh và tạo media tự động.
+                </p>
+              </div>
+              <span className={cn(
+                "rounded-full px-3 py-1 text-xs font-semibold flex items-center gap-1.5",
+                flowLoggedIn ? "bg-emerald-500/15 border border-emerald-500/30 text-emerald-300" : "bg-amber-500/15 border border-amber-500/30 text-amber-300"
+              )}>
+                <span className={cn("h-2 w-2 rounded-full", flowLoggedIn ? "bg-emerald-400 animate-pulse" : "bg-amber-400")} />
+                {flowLoggedIn ? "Flow sẵn sàng" : "Cần đăng nhập Flow"}
+              </span>
+            </div>
+
+            {/* Profile Action Box */}
+            <div className="rounded-xl border border-white/10 bg-black/20 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="text-xs font-semibold text-slate-200 flex items-center gap-2">
+                  <span>Profile Chrome riêng:</span>
+                  <span className="text-amber-400 font-mono text-xs">{flowConnection?.profile_name || "Viu Flow Chrome profile"}</span>
+                </div>
+                <p className="text-xs text-slate-400">
+                  Viu tự mở Chrome Profile riêng độc lập, không ảnh hưởng đến trình duyệt chính của bạn.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={flowAccountLoading}
+                  onClick={() => void (flowLoggedIn ? logoutFlowAccount() : openFlowAccount())}
+                  className={flowLoggedIn ? "gap-1.5 bg-rose-500/20 text-rose-200 hover:bg-rose-500/30 text-xs" : "gap-1.5 bg-gradient-to-r from-[#d9940a] to-[#faaa02] text-slate-950 font-bold text-xs"}
+                >
+                  {flowLoggedIn ? <LogOut className="h-3.5 w-3.5" /> : <Chrome className="h-3.5 w-3.5" />}
+                  {flowAccountLoading ? "Đang xử lý…" : flowLoggedIn ? "Đăng xuất" : "Mở Chrome Profile riêng"}
+                </Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => void prepareCapability("factory")} className="text-xs border-white/15">
+                  Kiểm tra Factory
+                </Button>
+              </div>
+            </div>
+
+            {/* Mini Cards */}
+            <div className="grid gap-3 sm:grid-cols-2 text-xs">
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3.5 space-y-1">
+                <div className="font-semibold text-slate-200">Image Generation</div>
+                <p className="text-slate-400 leading-relaxed">Prompt hình ảnh, style và media policy được tự động trích xuất theo từng phân cảnh khi chạy Factory.</p>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3.5 space-y-1">
+                <div className="font-semibold text-slate-200">Video Generation</div>
+                <p className="text-slate-400 leading-relaxed">Video được tạo tự động theo hàng đợi Flow của project; không cần copy/paste prompt thủ công.</p>
+              </div>
+            </div>
           </div>
         </TabsContent>
 
         <TabsContent value="voice">
           <VoiceStudioPanel />
+        </TabsContent>
+
+        
+                {/* Engine & Công cụ */}
+        <TabsContent value="engine" className="space-y-6">
+          {/* 1. Bộ Công Cụ Viu Auto Studio (Preset Packages) */}
+          <div className="rounded-2xl border border-white/10 bg-[#0d1318] p-6 shadow-2xl space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2.5">
+                  <Wrench className="h-5 w-5 text-amber-400" />
+                  Bộ Công Cụ Viu Auto Studio
+                </h3>
+                <p className="mt-1 text-xs text-slate-400">
+                  Tải trọn bộ công cụ cần thiết để xử lý video, âm thanh và phụ đề trên máy của bạn.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 text-xs font-semibold text-emerald-400">
+                  <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                  Bộ công cụ đã sẵn sàng
+                </span>
+              </div>
+            </div>
+
+            {/* 3 Package Cards */}
+            <div className="grid gap-4 sm:grid-cols-3">
+              {/* Gói Cơ bản */}
+              <div
+                onClick={() => setSelectedPackage("basic")}
+                className={cn(
+                  "relative cursor-pointer rounded-2xl border p-5 transition-all flex flex-col justify-between space-y-4",
+                  selectedPackage === "basic"
+                    ? "border-amber-500/70 bg-gradient-to-b from-amber-500/15 via-amber-500/5 to-transparent shadow-xl shadow-amber-500/20 ring-1 ring-amber-400/60"
+                    : "border-white/10 bg-white/[0.02] hover:border-amber-500/30 hover:bg-white/[0.04]"
+                )}
+              >
+                <div className="space-y-2.5">
+                  <div>
+                    <h4 className="text-base font-bold text-white flex items-center gap-2">
+                      <span>Cơ bản</span>
+                      {selectedPackage === "basic" && <span className="text-amber-400 text-xs">● Đang chọn</span>}
+                    </h4>
+                    <div className="text-xs font-medium text-amber-300/80">Máy yếu / laptop CPU</div>
+                  </div>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Phù hợp máy cấu hình thấp, ưu tiên nhẹ và hoạt động ổn định.
+                  </p>
+
+                  <div className="space-y-1.5 pt-2 border-t border-white/5 text-[11px] text-slate-300">
+                    <div className="font-semibold text-amber-400/80 uppercase tracking-wider text-[10px]">Thành phần bao gồm:</div>
+                    <div className="flex items-center gap-1.5 text-slate-300">✓ FFmpeg Core CPU (libx264 ~75MB)</div>
+                    <div className="flex items-center gap-1.5 text-slate-300">✓ Whisper Tiny ASR (Sub nhẹ ~75MB)</div>
+                    <div className="flex items-center gap-1.5 text-slate-300">✓ Edge TTS Neural Cloud (Miễn phí)</div>
+                    <div className="flex items-center gap-1.5 text-slate-300">✓ yt-dlp Video Import Core (~15MB)</div>
+                  </div>
+                </div>
+                <div className="pt-3 border-t border-white/5 flex items-center justify-between text-xs">
+                  <span className="text-slate-400">Dung lượng: <strong className="text-slate-200">Nhỏ (~175 MB)</strong></span>
+                  {selectedPackage === "basic" && <span className="text-amber-400 font-bold">Đã chọn ✓</span>}
+                </div>
+              </div>
+
+              {/* Gói Cân bằng */}
+              <div
+                onClick={() => setSelectedPackage("balanced")}
+                className={cn(
+                  "relative cursor-pointer rounded-2xl border p-5 transition-all flex flex-col justify-between space-y-4",
+                  selectedPackage === "balanced"
+                    ? "border-amber-500/80 bg-gradient-to-b from-amber-500/20 via-amber-500/5 to-transparent shadow-2xl shadow-amber-500/25 ring-2 ring-amber-400/80"
+                    : "border-white/10 bg-white/[0.02] hover:border-amber-500/30 hover:bg-white/[0.04]"
+                )}
+              >
+                <div className="absolute top-3 right-3">
+                  <span className="rounded-full bg-gradient-to-r from-amber-500/30 to-amber-600/30 border border-amber-400/50 px-2.5 py-0.5 text-[10px] font-bold text-amber-300 uppercase tracking-wider shadow-sm shadow-amber-500/20 animate-pulse">
+                    KHUYẾN NGHỊ
+                  </span>
+                </div>
+                <div className="space-y-2.5">
+                  <div>
+                    <h4 className="text-base font-bold text-white flex items-center gap-2">
+                      <span>Cân bằng</span>
+                      <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
+                    </h4>
+                    <div className="text-xs font-medium text-amber-300">Máy trung bình / Đa số</div>
+                  </div>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Cân bằng tốt nhất giữa tốc độ nhận diện, chất lượng phụ đề và dung lượng bộ nhớ.
+                  </p>
+
+                  <div className="space-y-1.5 pt-2 border-t border-white/5 text-[11px] text-slate-300">
+                    <div className="font-semibold text-amber-400/80 uppercase tracking-wider text-[10px]">Thành phần bao gồm:</div>
+                    <div className="flex items-center gap-1.5 text-slate-300">✓ FFmpeg Multi-Thread Engine (~120MB)</div>
+                    <div className="flex items-center gap-1.5 text-slate-300">✓ Whisper Small/Medium (Sub chuẩn ms)</div>
+                    <div className="flex items-center gap-1.5 text-slate-300">✓ Kokoro Offline TTS + Edge TTS Cloud</div>
+                    <div className="flex items-center gap-1.5 text-slate-300">✓ Bộ công cụ xác thực media FFprobe</div>
+                  </div>
+                </div>
+                <div className="pt-3 border-t border-white/5 flex items-center justify-between text-xs">
+                  <span className="text-slate-400">Dung lượng: <strong className="text-slate-200">Vừa (~500 MB)</strong></span>
+                  <span className="text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30">Đang dùng ✓</span>
+                </div>
+              </div>
+
+              {/* Gói Hiệu năng cao */}
+              <div
+                onClick={() => setSelectedPackage("performance")}
+                className={cn(
+                  "relative cursor-pointer rounded-2xl border p-5 transition-all flex flex-col justify-between space-y-4",
+                  selectedPackage === "performance"
+                    ? "border-amber-500/70 bg-gradient-to-b from-amber-500/15 via-amber-500/5 to-transparent shadow-xl shadow-amber-500/20 ring-1 ring-amber-400/60"
+                    : "border-white/10 bg-white/[0.02] hover:border-amber-500/30 hover:bg-white/[0.04]"
+                )}
+              >
+                <div className="space-y-2.5">
+                  <div>
+                    <h4 className="text-base font-bold text-white flex items-center gap-2">
+                      <span>Hiệu năng cao</span>
+                      {selectedPackage === "performance" && <span className="text-amber-400 text-xs">● Đang chọn</span>}
+                    </h4>
+                    <div className="text-xs font-medium text-amber-300/80">Máy khỏe / RAM lớn / GPU</div>
+                  </div>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Tận dụng tối đa phần cứng mạnh để đạt chất lượng xử lý âm thanh, hình ảnh và phụ đề cao nhất.
+                  </p>
+
+                  <div className="space-y-1.5 pt-2 border-t border-white/5 text-[11px] text-slate-300">
+                    <div className="font-semibold text-amber-400/80 uppercase tracking-wider text-[10px]">Thành phần bao gồm:</div>
+                    <div className="flex items-center gap-1.5 text-slate-300">✓ GPU HWAccel (NVENC, QSV, AMF)</div>
+                    <div className="flex items-center gap-1.5 text-slate-300">✓ Whisper Large-v3 Turbo (~800MB)</div>
+                    <div className="flex items-center gap-1.5 text-slate-300">✓ Kokoro VN Neural Voice + PyTorch CUDA</div>
+                    <div className="flex items-center gap-1.5 text-slate-300">✓ Sẵn sàng cho Demucs AI Audio Splitter</div>
+                  </div>
+                </div>
+                <div className="pt-3 border-t border-white/5 flex items-center justify-between text-xs">
+                  <span className="text-slate-400">Dung lượng: <strong className="text-slate-200">Lớn (~1.5 GB)</strong></span>
+                  {selectedPackage === "performance" && <span className="text-amber-400 font-bold">Đã chọn ✓</span>}
+                </div>
+              </div>
+            </div>
+
+            {/* Banner trạng thái */}
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3.5 flex items-center gap-2.5 text-xs text-emerald-300 font-medium">
+              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+              <span>Bộ công cụ cốt lõi (FFmpeg, FFprobe, Smart Render, Neural Subtitles) đã sẵn sàng hoạt động.</span>
+            </div>
+
+            {/* Action Bar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+              <div className="text-xs text-slate-400 flex items-center gap-1.5">
+                <span className="text-amber-400 font-bold">ℹ</span> Sử dụng chế độ tương thích cao (tự động phát hiện GPU/CPU).
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    await checkFfmpegTools()
+                    await refreshCapabilities()
+                    await refreshHardware(true)
+                  }}
+                  disabled={ffmpegBusy || hardwareLoading}
+                  className="gap-1.5 text-xs border-white/15 hover:bg-white/10"
+                >
+                  <RefreshCw className={cn("h-3.5 w-3.5", (ffmpegBusy || hardwareLoading) && "animate-spin")} />
+                  Kiểm tra lại
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    toast({
+                      title: `Đã áp dụng gói: ${selectedPackage === "basic" ? "Cơ bản" : selectedPackage === "balanced" ? "Cân bằng" : "Hiệu năng cao"}`,
+                      description: "Cấu hình render và engine phụ đề đã được cập nhật thành công.",
+                    })
+                  }}
+                  className="gap-1.5 text-xs bg-gradient-to-r from-[#d9940a] to-[#faaa02] text-slate-950 font-bold px-5 shadow-lg shadow-amber-500/20 hover:brightness-110"
+                >
+                  {selectedPackage === "balanced" ? "Đang dùng gói Cân bằng" : `Chuyển sang ${selectedPackage === "basic" ? "Cơ bản" : "Hiệu năng cao"}`}
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Công cụ nâng cao */}
+          <div className="rounded-2xl border border-white/10 bg-[#0d1318] p-6 shadow-2xl space-y-5">
+            <h3 className="text-base font-bold text-white flex items-center gap-2">
+              <Wrench className="h-4 w-4 text-indigo-400" />
+              Công cụ nâng cao
+            </h3>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              {/* yt-dlp */}
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 flex flex-col justify-between space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                      <span>▷</span> Nhập video được phép sử dụng
+                    </h4>
+                    <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1">
+                      Sẵn sàng ✓
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Công cụ nhập video từ nguồn được hỗ trợ. Chỉ dùng với video bạn sở hữu, quản lý hoặc có giấy phép phù hợp; tuân thủ điều khoản của nền tảng nguồn.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full h-9 text-xs border-emerald-500/30 bg-emerald-500/10 text-emerald-300 font-bold hover:bg-emerald-500/20"
+                >
+                  ✓ Đã Cài Đặt
+                </Button>
+              </div>
+
+              {/* Demucs */}
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 flex flex-col justify-between space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                      <span>♫</span> Demucs — tách giọng / nhạc nền
+                    </h4>
+                  </div>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Tách giọng & nhạc nền gốc (cho AI Movie Recap). NẶNG (kéo theo PyTorch ~2GB). Dùng lại PyTorch của OmniVoice nếu đã cài.
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => handleInstallTool(["demucs", "pytorch"])}
+                  disabled={Boolean(installingTool)}
+                  className="w-full h-9 text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-bold"
+                >
+                  {installingTool?.includes("demucs") ? "Đang tải & cài đặt..." : "Tải & Cài đặt Demucs"}
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* 3. Smart Render Engine Card */}
+          <div className="relative overflow-hidden rounded-2xl border border-amber-500/30 bg-[#0e161c] p-6 shadow-2xl space-y-6">
+            <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-amber-400 to-transparent animate-pulse" />
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2.5">
+                  <Zap className="h-5 w-5 text-amber-400 fill-amber-400" />
+                  Smart Render Engine & Tăng Tốc Phần Cứng
+                </h3>
+                <p className="mt-1 text-xs text-slate-400">
+                  Tự động phát hiện encoder phần cứng tối ưu (NVIDIA NVENC, Intel Quick Sync, AMD AMF, CPU đa luồng) để xuất video với tốc độ cao nhất.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => refreshHardware(true)}
+                disabled={hardwareLoading}
+                className="gap-1.5 text-xs border-amber-500/30 text-amber-300 hover:bg-amber-500/10 shrink-0"
+              >
+                <RefreshCw className={cn("h-3.5 w-3.5", hardwareLoading && "animate-spin")} />
+                {hardwareLoading ? "Đang quét..." : "Quét lại phần cứng"}
+              </Button>
+            </div>
+
+            {/* Hardware Grid */}
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className={cn(
+                "rounded-xl border p-4 transition-all",
+                hardwareInfo?.capabilities?.nvenc
+                  ? "border-emerald-500/40 bg-emerald-500/5 shadow-md shadow-emerald-500/10"
+                  : "border-white/10 bg-white/[0.02]"
+              )}>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-300">NVIDIA NVENC</span>
+                  <span className={cn("h-2 w-2 rounded-full", hardwareInfo?.capabilities?.nvenc ? "bg-emerald-400 animate-ping" : "bg-slate-600")} />
+                </div>
+                <div className="mt-2 text-lg font-bold text-slate-100">
+                  {hardwareInfo?.capabilities?.nvenc ? "Khả dụng" : "Không tìm thấy"}
+                </div>
+                <div className="text-[11px] text-slate-500 mt-1">h264_nvenc · GPU CUDA</div>
+              </div>
+
+              <div className={cn(
+                "rounded-xl border p-4 transition-all",
+                hardwareInfo?.capabilities?.qsv
+                  ? "border-sky-500/40 bg-sky-500/5 shadow-md shadow-sky-500/10"
+                  : "border-white/10 bg-white/[0.02]"
+              )}>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-300">Intel Quick Sync</span>
+                  <span className={cn("h-2 w-2 rounded-full", hardwareInfo?.capabilities?.qsv ? "bg-sky-400 animate-ping" : "bg-slate-600")} />
+                </div>
+                <div className="mt-2 text-lg font-bold text-slate-100">
+                  {hardwareInfo?.capabilities?.qsv ? "Khả dụng" : "Không tìm thấy"}
+                </div>
+                <div className="text-[11px] text-slate-500 mt-1">h264_qsv · Intel iGPU</div>
+              </div>
+
+              <div className={cn(
+                "rounded-xl border p-4 transition-all",
+                hardwareInfo?.capabilities?.amf
+                  ? "border-rose-500/40 bg-rose-500/5 shadow-md shadow-rose-500/10"
+                  : "border-white/10 bg-white/[0.02]"
+              )}>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-300">AMD AMF</span>
+                  <span className={cn("h-2 w-2 rounded-full", hardwareInfo?.capabilities?.amf ? "bg-rose-400 animate-ping" : "bg-slate-600")} />
+                </div>
+                <div className="mt-2 text-lg font-bold text-slate-100">
+                  {hardwareInfo?.capabilities?.amf ? "Khả dụng" : "Không tìm thấy"}
+                </div>
+                <div className="text-[11px] text-slate-500 mt-1">h264_amf · Radeon GPU</div>
+              </div>
+
+              <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4 shadow-md shadow-amber-500/10">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-300">CPU Multi-Threaded</span>
+                  <span className="h-2 w-2 rounded-full bg-amber-400" />
+                </div>
+                <div className="mt-2 text-lg font-bold text-amber-300">
+                  {hardwareInfo?.optimal_threads ? `${hardwareInfo.optimal_threads} Luồng` : "Tất cả lõi"}
+                </div>
+                <div className="text-[11px] text-slate-500 mt-1">libx264 -threads 0 (Auto Fallback)</div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] p-4 text-xs">
+              <div className="text-slate-300">
+                Encoder đang kích hoạt cho Render: <span className="font-bold text-amber-400 font-mono">{hardwareInfo?.recommended_encoder || "Tự động phát hiện"}</span>
+              </div>
+              <span className="text-slate-500">Preset: {hardwareInfo?.recommended_preset || "fast"} · Threads: {hardwareInfo?.optimal_threads || "Auto"}</span>
+            </div>
+          </div>
+
+          {/* 4. Công cụ hệ thống (FFmpeg & FFprobe) */}
+          <div className="vas-card p-6 space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-base font-semibold text-slate-100 flex items-center gap-2">
+                  <ShieldCheck className="h-5 w-5 text-amber-400" />
+                  Công Cụ Dựng Phim & Xử Lý Media
+                </h3>
+                <p className="mt-1 text-xs text-slate-400">
+                  FFmpeg và FFprobe là công cụ cốt lõi chịu trách nhiệm cắt ghép video, đồng bộ âm thanh và nhúng phụ đề.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={checkFfmpegTools}
+                  disabled={ffmpegBusy}
+                  className="gap-1.5 text-xs border-white/10"
+                >
+                  <RefreshCw className={cn("h-3.5 w-3.5", ffmpegBusy && "animate-spin")} />
+                  Kiểm tra tất cả
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={checkFfmpegUpdate}
+                  disabled={ffmpegBusy}
+                  className="gap-1.5 text-xs bg-amber-500 text-slate-950 font-semibold hover:bg-amber-400"
+                >
+                  Kiểm tra cập nhật
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 flex items-center justify-between">
+                <div>
+                  <div className="text-xs text-slate-400">Trạng thái FFmpeg</div>
+                  <div className="text-base font-bold text-slate-100 mt-0.5">
+                    {diagnostics?.ffmpeg_version || "Đang kiểm tra..."}
+                  </div>
+                </div>
+                <CheckCircle2 className="h-6 w-6 text-emerald-400 shrink-0" />
+              </div>
+
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 flex items-center justify-between">
+                <div>
+                  <div className="text-xs text-slate-400">Trạng thái FFprobe</div>
+                  <div className="text-base font-bold text-slate-100 mt-0.5">
+                    {diagnostics?.ffprobe_version ? "Sẵn sàng" : "Đang kiểm tra..."}
+                  </div>
+                </div>
+                <CheckCircle2 className="h-6 w-6 text-emerald-400 shrink-0" />
+              </div>
+            </div>
+          </div>
         </TabsContent>
 
         <TabsContent value="connections">
