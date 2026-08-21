@@ -75,9 +75,9 @@ const OUTPUT_PRESETS = [
 ] as const
 
 const RENDER_PROFILES = [
-  { id: "basic", title: "Nhanh", detail: "veryfast · CRF 24" },
-  { id: "balanced", title: "Cân bằng", detail: "medium · CRF 21" },
-  { id: "high", title: "Chất lượng cao", detail: "slow · CRF 18" },
+  { id: "fastest", title: "⚡ Nhanh nhất", detail: "Hardware GPU / Ultrafast (Mặc định)" },
+  { id: "balanced", title: "⚖️ Cân bằng", detail: "Chất lượng tốt · 1080p 30 FPS" },
+  { id: "high", title: "🎬 Chất lượng cao", detail: "Độ sắc nét tối đa · CRF 18" },
 ] as const
 
 const SUBTITLE_PRESETS: Array<{ name: string; cfg: Partial<SubtitleConfig> }> = [
@@ -2109,10 +2109,19 @@ function TimelineEditor({ project, onRender }: { project: Project; onRender: () 
 function RenderPanel({ project }: { project: Project }) {
   const { job, subtitleConfig, setSubtitleConfig } = useEditorStore()
   const [outputPreset, setOutputPreset] = useState<string>(project.aspect_ratio === "9:16" ? "shorts" : "youtube")
-  const [profileId, setProfileId] = useState<string>("balanced")
-  const [crf, setCrf] = useState(21)
+  const [profileId, setProfileId] = useState<string>("fastest")
+  const [hardwareInfo, setHardwareInfo] = useState<{
+    available: boolean
+    engine: string
+    encoder: string
+    encoder_name: string
+    is_hardware: boolean
+    speed_multiplier: number
+    details: string
+  } | null>(null)
+  const [crf, setCrf] = useState(22)
   const [fps, setFps] = useState(30)
-  const [preset, setPreset] = useState("medium")
+  const [preset, setPreset] = useState("ultrafast")
   const [codec, setCodec] = useState("libx264")
   const [audioBitrate, setAudioBitrate] = useState("192k")
   const [enableSubs, setEnableSubs] = useState(true)
@@ -2131,8 +2140,12 @@ function RenderPanel({ project }: { project: Project }) {
   const canRender = !job || job.status === "completed" || job.status === "failed" || job.status === "cancelled"
   const inProgress = ["generating_voice", "voice_ready", "preparing_media", "media_ready", "generating_subtitles", "rendering"].includes(job?.status || "")
   const selectedPreset = OUTPUT_PRESETS.find((item) => item.id === outputPreset) || OUTPUT_PRESETS[0]
-  const selectedProfile = RENDER_PROFILES.find((item) => item.id === profileId) || RENDER_PROFILES[1]
+  const selectedProfile = RENDER_PROFILES.find((item) => item.id === profileId) || RENDER_PROFILES[0]
   const invalidatePreflight = () => setPreflight(null)
+
+  useEffect(() => {
+    api.getRenderHardware().then(setHardwareInfo).catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (job?.status !== "completed" || !job.id) {
@@ -2160,9 +2173,9 @@ function RenderPanel({ project }: { project: Project }) {
   const applyProfile = (id: string) => {
     setProfileId(id)
     const values: Record<string, { crf: number; preset: string }> = {
-      basic: { crf: 24, preset: "veryfast" },
-      balanced: { crf: 21, preset: "medium" },
-      high: { crf: 18, preset: "slow" },
+      fastest: { crf: 22, preset: "ultrafast" },
+      balanced: { crf: 20, preset: "fast" },
+      high: { crf: 18, preset: "medium" },
     }
     const next = values[id]
     if (next) {
@@ -2246,13 +2259,28 @@ function RenderPanel({ project }: { project: Project }) {
   return (
     <div id="render-panel" className="space-y-5">
       <div className="vas-card p-5">
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-[0.18em] text-amber-300/80">Dựng & Xuất video</p>
-            <h3 className="mt-1 text-lg font-semibold text-slate-100">Cấu hình đầu ra</h3>
-            <p className="mt-1 text-xs text-slate-500">Timeline vẫn là nơi chỉnh scene. Khu vực này chỉ chọn đầu ra và thực thi render.</p>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 font-bold shadow-md shadow-amber-500/20">
+              ⚡
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-semibold text-slate-100">Smart Render Engine</h3>
+                <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
+                  {hardwareInfo?.is_hardware ? "GPU Hardware Accelerated" : "CPU Multi-Threaded"}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400">
+                {hardwareInfo
+                  ? `Đang dùng ${hardwareInfo.encoder_name} · Tốc độ ~${hardwareInfo.speed_multiplier}x realtime · Tự động tối ưu hoá`
+                  : "Tự động phát hiện phần cứng và tối ưu tốc độ xuất video"}
+              </p>
+            </div>
           </div>
-          <Badge variant="outline">MP4 · H.264 + AAC</Badge>
+          <Badge variant="outline" className="text-xs border-[#24313A] bg-[#101A20] text-slate-300">
+            {selectedPreset.title} · MP4 H.264
+          </Badge>
         </div>
 
         <div className="space-y-3.5">

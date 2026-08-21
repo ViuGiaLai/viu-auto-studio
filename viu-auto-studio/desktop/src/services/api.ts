@@ -582,6 +582,17 @@ export const api = {
       },
     }),
   listJobs: () => request<RenderJob[]>(`/render/jobs`),
+  getRenderHardware: (refresh = false) =>
+    request<{
+      available: boolean
+      engine: string
+      encoder: string
+      encoder_name: string
+      is_hardware: boolean
+      speed_multiplier: number
+      details: string
+      all_supported: Array<{ encoder: string; name: string; is_hardware: boolean; speed_multiplier: number }>
+    }>(`/render/hardware?refresh=${refresh}`),
   getJob: (jobId: number) => request<{ ok: boolean; job?: RenderJob }>(`/render/jobs/${jobId}`),
   cancelJob: (jobId: number) => post<{ ok: boolean }>(`/render/jobs/${jobId}/cancel`),
   retryJob: (jobId: number, config: Partial<RenderConfig> = {}) =>

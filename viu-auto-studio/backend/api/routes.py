@@ -2048,6 +2048,13 @@ def list_jobs(db: Session = Depends(get_db)):
     ]
 
 
+@router.get("/render/hardware")
+def get_render_hardware(refresh: bool = False):
+    """Return auto-detected hardware rendering capabilities."""
+    from backend.render.smart_engine import detect_hardware_capabilities
+    return detect_hardware_capabilities(force_refresh=refresh)
+
+
 @router.get("/render/jobs/{job_id}")
 def job_status(job_id: int):
     return pipeline.status(job_id)

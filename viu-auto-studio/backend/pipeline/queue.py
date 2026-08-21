@@ -31,6 +31,7 @@ from backend.core.config import PROJECTS_DIR, CRF, PRESET, FFPROBE_BIN
 from backend.models import AppSetting, ConnectorTask, Project, RenderJob, Scene, Script, PipelineState, Timeline, TimelineClip
 
 from backend.render.ffmpeg_engine import FFmpegEngine, RenderError, check_ffmpeg
+from backend.render.smart_engine import SmartRenderEngine, detect_hardware_capabilities
 from backend.schemas import RenderConfig, TTSConfigRequest
 from backend.services.media import get_audio_duration
 from backend.services.subtitles import generate_subtitles
@@ -610,7 +611,7 @@ class PipelineManager:
         project_dir = Path(project.project_directory) if project and project.project_directory else (Path(PROJECTS_DIR) / f"project_{project_id}")
         project_dir.mkdir(parents=True, exist_ok=True)
         log_path = project_dir / "render.log"
-        engine = FFmpegEngine(log_path=str(log_path))
+        engine = SmartRenderEngine(log_path=str(log_path))
         start_status = job.status if job else "generating_voice"
 
         # Canvas dimensions
