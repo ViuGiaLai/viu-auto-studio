@@ -969,7 +969,7 @@ export default function SettingsPage() {
             <Button variant="outline" onClick={discard} className="border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.06]">
               Huỷ
             </Button>
-            <Button onClick={saveSettings} className="gap-1.5 bg-gradient-to-r from-[#d9940a] to-[#faaa02] text-white shadow-lg shadow-amber-500/20 hover:brightness-110">
+            <Button onClick={saveSettings} className="gap-1.5 bg-gradient-to-r from-[#d9940a] to-[#faaa02] text-slate-950 font-bold shadow-lg shadow-amber-500/20 hover:brightness-110">
               <CheckCircle2 className="h-4 w-4" />
               Lưu cài đặt
             </Button>
@@ -1424,11 +1424,16 @@ export default function SettingsPage() {
                 <Button
                   type="button"
                   size="sm"
+                  variant={flowLoggedIn ? "outline" : "default"}
                   disabled={flowAccountLoading}
                   onClick={() => void (flowLoggedIn ? logoutFlowAccount() : openFlowAccount())}
-                  className={flowLoggedIn ? "h-8 gap-1.5 bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/25 font-bold text-xs" : "h-8 gap-1.5 bg-gradient-to-r from-[#d9940a] to-[#faaa02] text-slate-950 font-bold text-xs"}
+                  className={
+                    flowLoggedIn
+                      ? "h-8 gap-1.5 border-white/15 bg-white/[0.03] text-slate-200 hover:bg-rose-500/20 hover:text-rose-300 hover:border-rose-500/40 text-xs font-semibold"
+                      : "h-8 gap-1.5 bg-gradient-to-r from-[#d9940a] to-[#faaa02] text-slate-950 hover:brightness-110 font-bold text-xs shadow-md shadow-amber-500/20"
+                  }
                 >
-                  {flowLoggedIn ? <LogOut className="h-3.5 w-3.5" /> : <Chrome className="h-3.5 w-3.5" />}
+                  {flowLoggedIn ? <LogOut className="h-3.5 w-3.5 text-slate-400" /> : <Chrome className="h-3.5 w-3.5" />}
                   {flowAccountLoading ? "Đang xử lý…" : flowLoggedIn ? "Đăng xuất" : "Mở Chrome Profile riêng"}
                 </Button>
                 <Button type="button" size="sm" variant="outline" onClick={() => void prepareCapability("factory")} className="h-8 text-xs border-white/15 text-slate-200">
@@ -1885,7 +1890,7 @@ export default function SettingsPage() {
                   <ShieldCheck className={cn("h-3.5 w-3.5", telegramTesting && "animate-pulse")} />
                   {telegramTesting ? "Đang kiểm tra…" : "Kiểm tra bot"}
                 </Button>
-                <Button type="button" size="sm" className="gap-1.5 bg-gradient-to-r from-[#d9940a] to-[#faaa02] text-white" disabled={telegramTesting || telegramSending} onClick={() => void testTelegram(true)}>
+                <Button type="button" size="sm" className="gap-1.5 bg-gradient-to-r from-[#d9940a] to-[#faaa02] text-slate-950 font-bold" disabled={telegramTesting || telegramSending} onClick={() => void testTelegram(true)}>
                   <Send className={cn("h-3.5 w-3.5", telegramSending && "animate-pulse")} />
                   {telegramSending ? "Đang gửi…" : "Gửi tin nhắn thử"}
                 </Button>
