@@ -235,12 +235,34 @@ export default function QueuePage() {
                       </td>
                       <td className="py-3 pr-4">
                         <div className="flex items-center gap-2">
-                          <Progress value={j.progress} className="h-1.5 w-24" />
-                          <span className="text-xs text-slate-500">{j.progress}%</span>
+                          <Progress value={j.progress} className="h-1.5 w-20" />
+                          <span className="font-mono text-xs font-semibold text-slate-300">{j.progress}%</span>
                         </div>
                       </td>
-                      <td className="py-3 pr-4 text-xs text-slate-500">
-                        {j.started_at ? new Date(j.started_at).toLocaleString("vi-VN") : "—"}
+                      <td className="py-3 pr-4 text-xs font-mono">
+                        {(() => {
+                          if (!j.started_at) return <span className="text-slate-500">—</span>
+                          const start = new Date(j.started_at).getTime()
+                          const end = j.completed_at ? new Date(j.completed_at).getTime() : Date.now()
+                          const durSec = Math.max(0, Math.floor((end - start) / 1000))
+                          const m = Math.floor(durSec / 60)
+                          const s = durSec % 60
+                          const timeStr = `${m > 0 ? `${m}m ` : ""}${s}s`
+
+                          const isRun = ["running", "rendering", "generating_voice", "preparing_media", "generating_subtitles"].includes(j.status)
+                          if (isRun && j.progress > 5 && j.progress < 100) {
+                            const totalEst = Math.round((durSec / j.progress) * 100)
+                            const eta = Math.max(0, totalEst - durSec)
+                            const em = Math.floor(eta / 60)
+                            const es = eta % 60
+                            const etaStr = `${em > 0 ? `${em}m ` : ""}${es}s`
+                            return <span className="text-cyan-300">{timeStr} <span className="text-slate-500 font-sans">(còn ~{etaStr})</span></span>
+                          }
+                          if (j.status === "completed") {
+                            return <span className="text-emerald-400">✓ {timeStr}</span>
+                          }
+                          return <span className="text-slate-400">{timeStr}</span>
+                        })()}
                       </td>
                       <td className="py-3">
                         <div className="flex items-center gap-1">
