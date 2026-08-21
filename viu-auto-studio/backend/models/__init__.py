@@ -103,6 +103,7 @@ class Scene(Base):  # noqa: ANN001
     effect = Column(String(64), default="zoom_in")  # zoom_in | zoom_out | pan_left | pan_right | none
     status = Column(String(64), default="pending")  # pending | voice_ready | media_ready | subtitle_ready | done | error
     error_message = Column(Text, default="")
+    shots_json = Column(Text, default="[]")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -438,6 +439,7 @@ class SkillRun(Base):  # noqa: ANN001
     output_text = Column(Text, default="")
     external_task_id = Column(String(255), default="")
     error_message = Column(Text, default="")
+    shots_json = Column(Text, default="[]")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

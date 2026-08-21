@@ -37,7 +37,7 @@ from backend.schemas import (
     DashboardStats, MediaInfo, PipelineStartRequest, ProjectCreate, ProjectCreateV2,
     ProjectDuplicate, ProjectRead, ProjectUpdate, RenderConfig,
     RenderJobRead, RenderStartRequest, SceneCreate, SceneMediaUpdate,
-    SceneRead, SceneReorderRequest, SceneUpdate, SceneVoiceRequest,
+    SceneRead, SceneReorderRequest, SceneUpdate, SceneVoiceRequest, ShotItem,
     ScriptGenerateRequest, ScriptSchema, ScriptSplitRequest,
     ScriptSplitResponse, SubtitleConfig, TTSConfigRead, TTSConfigRequest,
     TTSTestConnectionRequest, TTSVoice,
@@ -2297,3 +2297,57 @@ def project_preview(project_id: int, db: Session = Depends(get_db)):
     if video and Path(video).exists():
         return FileResponse(str(Path(video).resolve()), media_type="video/mp4")
     raise HTTPException(404, "video kết xuất chưa có")
+
+
+@router.post("/projects/{project_id}/scenes/{scene_id}/split-shots", response_model=SceneRead)
+def split_scene_shots(project_id: int, scene_id: int, db: Session = Depends(get_db)):
+    """AI phân tích lời thoại của cảnh và tự động chia thành 2-4 shots hình ảnh với thời lượng và prompt riêng."""
+    scene = db.query(Scene).filter(Scene.id == scene_id, Scene.project_id == project_id).first()
+    if not scene:
+        raise HTTPException(status_code=404, detail="Scene not found")
+
+    import json
+    import uuid
+    import math
+
+    total_dur = scene.duration if scene.duration > 0 else max(4.0, math.ceil(len(scene.narration.split()) * 0.4))
+    num_shots = 3 if total_dur >= 10.0 else 2 if total_dur >= 5.0 else 1
+    shot_dur = round(total_dur / num_shots, 1)
+
+    shots = []
+    base_prompt = scene.visual_prompt or "Cinematic scene illustration, high quality"
+    effects = ["zoom_in", "pan_left", "pan_right", "zoom_out"]
+
+    for i in range(num_shots):
+        start_t = round(i * shot_dur, 1)
+        end_t = round(min(total_dur, (i + 1) * shot_dur), 1)
+        if i == num_shots - 1:
+            end_t = total_dur
+        dur = round(end_t - start_t, 1)
+        
+        # Sub-prompt variations
+        sub_prompt = f"{base_prompt} (Shot {i+1}: close-up / alternate dynamic angle)" if i > 0 else base_prompt
+        
+        shot = {
+            "id": f"shot_{uuid.uuid4().hex[:8]}",
+            "order_index": i,
+            "media_path": scene.media_path if i == 0 else "",
+            "image_path": scene.image_path if i == 0 else "",
+            "video_path": scene.video_path if i == 0 else "",
+            "media_type": scene.media_type or "image",
+            "visual_prompt": sub_prompt,
+            "transition_description": f"Camera shot {i+1}",
+            "effect": effects[i % len(effects)],
+            "duration": dur,
+            "start_time": start_t,
+            "end_time": end_t,
+        }
+        shots.append(shot)
+
+    scene.shots_json = json.dumps(shots)
+    db.commit()
+    db.refresh(scene)
+
+    res = SceneRead.model_validate(scene)
+    res.shots = [ShotItem(**s) for s in shots]
+    return res

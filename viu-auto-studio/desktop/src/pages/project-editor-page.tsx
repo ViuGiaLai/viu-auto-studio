@@ -972,218 +972,308 @@ function Storyboard({ project }: { project: Project }) {
           </div>
         </div>
       ) : (
-        scenes.map((scene, index) => (
-          <div
-            key={scene.id}
-            draggable
-            onDragStart={() => setDragIndex(index)}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={() => {
-              if (dragIndex !== null) move(dragIndex, index)
-              setDragIndex(null)
-            }}
-            className={cn("vas-card p-5 transition-colors", selected.has(scene.id) && "border-amber-500/40")}
-          >
-            <div className="space-y-4 py-4">
-              <div className="flex items-start gap-3">
-                <Button variant="ghost"
-                  onClick={() => toggleSelect(scene.id)}
-                  className={cn(
-                    "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-xs font-bold",
-                    selected.has(scene.id) ? "border-primary bg-primary/10 text-amber-400" : "border-input text-slate-500",
-                  )}
-                >
-                  {index + 1}
-                </Button>
-                <GripVertical className="mt-1 h-4 w-4 shrink-0 text-slate-500/40" />
-                <div className="min-w-0 flex-1 space-y-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-slate-500">Lời thuyết minh</Label>
-                    <Textarea
-                      value={scene.narration}
-                      onChange={(e) => updateScene(scene, { narration: e.target.value })}
-                      rows={2}
-                      className="text-sm"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-slate-500">Prompt hình ảnh (AI viết theo nội dung TOÀN cảnh)</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        value={scene.visual_prompt}
-                        onChange={(e) => updateScene(scene, { visual_prompt: e.target.value })}
-                        className="text-sm italic text-slate-300"
-                        placeholder="Describe the visual scene in English..."
-                      />
-                      <Button size="icon" variant="ghost" title="AI viết lại prompt theo toàn cảnh" disabled={analyzingScene === scene.id} onClick={async () => {
-                        try {
-                          setAnalyzingScene(scene.id)
-                          const res = await api.regenerateScenePrompt(project.id, scene.id)
-                          await updateScene(scene, { visual_prompt: res.visual_prompt })
-                          toast({ title: "Đã AI viết lại prompt", description: "Ảnh cũ sẽ được sinh lại khi render theo prompt mới." })
-                        } catch (e) {
-                          toast({ title: "AI viết lại prompt thất bại", description: String(e), variant: "destructive" })
-                        } finally {
-                          setAnalyzingScene(null)
-                        }
-                      }}>
-                        <Sparkles className={cn("h-4 w-4", analyzingScene === scene.id && "animate-pulse text-amber-400")} />
-                      </Button>
-                    </div>
-                    {scene.style_prompt ? (
-                      <p className="truncate rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-[11px] italic text-amber-300" title={scene.style_prompt}>
-                        🎨 {scene.style_prompt}
-                      </p>
-                    ) : null}
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-slate-500">Chuyển động / camera / chuyển cảnh</Label>
-                      <Textarea
-                        value={scene.transition_description || ""}
-                        onChange={(e) => updateScene(scene, { transition_description: e.target.value })}
-                        rows={2}
-                        className="text-sm"
-                        placeholder="Ví dụ: slow push-in, subject turns toward camera, gentle dissolve..."
-                      />
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <label className={cn(
-                      "inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition-colors hover:bg-white/[0.04]",
-                                            (scene.image_path || scene.video_path || scene.media_path) ? "border-white/10" : "border-amber-500/40 bg-amber-500/[0.06] text-amber-200",
-                    )}>
-                      <Upload className="h-3.5 w-3.5" />
-                      {(scene.image_path || scene.video_path || scene.media_path) ? "Thay media" : "Upload ảnh/video"}
+        scenes.map((scene, index) => {
+          // Normalize shots array: fallback to 1 default shot if empty
+          const sceneShots = (scene.shots && scene.shots.length > 0)
+            ? scene.shots
+            : [{
+                id: `shot_${scene.id}_default`,
+                order_index: 0,
+                media_path: scene.media_path || "",
+                image_path: scene.image_path || "",
+                video_path: scene.video_path || "",
+                media_type: scene.media_type || "image",
+                visual_prompt: scene.visual_prompt || "",
+                transition_description: scene.transition_description || "",
+                effect: scene.effect || "zoom_in",
+                duration: scene.duration || 4.0,
+                start_time: 0.0,
+                end_time: scene.duration || 4.0,
+              }]
 
-                      <input
-                        type="file"
-                        accept="image/*,video/*"
-                        className="hidden"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0]
-                          if (f) handleFilePick(scene, f)
-                          e.target.value = ""
-                        }}
-                      />
-                    </label>
-                                        {(scene.image_path || scene.media_path) && (
-                      <Badge variant="success"><FileVideo className="mr-1 h-3 w-3" /> Đã có ảnh</Badge>
-                    )}
-                    {scene.video_path && (
-                      <Badge variant="success"><FileVideo className="mr-1 h-3 w-3" /> Đã có video</Badge>
-                    )}
+          const handleAddShot = () => {
+            const nextIdx = sceneShots.length
+            const totalDur = scene.duration || 6.0
+            const splitDur = Number((totalDur / (nextIdx + 1)).toFixed(1))
+            const newShot = {
+              id: `shot_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+              order_index: nextIdx,
+              media_path: "",
+              image_path: "",
+              video_path: "",
+              media_type: "image",
+              visual_prompt: `${scene.visual_prompt || "Cinematic scene"} (Shot #${nextIdx + 1})`,
+              transition_description: "pan_left",
+              effect: "pan_left",
+              duration: splitDur,
+              start_time: Number((nextIdx * splitDur).toFixed(1)),
+              end_time: totalDur,
+            }
+            const updatedShots = [...sceneShots, newShot]
+            updateScene(scene, { shots: updatedShots } as any)
+            toast({ title: `Đã thêm Shot #${nextIdx + 1}`, description: "Gán hình/video và prompt riêng cho shot này." })
+          }
 
-                    {scene.audio_path && (
-                      <Badge variant="secondary"><Mic className="mr-1 h-3 w-3" /> Đã có giọng</Badge>
-                    )}
-                    {scene.duration > 0 && (
-                      <span className="text-xs text-slate-500">{scene.duration.toFixed(1)}s</span>
-                    )}
-                    <Select value={scene.effect} onValueChange={(v) => updateScene(scene, { effect: v })}>
-                      <SelectTrigger className="h-7 w-36 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {SCENE_EFFECTS.map((ef) => (
-                          <SelectItem key={ef.value} value={ef.value}>{ef.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {scene.status === "error" && scene.error_message && (
-                      <Badge variant="destructive">Lỗi: {scene.error_message.slice(0, 60)}</Badge>
-                    )}
-                  </div>
-                                    {(scene.image_path || (scene.media_type === "image" && scene.media_path)) && (
-                    <div className="overflow-hidden rounded-lg border bg-white/[0.03]/50">
-                      <div className="border-b border-white/5 px-3 py-1.5 text-[10px] uppercase tracking-wide text-slate-500">Ảnh tham chiếu / image stage</div>
-                      <img
-                        src={mediaUrl(scene.image_path || scene.media_path || "")}
-                        alt="scene reference image"
-                        className="max-h-48 w-full object-contain"
-                        loading="lazy"
-                      />
-                    </div>
-                  )}
-                  {(scene.video_path || (scene.media_type === "video" && scene.media_path)) && (
-                    <div className="overflow-hidden rounded-lg border bg-white/[0.03]/50">
-                      <div className="border-b border-white/5 px-3 py-1.5 text-[10px] uppercase tracking-wide text-slate-500">Video cuối / video stage</div>
-                      <video
-                        src={mediaUrl(scene.video_path || scene.media_path || "")}
-                        controls
-                        className="max-h-48 w-full"
-                      />
-                    </div>
-                  )}
+          const handleSplitShotsAI = async () => {
+            try {
+              const res = await api.splitSceneShots(project.id, scene.id)
+              toast({ title: "Đã AI chia thành các shots visual", description: `Cảnh #${index + 1} đã được phân thành ${res.shots?.length || 2} shots với thời lượng riêng.` })
+              load()
+            } catch (e) {
+              toast({ title: "Chia shots thất bại", description: String(e), variant: "destructive" })
+            }
+          }
 
-                </div>
-                <div className="flex shrink-0 flex-col gap-1">
-                  <Button size="icon" variant="ghost" title="Chia cảnh (AI theo ngữ nghĩa)" disabled={splittingScene === scene.id} onClick={async () => {
-                    try {
-                      setSplittingScene(scene.id)
-                      await api.semanticSplitScene(project.id, scene.id)
-                      toast({ title: "Đã AI chia cảnh", description: "Cảnh được chia theo diễn biến nội dung — mỗi nửa có prompt hình riêng." })
-                      load()
-                    } catch (e) {
-                      toast({ title: "Chia cảnh thất bại", description: String(e), variant: "destructive" })
-                    } finally {
-                      setSplittingScene(null)
-                    }
-                  }}>
-                    <SplitSquareHorizontal className={cn("h-4 w-4", splittingScene === scene.id && "animate-pulse text-amber-400")} />
-                  </Button>
-                  {index > 0 && (
-                    <Button size="icon" variant="ghost" title="Gộp với cảnh trên" onClick={async () => {
-                      try {
-                        await api.mergeScenes(project.id, scenes[index - 1].id, scene.id)
-                        toast({ title: "Đã gộp cảnh" })
-                        load()
-                      } catch (e) {
-                        toast({ title: "Gộp cảnh thất bại", description: String(e), variant: "destructive" })
-                      }
-                    }}>
-                      <Combine className="h-4 w-4" />
+          const handleDeleteShot = (shotId: string) => {
+            if (sceneShots.length <= 1) {
+              toast({ title: "Không thể xoá", description: "Mỗi cảnh cần tối thiểu 1 shot visual." })
+              return
+            }
+            const filtered = sceneShots.filter((s) => s.id !== shotId)
+            updateScene(scene, { shots: filtered } as any)
+            toast({ title: "Đã xoá shot" })
+          }
+
+          const handleUpdateShot = (shotId: string, patch: any) => {
+            const updated = sceneShots.map((s) => s.id === shotId ? { ...s, ...patch } : s)
+            const mainPatch: any = { shots: updated }
+            if (shotId === sceneShots[0].id) {
+              if (patch.visual_prompt !== undefined) mainPatch.visual_prompt = patch.visual_prompt
+              if (patch.effect !== undefined) mainPatch.effect = patch.effect
+            }
+            updateScene(scene, mainPatch)
+          }
+
+          return (
+            <div
+              key={scene.id}
+              draggable
+              onDragStart={() => setDragIndex(index)}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={() => {
+                if (dragIndex !== null) move(dragIndex, index)
+                setDragIndex(null)
+              }}
+              className={cn(
+                "rounded-xl border transition-all shadow-sm bg-[#12191e] overflow-hidden space-y-0",
+                selected.has(scene.id) ? "border-amber-500/60 ring-1 ring-amber-500/20" : "border-white/10 hover:border-white/20"
+              )}
+            >
+              {/* 1. SCENE HEADER & LỜI THUYẾT MINH BAR */}
+              <div className="p-3.5 bg-black/40 border-b border-white/5 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => toggleSelect(scene.id)}
+                      className={cn(
+                        "h-6 w-6 p-0 shrink-0 font-bold text-xs rounded border",
+                        selected.has(scene.id) ? "border-amber-400 bg-amber-400/15 text-amber-300" : "border-white/10 text-slate-400 bg-white/5"
+                      )}
+                    >
+                      {index + 1}
                     </Button>
-                  )}
-                  <Button size="icon" variant="ghost" title="Sinh lại ảnh AI (UTO Flow)" disabled={regeneratingMedia === scene.id} onClick={async () => {
-                    try {
-                      setRegeneratingMedia(scene.id)
-                      const s = await api.regenerateMedia(project.id, scene.id)
-                      toast({ title: "Đã sinh lại ảnh AI", description: `Cảnh ${scene.order_index}: ảnh mới từ UTO Flow${s.media_path ? "" : ""}` })
-                      load()
-                    } catch (e) {
-                      toast({ title: "Sinh ảnh AI thất bại", description: String(e), variant: "destructive" })
-                    } finally {
-                      setRegeneratingMedia(null)
-                    }
-                  }}>
-                    <ImageIcon className={cn("h-4 w-4", regeneratingMedia === scene.id && "animate-pulse text-amber-400")} />
-                  </Button>
-                  <Button size="icon" variant="ghost" title="Tạo lại giọng đọc" onClick={async () => {
-                    try {
-                      await api.regenerateVoice(project.id, scene.id, {})
-                      toast({ title: "Đã tạo lại giọng" })
-                      load()
-                    } catch (e) {
-                      toast({ title: "Tạo lại giọng thất bại", description: String(e), variant: "destructive" })
-                    }
-                  }}>
-                    <Mic className="h-4 w-4" />
-                  </Button>
-                  <Button size="icon" variant="ghost" title="Xóa cảnh" onClick={async () => {
-                    if (!confirm("Xóa cảnh này?")) return
-                    try {
-                      await api.deleteScene(project.id, scene.id)
-                      load()
-                    } catch (e) {
-                      toast({ title: "Xóa cảnh thất bại", description: String(e), variant: "destructive" })
-                    }
-                  }}>
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
+                    <GripVertical className="h-3.5 w-3.5 text-slate-500 cursor-grab" />
+                    <span className="font-bold text-slate-100">SCENE #{index + 1}</span>
+                    <span className="text-slate-500">·</span>
+                    <span className="text-slate-400">Lời thuyết minh</span>
+                    {scene.duration > 0 && (
+                      <span className="text-[11px] font-mono text-amber-300/90 bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/20 font-semibold">
+                        🎙 {scene.duration.toFixed(1)}s audio
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {scene.audio_path && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 text-[11px] px-2 border-white/10 bg-white/5 text-slate-300 hover:text-amber-300 gap-1"
+                        onClick={() => {
+                          const audio = new Audio(mediaUrl(scene.audio_path!))
+                          audio.play().catch(() => {})
+                        }}
+                      >
+                        <Play className="h-3 w-3 fill-current" /> Nghe giọng
+                      </Button>
+                    )}
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6 text-slate-400 hover:text-red-400"
+                      title="Xoá cảnh này"
+                      onClick={async () => {
+                        if (!confirm(`Xoá cảnh #${index + 1}?`)) return
+                        try {
+                          await api.deleteScene(project.id, scene.id)
+                          toast({ title: "Đã xoá cảnh" })
+                          load()
+                        } catch (e) {
+                          toast({ title: "Xoá cảnh thất bại", description: String(e), variant: "destructive" })
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 text-red-400/70 hover:text-red-400" />
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Ô Nhập Lời Thuyết Minh Của Cả Cảnh */}
+                <Textarea
+                  value={scene.narration}
+                  onChange={(e) => updateScene(scene, { narration: e.target.value })}
+                  rows={2}
+                  className="text-xs min-h-[44px] bg-black/50 border-white/10 leading-relaxed font-sans text-slate-100"
+                  placeholder="Nhập lời thuyết minh cho phân cảnh này..."
+                />
+              </div>
+
+              {/* 2. VISUAL SHOTS SUB-TIMELINE (1 Scene -> N Shots) */}
+              <div className="p-3.5 space-y-3 bg-[#0d1419]/60">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-200">🎬 VISUAL SHOTS</span>
+                    <span className="text-[11px] text-slate-400">({sceneShots.length} shot hình/video trên nền audio)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 px-2 text-[11px] border-amber-500/30 text-amber-300 hover:bg-amber-500/10 gap-1"
+                      onClick={handleSplitShotsAI}
+                    >
+                      <Sparkles className="h-3 w-3" /> ✨ AI chia shots
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 px-2 text-[11px] border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 gap-1"
+                      onClick={handleAddShot}
+                    >
+                      <Plus className="h-3 w-3" /> + Thêm shot
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Danh sách các Shot Cards */}
+                <div className={cn(
+                  "grid gap-3",
+                  sceneShots.length === 1 ? "grid-cols-1" : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
+                )}>
+                  {sceneShots.map((shot, sIndex) => (
+                    <div
+                      key={shot.id || sIndex}
+                      className="rounded-lg border border-white/10 bg-black/40 p-3 space-y-2.5 hover:border-white/20 transition shadow-inner"
+                    >
+                      {/* Shot Title & Timeline */}
+                      <div className="flex items-center justify-between text-[11px]">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-amber-300">Shot #{sIndex + 1}</span>
+                          <span className="text-slate-500 font-mono">
+                            {shot.start_time !== undefined ? `${shot.start_time.toFixed(1)}s → ${shot.end_time?.toFixed(1) || ''}s` : `${(shot.duration || 4).toFixed(1)}s`}
+                          </span>
+                        </div>
+                        {sceneShots.length > 1 && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-5 w-5 text-slate-500 hover:text-red-400"
+                            onClick={() => handleDeleteShot(shot.id)}
+                            title="Xoá shot này"
+                          >
+                            <Trash2 className="h-3 w-3 text-red-400/80" />
+                          </Button>
+                        )}
+                      </div>
+
+                      {/* Thumbnail Media Box 16:9 */}
+                      <div className="relative aspect-video w-full rounded-md overflow-hidden border border-white/10 bg-black/60 flex items-center justify-center group shadow-sm">
+                        {(shot.image_path || (shot.media_type === "image" && shot.media_path) || (sIndex === 0 && scene.image_path)) ? (
+                          <img
+                            src={mediaUrl(shot.image_path || shot.media_path || (sIndex === 0 ? scene.image_path : "") || "")}
+                            alt="Shot preview"
+                            className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                            loading="lazy"
+                          />
+                        ) : (shot.video_path || (shot.media_type === "video" && shot.media_path) || (sIndex === 0 && scene.video_path)) ? (
+                          <video
+                            src={mediaUrl(shot.video_path || shot.media_path || (sIndex === 0 ? scene.video_path : "") || "")}
+                            controls
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex flex-col items-center gap-1 text-slate-500">
+                            <ImageIcon className="h-6 w-6 text-slate-600/70" />
+                            <span className="text-[10px]">Chưa có media</span>
+                          </div>
+                        )}
+
+                        {/* Upload Button Overlay */}
+                        <label className="absolute bottom-1.5 right-1.5 cursor-pointer rounded bg-black/80 hover:bg-black/95 text-white border border-white/20 px-1.5 py-0.5 text-[9px] font-medium shadow transition flex items-center gap-1 backdrop-blur-sm">
+                          <Upload className="h-2.5 w-2.5" />
+                          {(shot.image_path || shot.video_path || shot.media_path) ? "Đổi" : "Tải ảnh"}
+                          <input
+                            type="file"
+                            accept="image/*,video/*"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const f = e.target.files?.[0]
+                              if (f) {
+                                const form = new FormData()
+                                form.append("file", f)
+                                try {
+                                  const res = await fetch(`/api/upload/media?project_id=${project.id}`, { method: "POST", body: form })
+                                  const data = await res.json()
+                                  handleUpdateShot(shot.id, { media_path: data.media_path, image_path: data.media_path, media_type: data.media_type })
+                                  toast({ title: `Đã gán media cho Shot #${sIndex + 1}` })
+                                } catch (err) {
+                                  toast({ title: "Tải media thất bại", description: String(err), variant: "destructive" })
+                                }
+                              }
+                              e.target.value = ""
+                            }}
+                          />
+                        </label>
+                      </div>
+
+                      {/* Prompt input for this shot */}
+                      <div className="space-y-1">
+                        <Input
+                          value={shot.visual_prompt}
+                          onChange={(e) => handleUpdateShot(shot.id, { visual_prompt: e.target.value })}
+                          className="text-[11px] italic text-slate-300 h-7 bg-black/40 border-white/10"
+                          placeholder={`Prompt cho Shot #${sIndex + 1}...`}
+                        />
+                      </div>
+
+                      {/* Camera motion effect for this shot */}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] text-slate-500">Chuyển động:</span>
+                        <Select
+                          value={shot.effect || "zoom_in"}
+                          onValueChange={(v) => handleUpdateShot(shot.id, { effect: v })}
+                        >
+                          <SelectTrigger className="h-6 text-[10px] bg-black/40 border-white/10 px-2 py-0">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(SCENE_EFFECTS).map(([k, v]) => (
+                              <SelectItem key={k} value={k}>
+                                {v}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
-          </div>
-        ))
+          )
+        })
       )}
     </div>
   )

@@ -1,3 +1,18 @@
+export interface ShotItem {
+  id: string
+  order_index: number
+  media_path?: string
+  image_path?: string
+  video_path?: string
+  media_type?: string
+  visual_prompt: string
+  transition_description?: string
+  effect?: string
+  duration?: number
+  start_time?: number
+  end_time?: number
+}
+
 // Shared domain types mirroring the backend Pydantic schemas
 
 export interface Channel {

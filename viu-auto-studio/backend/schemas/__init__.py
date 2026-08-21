@@ -200,6 +200,20 @@ class ScriptSplitResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Scenes
 # ---------------------------------------------------------------------------
+class ShotItem(BaseModel):
+    id: str = ""
+    order_index: int = 0
+    media_path: str = ""
+    image_path: str = ""
+    video_path: str = ""
+    media_type: str = "image"
+    visual_prompt: str = ""
+    transition_description: str = ""
+    effect: str = "zoom_in"
+    duration: float = 0.0
+    start_time: float = 0.0
+    end_time: float = 0.0
+
 class SceneCreate(BaseModel):
     narration: str = ""
     visual_prompt: str = ""
