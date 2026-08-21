@@ -134,7 +134,7 @@ function createWindow(): void {
         mainWindow.setContentSize(1920, 1080)
         const base = VITE_DEV_SERVER_URL || uiBaseUrl
         await new Promise((resolve) => setTimeout(resolve, 1200))
-        if (process.env.VIU_UI_SMOKE !== "1" && process.env.VIU_CHANNEL_CONFIG_SMOKE !== "1" && process.env.VIU_PROJECTS_SMOKE !== "1") for (const route of routes) {
+        if (process.env.VIU_UI_SMOKE !== "1" && process.env.VIU_CHANNEL_CONFIG_SMOKE !== "1" && process.env.VIU_PROJECTS_SMOKE !== "1" && process.env.VIU_CAPABILITY_SMOKE !== "1" && process.env.VIU_SETTINGS_WORKFLOW_SMOKE !== "1" && !process.env.VIU_RENDER_SMOKE) for (const route of routes) {
           if (route) {
             await mainWindow.loadURL(`${base}/${route}`)
             await new Promise((resolve) => setTimeout(resolve, 1200))
@@ -280,6 +280,46 @@ function createWindow(): void {
           fs.writeFileSync(path.join(captureDir, "ui-smoke-result.json"), JSON.stringify({ projectId: smokeProjectId, editorUrl }, null, 2), "utf8")
         }
 
+        if (process.env.VIU_CAPABILITY_SMOKE === "1") {
+          const waitCapability = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+          await mainWindow.loadURL(`${base}/settings?tab=edit`)
+          await mainWindow.webContents.executeJavaScript(`new Promise((resolve, reject) => { const started = Date.now(); const check = () => { const body = document.body.innerText || ''; const tabs = [...document.querySelectorAll('button[role="tab"]')]; if (body.includes('Thành phần Viu Studio') && tabs.some((node) => (node.textContent || '').includes('Dựng & Xuất video'))) resolve(true); else if (Date.now() - started > 15000) reject(new Error('Settings không render kịp; body=' + body.slice(0, 300))); else setTimeout(check, 100); }; check(); })()`)
+          await waitCapability(500)
+          const engineTabRect = await mainWindow.webContents.executeJavaScript(`(() => { const tabs = [...document.querySelectorAll('button[role="tab"]')]; const tab = tabs.find((node) => (node.textContent || '').replace(/\\s+/g, ' ').includes('Dựng & Xuất video')); if (!tab) throw new Error('Không tìm thấy tab Dựng & Xuất video; tabs=' + tabs.map((node) => node.textContent).join('|')); const rect = tab.getBoundingClientRect(); return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } })()`)
+          await mainWindow.webContents.executeJavaScript(`(() => { const tabs = [...document.querySelectorAll('button[role="tab"]')]; const tab = tabs.find((node) => (node.textContent || '').replace(/\\s+/g, ' ').includes('Dựng & Xuất video')); if (!tab) throw new Error('Edit tab disappeared'); tab.focus(); tab.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, buttons: 1 })); tab.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0 })); tab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })); return true })()`)
+          await waitCapability(1200)
+          const capabilityUi = await mainWindow.webContents.executeJavaScript(`(() => ({ body: document.body.innerText, activeTab: [...document.querySelectorAll('button[role="tab"]')].find((node) => node.getAttribute('aria-selected') === 'true')?.textContent || '', cards: [...document.querySelectorAll('button')].filter((node) => /Cơ bản|Factory|Movie Recap/.test(node.textContent || '')).map((node) => (node.textContent || '').trim()) }))()`)
+          fs.writeFileSync(path.join(captureDir, "capability-settings-before.png"), (await mainWindow.webContents.capturePage()).toPNG())
+          if (!capabilityUi.body.includes("Thành phần Viu Studio") || !capabilityUi.body.includes("Nền tảng bắt buộc") || !capabilityUi.body.includes("Render Profile") || !capabilityUi.body.includes("Công cụ xử lý") || !capabilityUi.body.includes("FFmpeg") || !capabilityUi.body.includes("FFprobe")) throw new Error("Settings chưa hiển thị đầy đủ capability và quản lý FFmpeg/FFprobe")
+          const checkToolsButton = await mainWindow.webContents.executeJavaScript(`(() => { const button = [...document.querySelectorAll('button')].find((node) => (node.textContent || '').includes('Kiểm tra tất cả')); if (!button) return false; button.click(); return true })()`)
+          await waitCapability(900)
+          const toolCheckAfter = await mainWindow.webContents.executeJavaScript(`document.body.innerText`)
+          if (checkToolsButton && !toolCheckAfter.includes("FFmpeg")) throw new Error("Nút Kiểm tra tất cả không giữ được khu vực quản lý công cụ")
+          const preflightButton = await mainWindow.webContents.executeJavaScript(`(() => { const button = [...document.querySelectorAll('button')].find((node) => (node.textContent || '').includes('Kiểm tra & cài khi cần')); if (!button) return false; button.click(); return true })()`)
+          await waitCapability(700)
+          const capabilityAfter = await mainWindow.webContents.executeJavaScript(`document.body.innerText`)
+          fs.writeFileSync(path.join(captureDir, "capability-settings-result.json"), JSON.stringify({ capabilityUi, preflightButton, preflightVisible: capabilityAfter.includes("Preflight:") }, null, 2), "utf8")
+          fs.writeFileSync(path.join(captureDir, "capability-settings-after.png"), (await mainWindow.webContents.capturePage()).toPNG())
+          if (preflightButton && !capabilityAfter.includes("Preflight:")) throw new Error("Nút capability không mở preflight confirmation")
+        }
+
+        if (process.env.VIU_SETTINGS_WORKFLOW_SMOKE === "1") {
+          const waitSettings = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+          await mainWindow.loadURL(`${base}/settings`)
+          await mainWindow.webContents.executeJavaScript(`new Promise((resolve, reject) => { const started = Date.now(); const check = () => { const body = document.body.innerText || ''; const tabs = [...document.querySelectorAll('button[role="tab"]')]; if (body.includes('Thiết lập nhanh') && tabs.length >= 8) resolve(true); else if (Date.now() - started > 15000) reject(new Error('Settings workflow không render đủ tab; tabs=' + tabs.map((node) => node.textContent).join('|'))); else setTimeout(check, 100); }; check(); })()`)
+          const tabLabels = ["Thiết lập nhanh", "Nội dung & AI", "Giọng & Âm thanh", "Hình ảnh & Video", "Dựng & Xuất video", "Tài khoản & Kết nối", "Hiệu năng", "Nâng cao"]
+          const tabResults: Array<{ label: string; selected: string; bodyHasLabel: boolean }> = []
+          for (const label of tabLabels) {
+            await mainWindow.webContents.executeJavaScript(`(() => { const target = [...document.querySelectorAll('button[role="tab"]')].find((node) => (node.textContent || '').includes(${JSON.stringify(label)})); if (!target) throw new Error('Không tìm thấy tab: ' + ${JSON.stringify(label)}); target.click(); return true })()`)
+            await waitSettings(350)
+            const state = await mainWindow.webContents.executeJavaScript(`(() => { const target = [...document.querySelectorAll('button[role="tab"]')].find((node) => (node.textContent || '').includes(${JSON.stringify(label)})); return { selected: target?.getAttribute('aria-selected') || '', bodyHasLabel: (document.body.innerText || '').includes(${JSON.stringify(label)}) }; })()`)
+            tabResults.push({ label, selected: state.selected, bodyHasLabel: state.bodyHasLabel })
+            fs.writeFileSync(path.join(captureDir, `settings-tab-${tabLabels.indexOf(label) + 1}.png`), (await mainWindow.webContents.capturePage()).toPNG())
+            if (state.selected !== "true" || !state.bodyHasLabel) throw new Error(`Tab Settings không active: ${label}`)
+          }
+          fs.writeFileSync(path.join(captureDir, "settings-workflow-result.json"), JSON.stringify({ tabResults, url: mainWindow.webContents.getURL() }, null, 2), "utf8")
+        }
+
         if (process.env.VIU_CHANNEL_CONFIG_SMOKE === "1") {
           const waitChannel = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
           const requestChannelApi = async (pathName: string, init?: RequestInit) => {
@@ -388,6 +428,87 @@ function createWindow(): void {
           await requestChannelApi(`/projects/${channelProject.id}`, { method: "DELETE" })
           await requestChannelApi(`/channels/${channel.id}`, { method: "DELETE" })
           fs.writeFileSync(path.join(captureDir, "channel-config-cleanup.json"), JSON.stringify({ cleaned: true, channelId: channel.id, projectId: channelProject.id, unchannelProjectId: unchannelProject.id }, null, 2), "utf8")
+        }
+
+        if (process.env.VIU_THUMBNAIL_SMOKE) {
+          await mainWindow.loadURL(`${base}/`)
+          await new Promise((resolve) => setTimeout(resolve, 12000))
+          const dashboardImages = await mainWindow.webContents.executeJavaScript(`Array.from(document.querySelectorAll('img')).map((node) => ({ src: node.getAttribute('src') || '', complete: node.complete, naturalWidth: node.naturalWidth }))`)
+          const dashboardCards = await mainWindow.webContents.executeJavaScript(`document.querySelectorAll('a[href^="/projects/"]:not([href="/projects/new"])').length`)
+          const dashboardBody = await mainWindow.webContents.executeJavaScript(`document.body.innerText`)
+          fs.writeFileSync(path.join(captureDir, "dashboard-thumbnail-result.json"), JSON.stringify({ url: mainWindow.webContents.getURL(), cards: dashboardCards, images: dashboardImages, body: dashboardBody }, null, 2), "utf8")
+          if (dashboardCards > 0 && !dashboardImages.some((item: { naturalWidth: number }) => item.naturalWidth > 0)) throw new Error("Trung tâm sản xuất có project nhưng không tải được thumbnail")
+          fs.writeFileSync(path.join(captureDir, "dashboard-thumbnail.png"), (await mainWindow.webContents.capturePage()).toPNG())
+          await mainWindow.loadURL(`${base}/projects`)
+          await new Promise((resolve) => setTimeout(resolve, 12000))
+          const projectImages = await mainWindow.webContents.executeJavaScript(`Array.from(document.querySelectorAll('img')).map((node) => ({ src: node.getAttribute('src') || '', complete: node.complete, naturalWidth: node.naturalWidth }))`)
+          const projectCards = await mainWindow.webContents.executeJavaScript(`document.querySelectorAll('a[href^="/projects/"]:not([href="/projects/new"])').length`)
+          const projectsBody = await mainWindow.webContents.executeJavaScript(`document.body.innerText`)
+          fs.writeFileSync(path.join(captureDir, "projects-thumbnail-result.json"), JSON.stringify({ url: mainWindow.webContents.getURL(), cards: projectCards, images: projectImages, body: projectsBody }, null, 2), "utf8")
+          if (projectCards > 0 && !projectImages.some((item: { naturalWidth: number }) => item.naturalWidth > 0)) throw new Error("Trang Dự án có project nhưng không tải được thumbnail")
+          fs.writeFileSync(path.join(captureDir, "projects-thumbnail.png"), (await mainWindow.webContents.capturePage()).toPNG())
+        }
+
+        if (process.env.VIU_AI_STUDIO_SMOKE) {
+          await mainWindow.loadURL(`${base}/studio`)
+          await new Promise((resolve) => setTimeout(resolve, 1600))
+          fs.writeFileSync(path.join(captureDir, "ai-studio-before.png"), (await mainWindow.webContents.capturePage()).toPNG())
+          const studioBody = String(await mainWindow.webContents.executeJavaScript(`document.body.innerText`))
+          const requiredLabels = ["AI STUDIO", "Production Dashboard", "Project đang sản xuất", "Tiếp tục sản xuất", "Chạy Factory Flow", "Việc cần làm"]
+          for (const label of requiredLabels) {
+            if (!studioBody.includes(label)) throw new Error(`AI Studio thiếu control/chức năng: ${label}`)
+          }
+          const duplicateCreateControls = await mainWindow.webContents.executeJavaScript(`(() => [...document.querySelectorAll('button')].some((node) => /Tạo (kênh|tập)|Sinh/.test(node.textContent || '')))()`)
+          if (duplicateCreateControls) throw new Error("AI Studio vẫn còn nút tạo project/kênh trùng với trang Dự án")
+          const selectorValue = await mainWindow.webContents.executeJavaScript(`document.querySelector('#studio-project')?.getAttribute('value') || document.querySelector('#studio-project')?.textContent || ''`)
+          fs.writeFileSync(path.join(captureDir, "ai-studio-dashboard.json"), JSON.stringify({ requiredLabels, duplicateCreateControls, selectorValue, url: mainWindow.webContents.getURL() }, null, 2), "utf8")
+          const editorButton = await mainWindow.webContents.executeJavaScript(`Boolean([...document.querySelectorAll('button')].find((node) => node.textContent?.includes('Mở Project Editor')))`)
+          if (!editorButton) throw new Error("AI Studio thiếu nút Mở Project Editor")
+          await mainWindow.webContents.executeJavaScript(`(() => { const el = [...document.querySelectorAll('button')].find((node) => node.textContent?.includes('Mở Project Editor')); if (!el) throw new Error('Không tìm thấy Mở Project Editor'); el.click(); return true; })()`)
+          await new Promise((resolve) => setTimeout(resolve, 1000))
+          if (!/^http:\/\/127\.0\.0\.1:\d+\/projects\/\d+/.test(mainWindow.webContents.getURL())) throw new Error("Mở Project Editor không điều hướng đúng")
+          await mainWindow.loadURL(`${base}/studio?projectId=${encodeURIComponent(selectorValue.match(/\d+/)?.[0] || "")}`)
+          await new Promise((resolve) => setTimeout(resolve, 1200))
+          await mainWindow.webContents.executeJavaScript(`(() => { const el = [...document.querySelectorAll('button')].find((node) => node.textContent?.includes('Kịch bản & Giọng')); if (!el) throw new Error('Không tìm thấy bước Kịch bản & Giọng'); el.click(); return true; })()`)
+          await new Promise((resolve) => setTimeout(resolve, 900))
+          if (!/\/projects\/\d+\?stage=script/.test(mainWindow.webContents.getURL())) throw new Error("Bước Kịch bản & Giọng không mở đúng editor stage")
+          await mainWindow.loadURL(`${base}/projects`)
+          await new Promise((resolve) => setTimeout(resolve, 6000))
+          fs.writeFileSync(path.join(captureDir, "projects-from-ai-studio.png"), (await mainWindow.webContents.capturePage()).toPNG())
+          const openButton = await mainWindow.webContents.executeJavaScript(`Boolean([...document.querySelectorAll('button')].find((node) => node.textContent?.trim() === 'Mở'))`)
+          if (openButton) {
+            await mainWindow.webContents.executeJavaScript(`(() => { const el = [...document.querySelectorAll('button')].find((node) => node.textContent?.trim() === 'Mở'); if (!el) throw new Error('Không tìm thấy nút Mở project'); el.click(); return true; })()`)
+            await new Promise((resolve) => setTimeout(resolve, 1400))
+            if (!/^http:\/\/127\.0\.0\.1:\d+\/projects\/\d+/.test(mainWindow.webContents.getURL())) throw new Error("Nút Mở project không mở Project Editor")
+            await mainWindow.webContents.executeJavaScript(`(() => { const el = [...document.querySelectorAll('a')].find((node) => node.textContent?.trim() === 'Dự án'); if (!el) throw new Error('Không tìm thấy link Dự án trong Sidebar'); el.click(); return true; })()`)
+            await new Promise((resolve) => setTimeout(resolve, 1000))
+            if (!mainWindow.webContents.getURL().endsWith("/projects")) throw new Error("Sidebar Dự án điều hướng sai, không về danh sách project")
+            fs.writeFileSync(path.join(captureDir, "projects-after-sidebar-click.png"), (await mainWindow.webContents.capturePage()).toPNG())
+          }
+          fs.writeFileSync(path.join(captureDir, "ai-studio-result.json"), JSON.stringify({ requiredLabels, duplicateCreateControls, projectRouteChecked: openButton, finalUrl: mainWindow.webContents.getURL() }, null, 2), "utf8")
+        }
+
+        if (process.env.VIU_RENDER_SMOKE) {
+          const renderProjectId = process.env.VIU_CAPTURE_PROJECT_ID
+          if (!renderProjectId) throw new Error("VIU_RENDER_SMOKE cần VIU_CAPTURE_PROJECT_ID")
+          await mainWindow.loadURL(`${base}/projects/${renderProjectId}`)
+          await new Promise((resolve) => setTimeout(resolve, 1800))
+          const publishButton = await mainWindow.webContents.executeJavaScript(`Boolean([...document.querySelectorAll('button')].find((node) => (node.textContent || '').includes('Xuất bản'))) `)
+          if (!publishButton) throw new Error("Không tìm thấy bước Xuất bản để kiểm tra Option D")
+          await mainWindow.webContents.executeJavaScript(`(() => { const el = [...document.querySelectorAll('button')].find((node) => (node.textContent || '').includes('Xuất bản')); if (!el) throw new Error('Không tìm thấy nút Xuất bản'); el.click(); return true; })()`)
+          await new Promise((resolve) => setTimeout(resolve, 1000))
+          const before = String(await mainWindow.webContents.executeJavaScript(`document.body.innerText`))
+          for (const label of ["Dựng & Xuất video", "Output Preset", "Render Profile", "Audio Mix", "Subtitle", "Kiểm tra trước khi xuất", "FFprobe"]) {
+            if (!before.includes(label)) throw new Error(`Render UI thiếu: ${label}`)
+          }
+          const detailsCount = await mainWindow.webContents.executeJavaScript(`document.querySelectorAll('details').length`)
+          if (detailsCount < 1) throw new Error("Render UI chưa ẩn phần Nâng cao trong details")
+          await mainWindow.webContents.executeJavaScript(`(() => { const el = [...document.querySelectorAll('button')].find((node) => (node.textContent || '').includes('Kiểm tra lại')); if (!el) throw new Error('Không tìm thấy nút Kiểm tra lại'); el.click(); return true; })()`)
+          await new Promise((resolve) => setTimeout(resolve, 2200))
+          const after = String(await mainWindow.webContents.executeJavaScript(`document.body.innerText`))
+          if (!after.includes("FFmpeg") || !after.includes("Dung lượng trống")) throw new Error("Preflight chưa hiển thị checklist thật")
+          fs.writeFileSync(path.join(captureDir, "render-option-d-before.png"), (await mainWindow.webContents.capturePage()).toPNG())
+          fs.writeFileSync(path.join(captureDir, "render-option-d-result.json"), JSON.stringify({ projectId: renderProjectId, before, after, detailsCount, url: mainWindow.webContents.getURL() }, null, 2), "utf8")
         }
 
         const projectId = process.env.VIU_CAPTURE_PROJECT_ID

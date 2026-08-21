@@ -90,6 +90,13 @@ export function resolveFFmpeg(): { ffmpegPath: string; ffprobePath: string; isBu
       }
     }
   }
+  const userDataDir = getUserDataDir()
+  const internalDir = path.join(userDataDir, "data", "tools", "ffmpeg")
+  const internalFfmpeg = path.join(internalDir, process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg")
+  const internalFfprobe = path.join(internalDir, process.platform === "win32" ? "ffprobe.exe" : "ffprobe")
+  if (existsSync(internalFfmpeg) && existsSync(internalFfprobe)) {
+    return { ffmpegPath: internalFfmpeg, ffprobePath: internalFfprobe, isBundled: true }
+  }
   return { ffmpegPath: "ffmpeg", ffprobePath: "ffprobe", isBundled: false }
 }
 

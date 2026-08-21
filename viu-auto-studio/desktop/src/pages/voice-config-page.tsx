@@ -13,6 +13,32 @@ import { Switch } from "@/components/ui/switch"
 
 const SAMPLE_TEXT_VI = "Xin chào, đây là giọng đọc mẫu của Viu Auto Studio. Hãy điều chỉnh tốc độ và âm lượng để phù hợp với video của bạn."
 
+const MAIN_PROVIDERS = [
+  { id: "edge", icon: "⭐", label: "Edge TTS", kind: "Cloud", badge: "Mặc định", description: "Miễn phí · Không cần API key" },
+  { id: "kokoro_vi", icon: "🇻🇳", label: "Kokoro Việt Nam", kind: "Local", badge: "Local chính", description: "Local · Offline · Giọng Việt" },
+  { id: "gemini_tts", icon: "✨", label: "Gemini TTS", kind: "Cloud API", badge: "AI / Cloud", description: "Cloud · API key" },
+  { id: "elevenlabs", icon: "🎙", label: "ElevenLabs", kind: "Cloud API", badge: "Cao cấp", description: "Premium · API key" },
+  { id: "vbee", icon: "🇻🇳", label: "Vbee", kind: "Cloud API", badge: "Giọng Việt", description: "Cloud · Giọng Việt" },
+] as const
+
+const ADVANCED_PROVIDERS = [
+  {
+    category: "Cloud",
+    engines: [
+      { id: "google_cloud_tts", label: "Google Cloud TTS", kind: "Cloud API · Studio 48kHz" },
+      { id: "azure_tts", label: "Azure TTS", kind: "Cloud API · Microsoft Speech" },
+    ],
+  },
+  {
+    category: "Local",
+    engines: [
+      { id: "kokoro", label: "Kokoro TTS", kind: "Local · Đa ngữ" },
+      { id: "omnivoice", label: "OmniVoice", kind: "Local · Clone giọng mẫu" },
+      { id: "local", label: "Piper / Local TTS", kind: "Local · Piper engine" },
+    ],
+  },
+] as const
+
 export default function VoiceConfigPage() {
   const [config, setConfig] = useState<TTSConfig | null>(null)
   const [providers, setProviders] = useState<Array<{ id: string; name: string; available: boolean }>>([])
@@ -187,23 +213,118 @@ export default function VoiceConfigPage() {
         </div>
       </div>
 
-      {/* Provider tabs */}
-      <div className="flex flex-wrap gap-1 rounded-lg border border-white/8 bg-[#141d22] p-1">
-        {providers.map((p) => (
-          <Button variant="ghost"
-            key={p.id}
-            onClick={() => void save({ provider: p.id })}
-            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-200 ${
-              config?.provider === p.id
-                ? "bg-gradient-to-r from-[#d9940a] to-[#faaa02] text-white"
-                : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-200"
-            }`}
-          >
-            {p.name.split(" (")[0]}
-            {!p.available && <span className="ml-1 text-[9px] opacity-70">(chưa)</span>}
-          </Button>
-        ))}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {MAIN_PROVIDERS.map((item) => {
+          const provider = providers.find((candidate) => candidate.id === item.id)
+          const available = Boolean(provider?.available) || item.id === "edge"
+          const active = config?.provider === item.id
+          return (
+            <div
+              key={item.id}
+              className={`flex flex-col justify-between rounded-xl border p-4 transition ${
+                active
+                  ? "border-amber-400/60 bg-amber-400/[0.08] shadow-[0_0_15px_rgba(251,191,36,0.08)]"
+                  : "border-white/[0.08] bg-[#141d22] hover:border-white/15"
+              }`}
+            >
+              <div>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-100">
+                    <span>{item.icon}</span>
+                    <span>{item.label}</span>
+                  </div>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                      active
+                        ? "bg-amber-400/20 text-amber-200"
+                        : available
+                        ? "bg-emerald-400/15 text-emerald-300"
+                        : "bg-slate-500/10 text-slate-400"
+                    }`}
+                  >
+                    {item.badge}
+                  </span>
+                </div>
+                <div className="mt-1.5 text-xs text-slate-400">
+                  {item.description}
+                </div>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between border-t border-white/[0.06] pt-3">
+                <span className="text-[11px] text-slate-500">{item.kind}</span>
+                {active ? (
+                  <span className="text-xs font-semibold text-amber-300">
+                    ☑ Đang dùng
+                  </span>
+                ) : available ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    onClick={() => void save({ provider: item.id })}
+                  >
+                    Sử dụng
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs text-slate-400 hover:text-slate-200"
+                    onClick={() =>
+                      toast({
+                        title: `${item.label} chưa khả dụng`,
+                        description: "Provider chưa được tích hợp hoặc cần cấu hình trong backend.",
+                      })
+                    }
+                  >
+                    [ Cấu hình ]
+                  </Button>
+                )}
+              </div>
+            </div>
+          )
+        })}
       </div>
+
+      <details className="rounded-xl border border-white/[0.08] bg-[#141d22] p-4">
+        <summary className="cursor-pointer text-xs font-semibold text-slate-300 hover:text-slate-100">
+          ＋ Thêm engine (Cloud & Local mở rộng)
+        </summary>
+        <div className="mt-4 space-y-4">
+          {ADVANCED_PROVIDERS.map((grp) => (
+            <div key={grp.category} className="space-y-2">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                {grp.category} Engines
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
+                {grp.engines.map((engine) => {
+                  const provider = providers.find((candidate) => candidate.id === engine.id)
+                  return (
+                    <div
+                      key={engine.id}
+                      className="flex items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.01] px-3 py-2.5"
+                    >
+                      <div>
+                        <div className="text-xs font-medium text-slate-200">{engine.label}</div>
+                        <div className="text-[10px] text-slate-500">{engine.kind}</div>
+                      </div>
+                      <span
+                        className={`text-[10px] font-medium ${
+                          provider?.available ? "text-emerald-300" : "text-slate-500"
+                        }`}
+                      >
+                        {provider?.available ? "Sẵn sàng" : "Chưa cài"}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </details>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="vas-card p-5">
@@ -217,11 +338,25 @@ export default function VoiceConfigPage() {
               >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {providers.map((p) => (
-                    <SelectItem key={p.id} value={p.id} disabled={!p.available}>
-                      {p.name}{p.available ? "" : " (chưa sẵn sàng)"}
-                    </SelectItem>
-                  ))}
+                  {MAIN_PROVIDERS.map((item) => {
+                    const provider = providers.find((candidate) => candidate.id === item.id)
+                    const available = Boolean(provider?.available) || item.id === "edge"
+                    return (
+                      <SelectItem key={item.id} value={item.id} disabled={!available}>
+                        {item.icon} {item.label} ({item.description})
+                        {!available && " — Chưa cài"}
+                      </SelectItem>
+                    )
+                  })}
+                  {ADVANCED_PROVIDERS.flatMap((grp) => grp.engines).map((adv) => {
+                    const provider = providers.find((candidate) => candidate.id === adv.id)
+                    return (
+                      <SelectItem key={adv.id} value={adv.id} disabled={!provider?.available}>
+                        ⚙ {adv.label} ({adv.kind})
+                        {!provider?.available && " — Chưa cài"}
+                      </SelectItem>
+                    )
+                  })}
                 </SelectContent>
               </Select>
             </div>

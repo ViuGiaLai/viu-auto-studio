@@ -20,7 +20,8 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from backend.core.config import PROJECTS_DIR, DATA_DIR
+from backend.core.config import FFMPEG_BIN, PROJECTS_DIR, DATA_DIR
+
 from backend.core.database import get_db
 from backend.models import (
     AppSetting, AuditLog, Channel, Character, CharacterRef, ConnectorTask,
@@ -28,7 +29,9 @@ from backend.models import (
     PipelineState, Project, ProjectSetting, PublishMeta, RenderJob, Scene,
     Script, SkillRun, SubtitleCue, Timeline, TimelineClip, VoiceAsset,
 )
-from backend.pipeline.queue import pipeline
+from backend.pipeline.queue import pipeline, verify_output_file
+from backend.render.ffmpeg_engine import check_ffmpeg
+
 from backend.schemas import (
     ChannelCreate, ChannelRead, ChannelUpdate,
     DashboardStats, MediaInfo, PipelineStartRequest, ProjectCreate, ProjectCreateV2,
@@ -49,11 +52,33 @@ from backend.services.tts import (
     synthesize as tts_synthesize, test_connection as tts_test_connection,
 )
 from backend.services.media import get_audio_duration, get_media_info
+from backend.services.tts_storage import cache_path, clear_generated_files, clear_tts_cache, cleanup_generated_files, cleanup_preview_files, generated_dir, mark_cache_used, new_preview_path, remove_other_previews, storage_stats, temp_root, tts_cache_key
 
 log = logging.getLogger("viu.api")
 router = APIRouter()
 
 MEDIA_SUFFIXES = {".mp4", ".webm", ".mov", ".mp3", ".wav", ".flac", ".ogg", ".m4a", ".png", ".jpg", ".jpeg", ".webp"}
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
+
+
+def sync_project_thumbnail(db: Session, project: Project) -> str:
+    """Persist the first existing scene image as the project thumbnail."""
+    current = Path(project.thumbnail_path).expanduser() if project.thumbnail_path else None
+    if current and current.is_file() and current.suffix.lower() in IMAGE_SUFFIXES:
+        return str(current.resolve())
+    scenes = db.query(Scene).filter(Scene.project_id == project.id).order_by(Scene.order_index.asc(), Scene.id.asc()).all()
+    for scene in scenes:
+        for raw in (scene.image_path, scene.media_path):
+            if not raw:
+                continue
+            candidate = Path(raw).expanduser()
+            if candidate.is_file() and candidate.suffix.lower() in IMAGE_SUFFIXES:
+                project.thumbnail_path = str(candidate.resolve())
+                return project.thumbnail_path
+    return ""
+
+
+
 
 
 # ===========================================================================
@@ -147,11 +172,17 @@ def tts_list_voices(provider: str = Query(""), db: Session = Depends(get_db)):
 
 @router.post("/tts/synthesize")
 def synthesize_tts(payload: TTSSynthesizeRequest = Body(...), db: Session = Depends(get_db)):
-    """Tạo file giọng nói thật trong thư mục dữ liệu ứng dụng."""
+    """Create a project asset, or a temporary standalone audio file."""
     output_format = payload.output_format.lower().strip()
     if output_format not in {"mp3", "wav"}:
         raise HTTPException(422, "output_format chỉ hỗ trợ mp3 hoặc wav")
-    output_dir = DATA_DIR / "tts"
+    if payload.project_id is not None:
+        project = db.query(Project).filter(Project.id == payload.project_id).first()
+        if project is None:
+            raise HTTPException(404, "Project không tồn tại")
+        output_dir = Path(PROJECTS_DIR) / f"project_{payload.project_id}" / "audio"
+    else:
+        output_dir = generated_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
     audio_path = output_dir / f"speech_{time.time_ns()}.{output_format}"
     settings = get_tts_config(db)
@@ -964,8 +995,27 @@ def approve_idea(payload: IdeaApproveRequest = Body(...), db: Session = Depends(
 @router.get("/projects/{project_id}/pipeline", response_model=PipelineStateRead)
 def get_pipeline_state(project_id: int, db: Session = Depends(get_db)):
     state = db.query(PipelineState).filter(PipelineState.project_id == project_id).first()
-    if not state:
-        raise HTTPException(404, "Pipeline state not found")
+    if state:
+        return state
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(404, "Project not found")
+    state = PipelineState(
+        project_id=project_id,
+        status="idle",
+        step_data_json=json.dumps({
+            "Thu thập dữ liệu": "pending",
+            "Kịch bản": "pending",
+            "Lồng tiếng": "pending",
+            "Storyboard": "pending",
+            "Ảnh/Video": "pending",
+            "Dựng phim": "pending",
+            "SEO": "pending",
+        }, ensure_ascii=False),
+    )
+    db.add(state)
+    db.commit()
+    db.refresh(state)
     return state
 
 
@@ -1011,9 +1061,10 @@ def upload_scene_media(scene_id: int, file: UploadFile = File(...), db: Session 
         scene.video_path = str(file_path)
     scene.status = "media_ready"
     scene.error_message = None
+    sync_project_thumbnail(db, project)
     db.commit()
 
-    return {"ok": True, "media_path": str(file_path), "media_type": media_type}
+    return {"ok": True, "media_path": str(file_path), "media_type": media_type, "thumbnail_path": project.thumbnail_path or ""}
 
 
 
@@ -1260,8 +1311,12 @@ def set_scene_media(project_id: int, scene_id: int, payload: SceneMediaUpdate = 
         scene.video_path = scene.media_path
     info = get_media_info(scene.media_path)
     scene.status = "media_ready" if scene.audio_path else "pending"
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if project:
+        sync_project_thumbnail(db, project)
 
     db.commit()
+
     db.refresh(scene)
     return scene
 
@@ -1276,13 +1331,28 @@ def regenerate_scene_voice(project_id: int, scene_id: int, payload: SceneVoiceRe
     settings = get_tts_config(db)
     settings["voice"] = payload.voice or settings["voice"]
     settings["speed"] = payload.speed
+
+    settings["pitch"] = payload.pitch
     settings["volume"] = payload.volume
+
     if payload.provider:
         settings["provider"] = payload.provider
     audio_path = str((Path(PROJECTS_DIR) / f"project_{project_id}") / f"scene_{scene.order_index:03d}_voice.mp3")
+
+    cache_key = tts_cache_key(scene.narration, settings)
+    cached_path = cache_path(cache_key)
     try:
-        tts_synthesize(scene.narration, audio_path, settings)
+        Path(audio_path).parent.mkdir(parents=True, exist_ok=True)
+        if cached_path.is_file() and cached_path.stat().st_size > 0:
+            shutil.copy2(cached_path, audio_path)
+        else:
+            cached_path.parent.mkdir(parents=True, exist_ok=True)
+            tts_synthesize(scene.narration, str(cached_path), settings)
+            if not cached_path.is_file() or cached_path.stat().st_size == 0:
+                raise RuntimeError("TTS provider không tạo được audio project hợp lệ")
+            shutil.copy2(cached_path, audio_path)
         scene.audio_path = audio_path
+
         scene.duration = max(1.5, get_audio_duration(audio_path) + 0.3)
         scene.status = "voice_ready"
         scene.error_message = ""
@@ -1325,24 +1395,60 @@ def tts_test(payload: TTSTestConnectionRequest | None = None):
 
 @router.post("/tts/preview")
 def tts_preview(payload: dict, db: Session = Depends(get_db)):
-    """Synthesize a short sample text and return the audio file path."""
-    text = payload.get("text", "Đây là đoạn giọng đọc mẫu của Viu Auto Studio.")
+    """Create a temporary preview and reuse the same request from TTS cache."""
+    text = str(payload.get("text") or "Đây là đoạn giọng đọc mẫu của Viu Auto Studio.")
     settings = get_tts_config(db)
-    settings.update({k: v for k, v in payload.items() if k in ("provider", "voice", "speed", "volume")})
-    sample_path = str(DATA_DIR / "tts_preview.mp3")
+    settings.update({k: v for k, v in payload.items() if k in ("provider", "voice", "speed", "pitch", "volume", "language", "model_name")})
+    cleanup_preview_files()
+    cache_key = tts_cache_key(text, settings)
+    cached = cache_path(cache_key)
+    preview = new_preview_path(cache_key)
+    remove_other_previews()
     try:
-        tts_synthesize(text, sample_path, settings)
-        return {"ok": True, "audio_path": sample_path}
+        if cached.is_file() and cached.stat().st_size > 0:
+            mark_cache_used(cached)
+            shutil.copy2(cached, preview)
+            cache_hit = True
+        else:
+            cached.parent.mkdir(parents=True, exist_ok=True)
+            tts_synthesize(text, str(cached), settings)
+            if not cached.is_file() or cached.stat().st_size == 0:
+                raise RuntimeError("TTS provider không tạo được file audio hợp lệ")
+            shutil.copy2(cached, preview)
+            cache_hit = False
+        return {"ok": True, "audio_path": str(preview), "cache_hit": cache_hit, "cache_key": cache_key}
     except RuntimeError as exc:
+        cached.unlink(missing_ok=True)
+        preview.unlink(missing_ok=True)
         return {"ok": False, "message": str(exc)}
+    except OSError as exc:
+        cached.unlink(missing_ok=True)
+        preview.unlink(missing_ok=True)
+        return {"ok": False, "message": f"Không thể lưu audio preview tạm: {exc}"}
 
 
 @router.get("/tts/preview-audio")
 def tts_preview_audio():
-    path = DATA_DIR / "tts_preview.mp3"
-    if not path.exists():
+    cleanup_preview_files()
+    candidates = sorted((item for item in (temp_root() / "preview").glob("preview_*.mp3") if item.is_file()), key=lambda item: item.stat().st_mtime, reverse=True)
+    if not candidates:
         raise HTTPException(404, "Chưa có audio mẫu. Hãy nhấn 'Nghe thử' trước.")
-    return FileResponse(str(path), media_type="audio/mpeg")
+    return FileResponse(str(candidates[0]), media_type="audio/mpeg")
+
+
+@router.get("/tts/storage")
+def tts_storage_stats():
+    cleanup_preview_files()
+    cleanup_generated_files()
+    return {"ok": True, **storage_stats()}
+
+
+@router.post("/tts/storage/clear")
+def tts_storage_clear():
+    result = clear_tts_cache()
+    preview_removed = remove_other_previews()
+    generated_removed = clear_generated_files()
+    return {"ok": True, **result, "preview_removed": preview_removed, "generated_removed": generated_removed, **storage_stats()}
 
 # ===========================================================================
 # Google Labs image provider
@@ -1729,8 +1835,98 @@ def render_start(payload: RenderStartRequest = Body(...), db: Session = Depends(
     return result
 
 
+@router.post("/render/preflight")
+def render_preflight(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """Validate the real project state before starting an export."""
+    project_id = int(payload.get("project_id") or 0)
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if project is None:
+        raise HTTPException(404, "Project không tồn tại")
+
+    project_dir = Path(project.project_directory) if project.project_directory else (Path(PROJECTS_DIR) / f"project_{project_id}")
+    scenes = db.query(Scene).filter(Scene.project_id == project_id).order_by(Scene.order_index.asc(), Scene.id.asc()).all()
+    checks: list[dict] = []
+    ffmpeg = check_ffmpeg()
+    checks.append({"label": "FFmpeg", "ok": bool(ffmpeg.get("ffmpeg")), "detail": ffmpeg.get("version") or ("Sẵn sàng" if ffmpeg.get("ffmpeg") else ffmpeg.get("guide", "Chưa sẵn sàng"))})
+    checks.append({"label": "FFprobe", "ok": bool(ffmpeg.get("ffprobe")), "detail": "Sẵn sàng" if ffmpeg.get("ffprobe") else "Chưa sẵn sàng"})
+
+    media_missing = []
+    voice_missing = []
+    invalid_duration = []
+    for index, scene in enumerate(scenes, start=1):
+        media = next((value for value in (scene.video_path, scene.media_path, scene.image_path) if value), "")
+        if not media or not Path(media).expanduser().is_file():
+            media_missing.append(index)
+        voice = scene.audio_path or ""
+        if not voice or not Path(voice).expanduser().is_file():
+            voice_missing.append(index)
+        if float(scene.duration or 0) <= 0:
+            invalid_duration.append(index)
+    scene_total = len(scenes)
+    media_ok = scene_total > 0 and not media_missing
+    voice_ok = scene_total > 0 and not voice_missing
+    timeline_ok = scene_total > 0 and not invalid_duration
+    checks.append({"label": "Timeline hợp lệ", "ok": timeline_ok, "detail": f"{scene_total - len(invalid_duration)}/{scene_total} scene có duration" if scene_total else "Chưa có scene"})
+    checks.append({"label": "Media theo scene", "ok": media_ok, "detail": f"{scene_total - len(media_missing)}/{scene_total} scene có media" if scene_total else "Chưa có scene"})
+    checks.append({"label": "Voice theo scene", "ok": voice_ok, "detail": f"{scene_total - len(voice_missing)}/{scene_total} scene có voice" if scene_total else "Chưa có scene"})
+
+    subtitle_count = db.query(SubtitleCue).filter(SubtitleCue.project_id == project_id).count()
+    subtitle_scene_count = sum(1 for scene in scenes if (scene.subtitle_text or "").strip())
+    subtitle_ok = subtitle_count > 0 or subtitle_scene_count > 0
+    checks.append({"label": "Subtitle", "ok": subtitle_ok, "detail": f"{subtitle_count + subtitle_scene_count} nguồn subtitle" if subtitle_ok else "Chưa có subtitle; có thể tắt phụ đề trước khi xuất"})
+
+    target_dir = project_dir if project_dir.exists() else project_dir.parent
+    try:
+        disk = shutil.disk_usage(target_dir)
+        disk_free_gb = round(disk.free / (1024 ** 3), 2)
+    except OSError:
+        disk_free_gb = 0.0
+    total_duration = sum(max(float(scene.duration or 0), 0.0) for scene in scenes)
+    estimated_size_gb = round(max(total_duration * 5_000_000 / 8, 50 * 1024 * 1024) / (1024 ** 3), 2)
+    disk_ok = disk_free_gb >= max(1.0, estimated_size_gb * 1.25)
+    checks.append({"label": "Dung lượng trống", "ok": disk_ok, "detail": f"{disk_free_gb:.2f} GB trống; ước tính {estimated_size_gb:.2f} GB"})
+    ok = all(item["ok"] for item in checks if item["label"] != "Subtitle") and (subtitle_ok or bool(payload.get("subtitle_disabled")))
+    return {
+        "ok": ok,
+        "checks": checks,
+        "missing_scenes": sorted(set(media_missing + voice_missing + invalid_duration)),
+        "disk_free_gb": disk_free_gb,
+        "estimated_size_gb": estimated_size_gb,
+        "scene_count": scene_total,
+    }
+
+
+@router.post("/render/verify/{job_id}")
+def render_verify_output(job_id: int, db: Session = Depends(get_db)):
+    """Verify a completed render using the same FFprobe gate as the worker."""
+    job = db.query(RenderJob).filter(RenderJob.id == job_id).first()
+    if job is None:
+        raise HTTPException(404, "Render job không tồn tại")
+    verified, payload, message = verify_output_file(job.output_path or "")
+    streams = payload.get("streams") or []
+    video = next((item for item in streams if item.get("codec_type") == "video"), {})
+    format_info = payload.get("format") or {}
+    duration = float(format_info.get("duration") or 0)
+    fps = 0.0
+    try:
+        rate = str(video.get("r_frame_rate") or "0/1").split("/")
+        fps = round(float(rate[0]) / float(rate[1] or 1), 2)
+    except (ValueError, ZeroDivisionError):
+        fps = 0.0
+    resolution = f"{video.get('width')}x{video.get('height')}" if video.get("width") and video.get("height") else ""
+    file_size_mb = round(Path(job.output_path).stat().st_size / (1024 ** 2), 2) if job.output_path and Path(job.output_path).is_file() else 0.0
+    checks = [
+        {"label": "File output", "ok": bool(job.output_path and Path(job.output_path).is_file()), "detail": job.output_path or "Chưa có file"},
+        {"label": "Video stream", "ok": bool(video), "detail": resolution or "Thiếu video stream"},
+        {"label": "Audio stream", "ok": any(item.get("codec_type") == "audio" for item in streams), "detail": "Có audio stream" if any(item.get("codec_type") == "audio" for item in streams) else "Thiếu audio stream"},
+        {"label": "Duration", "ok": duration > 0, "detail": f"{duration:.2f} giây"},
+    ]
+    return {"ok": bool(verified), "checks": checks, "duration": duration, "resolution": resolution, "fps": fps, "file_size_mb": file_size_mb, "message": message}
+
+
 @router.post("/pipeline/start")
 def pipeline_start(payload: PipelineStartRequest = Body(...), db: Session = Depends(get_db)):
+
     tts_cfg = payload.tts_config.model_dump()
     render_cfg = payload.render_config.model_dump()
     result = pipeline.start(payload.project_id, render_cfg, tts_cfg)
@@ -1992,16 +2188,87 @@ def project_pipeline_status(project_id: int, db: Session = Depends(get_db)):
     overall_status = "idle"
     if job is not None and job.status not in ("draft",):
         overall_status = job.status
+    step_data_json = {
+        step["label"]: ("success" if step["status"] == "done" else step["status"])
+        for step in steps
+    }
+    failed_step = next((step["label"] for step in steps if step["status"] == "failed"), "")
     return {
         "ok": True,
+        "id": job.id if job is not None else 0,
+        "project_id": project_id,
         "status": overall_status,
         "project_status": project.status,
         "error": job_error,
+        "last_log": job_error,
+        "error_step": failed_step,
+        "step_data_json": step_data_json,
         "steps": steps,
     }
 
+@router.get("/projects/{project_id}/thumbnail")
+def project_thumbnail(project_id: int, db: Session = Depends(get_db)):
+    """Return the best real thumbnail available for a project.
+
+    Selection order is explicit: project thumbnail, first scene image/media, then
+    a cached frame from the first available video. The endpoint intentionally
+    returns 404 only when the project has no usable visual asset yet.
+    """
+    import os
+    import subprocess
+
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if project is None:
+        raise HTTPException(404, "Project không tồn tại")
+    project_dir = Path(project.project_directory or (PROJECTS_DIR / f"project_{project_id}"))
+
+    def resolve_candidate(raw: str | None) -> Path | None:
+        if not raw:
+            return None
+        candidate = Path(raw).expanduser()
+        if not candidate.is_absolute():
+            candidate = project_dir / candidate
+        candidate = candidate.resolve()
+        return candidate if candidate.is_file() and candidate.suffix.lower() in MEDIA_SUFFIXES else None
+
+    direct_candidates = [project.thumbnail_path]
+    scenes = db.query(Scene).filter(Scene.project_id == project_id).order_by(Scene.order_index.asc(), Scene.id.asc()).all()
+    for scene in scenes:
+        direct_candidates.extend([scene.image_path, scene.media_path])
+    for raw in direct_candidates:
+        candidate = resolve_candidate(raw)
+        if candidate and candidate.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
+            return FileResponse(str(candidate), media_type={
+                ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
+            }[candidate.suffix.lower()])
+
+    video_candidates = [project.output_video_path]
+    for scene in scenes:
+        video_candidates.extend([scene.video_path, scene.media_path])
+    source = next((resolve_candidate(raw) for raw in video_candidates if raw and Path(raw).suffix.lower() in {".mp4", ".webm", ".mov"}), None)
+    if source:
+        cache_dir = project_dir / ".cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        thumbnail = cache_dir / "thumbnail.jpg"
+        if not thumbnail.exists() or source.stat().st_mtime > thumbnail.stat().st_mtime:
+            temp = cache_dir / "thumbnail.tmp.jpg"
+            try:
+                subprocess.run([
+                    FFMPEG_BIN, "-y", "-ss", "0", "-i", str(source), "-frames:v", "1",
+                    "-vf", "scale=1280:-2", str(temp),
+                ], check=True, capture_output=True, timeout=30)
+                os.replace(temp, thumbnail)
+            except (OSError, subprocess.SubprocessError):
+                temp.unlink(missing_ok=True)
+        if thumbnail.is_file():
+            return FileResponse(str(thumbnail), media_type="image/jpeg")
+
+    raise HTTPException(404, "Project chưa có media để làm thumbnail")
+
+
 @router.get("/projects/{project_id}/preview")
 def project_preview(project_id: int, db: Session = Depends(get_db)):
+
     """Trả file video kết xuất (hoặc thumbnail) của project — không hardcode đường dẫn tuyệt đối."""
     from fastapi.responses import FileResponse
     project = db.query(Project).get(project_id)

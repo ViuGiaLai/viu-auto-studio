@@ -83,8 +83,11 @@ TTS_CLOUD_API_KEY = _env("VIU_TTS_CLOUD_API_KEY", "")
 # ---------------------------------------------------------------------------
 # Media tools
 # ---------------------------------------------------------------------------
-FFMPEG_BIN = _env("VIU_FFMPEG_BIN", "ffmpeg")
-FFPROBE_BIN = _env("VIU_FFPROBE_BIN", "ffprobe")
+_INTERNAL_TOOL_DIR = DATA_DIR / "tools" / "ffmpeg"
+_INTERNAL_FFMPEG = _INTERNAL_TOOL_DIR / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")
+_INTERNAL_FFPROBE = _INTERNAL_TOOL_DIR / ("ffprobe.exe" if os.name == "nt" else "ffprobe")
+FFMPEG_BIN = _env("VIU_FFMPEG_BIN", str(_INTERNAL_FFMPEG) if _INTERNAL_FFMPEG.is_file() else "ffmpeg")
+FFPROBE_BIN = _env("VIU_FFPROBE_BIN", str(_INTERNAL_FFPROBE) if _INTERNAL_FFPROBE.is_file() else "ffprobe")
 
 # ---------------------------------------------------------------------------
 # Render defaults

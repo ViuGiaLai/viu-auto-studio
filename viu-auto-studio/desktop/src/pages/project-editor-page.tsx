@@ -66,7 +66,21 @@ function estimateDuration(text: string): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`
 }
 
+const OUTPUT_PRESETS = [
+  { id: "youtube", title: "YouTube ngang", detail: "16:9 · 1920×1080 · 30 FPS", icon: "▰" },
+  { id: "shorts", title: "Shorts / TikTok", detail: "9:16 · 1080×1920 · 30 FPS", icon: "▯" },
+  { id: "square", title: "Video vuông", detail: "1:1 · 1080×1080 · 30 FPS", icon: "□" },
+  { id: "4k", title: "Chất lượng cao", detail: "16:9 · 3840×2160 · 30 FPS", icon: "◈" },
+] as const
+
+const RENDER_PROFILES = [
+  { id: "basic", title: "Nhanh", detail: "veryfast · CRF 24" },
+  { id: "balanced", title: "Cân bằng", detail: "medium · CRF 21" },
+  { id: "high", title: "Chất lượng cao", detail: "slow · CRF 18" },
+] as const
+
 const SUBTITLE_PRESETS: Array<{ name: string; cfg: Partial<SubtitleConfig> }> = [
+
   { name: "Mặc định", cfg: { font_size: 48, position: "bottom", primary_color: "#FFFFFF" } },
   { name: "Caption Shorts", cfg: { font_size: 64, position: "bottom", primary_color: "#FFD700" } },
   { name: "Thanh lịch", cfg: { font_size: 42, position: "bottom", primary_color: "#E8E8E8", border_width: 0 } },
@@ -1776,36 +1790,108 @@ function TimelineEditor({ project, onRender }: { project: Project; onRender: () 
 // Xuất bản / Render cuối
 // ---------------------------------------------------------------------------
 function RenderPanel({ project }: { project: Project }) {
-
-  const { job, subtitleConfig } = useEditorStore()
+  const { job, subtitleConfig, setSubtitleConfig } = useEditorStore()
+  const [outputPreset, setOutputPreset] = useState<string>(project.aspect_ratio === "9:16" ? "shorts" : "youtube")
+  const [profileId, setProfileId] = useState<string>("balanced")
   const [crf, setCrf] = useState(21)
   const [fps, setFps] = useState(30)
   const [preset, setPreset] = useState("medium")
+  const [codec, setCodec] = useState("libx264")
+  const [audioBitrate, setAudioBitrate] = useState("192k")
   const [enableSubs, setEnableSubs] = useState(true)
+  const [subtitleStyle, setSubtitleStyle] = useState("highlight")
+  const [subtitleFormat, setSubtitleFormat] = useState("embed")
+  const [voiceVol, setVoiceVol] = useState(1)
   const [musicVol, setMusicVol] = useState(0.25)
+  const [ducking, setDucking] = useState(true)
+  const [normalize, setNormalize] = useState(true)
   const [transitionDuration, setTransitionDuration] = useState(0.35)
   const [rendering, setRendering] = useState(false)
+  const [preflight, setPreflight] = useState<Awaited<ReturnType<typeof api.renderPreflight>> | null>(null)
+  const [preflightLoading, setPreflightLoading] = useState(false)
+  const [verifyResult, setVerifyResult] = useState<Awaited<ReturnType<typeof api.renderVerifyOutput>> | null>(null)
 
   const canRender = !job || job.status === "completed" || job.status === "failed" || job.status === "cancelled"
-  const inProgress =
-    job?.status === "generating_voice" || job?.status === "voice_ready" || job?.status === "preparing_media" ||
-    job?.status === "media_ready" || job?.status === "generating_subtitles" || job?.status === "rendering"
+  const inProgress = ["generating_voice", "voice_ready", "preparing_media", "media_ready", "generating_subtitles", "rendering"].includes(job?.status || "")
+  const selectedPreset = OUTPUT_PRESETS.find((item) => item.id === outputPreset) || OUTPUT_PRESETS[0]
+  const selectedProfile = RENDER_PROFILES.find((item) => item.id === profileId) || RENDER_PROFILES[1]
+  const invalidatePreflight = () => setPreflight(null)
+
+  useEffect(() => {
+    if (job?.status !== "completed" || !job.id) {
+      setVerifyResult(null)
+      return
+    }
+    api.renderVerifyOutput(job.id).then(setVerifyResult).catch((error) => {
+      setVerifyResult({ ok: false, checks: [], duration: 0, resolution: "", fps: 0, file_size_mb: 0, message: String(error) })
+    })
+  }, [job?.id, job?.status])
+
+  const applyProfile = (id: string) => {
+    setProfileId(id)
+    const values: Record<string, { crf: number; preset: string }> = {
+      basic: { crf: 24, preset: "veryfast" },
+      balanced: { crf: 21, preset: "medium" },
+      high: { crf: 18, preset: "slow" },
+    }
+    const next = values[id]
+    if (next) {
+      setCrf(next.crf)
+      setPreset(next.preset)
+    }
+    invalidatePreflight()
+  }
+
+  const runPreflight = async () => {
+    setPreflightLoading(true)
+    try {
+      const result = await api.renderPreflight(project.id, !enableSubs)
+      setPreflight(result)
+      return result
+    } catch (error) {
+      toast({ title: "KhÃ´ng kiá»ƒm tra Ä‘Æ°á»£c trÆ°á»›c khi xuáº¥t", description: String(error), variant: "destructive" })
+      setPreflight(null)
+      return null
+    } finally {
+      setPreflightLoading(false)
+    }
+  }
+
+  const renderConfig = () => ({
+    output_preset: outputPreset,
+    voice_volume: voiceVol,
+    enable_ducking: ducking,
+    normalize_audio: normalize,
+    subtitle_style: subtitleStyle,
+    subtitle_output_format: subtitleFormat,
+    crf,
+    fps,
+    preset,
+    video_encoder: codec,
+    audio_bitrate: audioBitrate,
+    enable_subtitles: enableSubs,
+    music_volume: musicVol,
+    transition_duration: transitionDuration,
+    subtitle_config: subtitleConfig,
+  })
 
   const start = async () => {
+    if (inProgress || rendering) return
+    const check = await runPreflight()
+    if (!check?.ok) {
+      toast({ title: "ChÆ°a thá»ƒ xuáº¥t video", description: "HÃ£y xá»­ lÃ½ cÃ¡c má»¥c chÆ°a Ä‘áº¡t trong checklist trÆ°á»›c khi render.", variant: "destructive" })
+      return
+    }
     setRendering(true)
     try {
-      const res = await api.renderStart(project.id, {
-        crf, fps, preset, enable_subtitles: enableSubs, music_volume: musicVol,
-        transition_duration: transitionDuration,
-        subtitle_config: subtitleConfig,
-      })
+      const res = await api.renderStart(project.id, renderConfig())
       if (res.ok && res.job_id) {
-        toast({ title: "Đã bắt đầu pipeline render", description: "Theo dõi tiến trình bên dưới" })
+        toast({ title: "ÄÃ£ thÃªm vÃ o hÃ ng Ä‘á»£i render", description: "Pipeline sáº½ render vÃ  verify output báº±ng FFprobe." })
       } else {
-        toast({ title: "Không thể bắt đầu", description: res.message, variant: "destructive" })
+        toast({ title: "KhÃ´ng thá»ƒ báº¯t Ä‘áº§u", description: res.message, variant: "destructive" })
       }
-    } catch (e) {
-      toast({ title: "Bắt đầu render thất bại", description: String(e), variant: "destructive" })
+    } catch (error) {
+      toast({ title: "Báº¯t Ä‘áº§u render tháº¥t báº¡i", description: String(error), variant: "destructive" })
     } finally {
       setRendering(false)
     }
@@ -1815,174 +1901,119 @@ function RenderPanel({ project }: { project: Project }) {
     if (!job) return
     try {
       await api.cancelJob(job.id)
-      toast({ title: "Đã hủy render" })
-    } catch (e) {
-      toast({ title: "Hủy render thất bại", description: String(e), variant: "destructive" })
+      toast({ title: "ÄÃ£ há»§y render" })
+    } catch (error) {
+      toast({ title: "Há»§y render tháº¥t báº¡i", description: String(error), variant: "destructive" })
     }
   }
 
   const retry = async () => {
     if (!job) return
     try {
-      await api.retryJob(job.id, {})
-      toast({ title: "Đang thử lại render, tiếp tục từ bước lỗi" })
-    } catch (e) {
-      toast({ title: "Retry thất bại", description: String(e), variant: "destructive" })
+      await api.retryJob(job.id, renderConfig())
+      toast({ title: "Äang thá»­ láº¡i render", description: "Tiáº¿p tá»¥c tá»« bÆ°á»›c lá»—i vá»›i cáº¥u hÃ¬nh hiá»‡n táº¡i." })
+    } catch (error) {
+      toast({ title: "Retry tháº¥t báº¡i", description: String(error), variant: "destructive" })
     }
   }
 
-    return (
-    <div id="render-panel" className="space-y-6">
+  return (
+    <div id="render-panel" className="space-y-5">
       <div className="vas-card p-5">
-        <h3 className="mb-4 text-base font-semibold text-slate-100">Cấu hình xuất video cuối</h3>
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-amber-300/80">Dá»±ng & Xuáº¥t video</p>
+            <h3 className="mt-1 text-lg font-semibold text-slate-100">Cáº¥u hÃ¬nh Ä‘áº§u ra</h3>
+            <p className="mt-1 text-xs text-slate-500">Timeline váº«n lÃ  nÆ¡i chá»‰nh scene. Khu vá»±c nÃ y chá»‰ chá»n Ä‘áº§u ra vÃ  thá»±c thi render.</p>
+          </div>
+          <Badge variant="outline">MP4 Â· H.264 + AAC</Badge>
+        </div>
 
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label>Chất lượng CRF: {crf}</Label>
-              <Slider value={[crf]} min={15} max={35} step={1} onValueChange={(v) => setCrf(v[0])} />
-              <div className="flex justify-between text-[10px] text-slate-500">
-                <span>Tốt nhất (file lớn)</span><span>Nhẹ (file nhỏ)</span>
-              </div>
+        <div className="space-y-5">
+          <section>
+            <div className="mb-2 flex items-center justify-between"><Label className="text-sm font-semibold">1. Output Preset</Label><span className="text-xs text-slate-500">Chá»n trÆ°á»›c, tinh chá»‰nh sau</span></div>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              {OUTPUT_PRESETS.map((item) => (
+                <button key={item.id} type="button" onClick={() => { setOutputPreset(item.id); invalidatePreflight() }} className={cn("rounded-xl border p-3 text-left transition", outputPreset === item.id ? "border-amber-400/70 bg-amber-400/10" : "border-white/10 bg-white/[0.02] hover:border-white/25")}>
+                  <div className="mb-2 text-2xl text-amber-300">{item.icon}</div>
+                  <div className="text-sm font-medium text-slate-100">{item.title}</div>
+                  <div className="mt-1 text-[11px] text-slate-500">{item.detail}</div>
+                </button>
+              ))}
             </div>
-            <div className="space-y-1.5">
-              <Label>Encoder preset: {preset}</Label>
-              <Select value={preset} onValueChange={setPreset}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {["ultrafast", "fast", "medium", "slow"].map((p) => (
-                    <SelectItem key={p} value={p}>{p}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          </section>
+
+          <section>
+            <div className="mb-2 flex items-center justify-between"><Label className="text-sm font-semibold">2. Render Profile</Label><span className="text-xs text-slate-500">Thiáº¿t láº­p ká»¹ thuáº­t Ä‘Æ°á»£c áº©n trong NÃ¢ng cao</span></div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {RENDER_PROFILES.map((item) => (
+                <button key={item.id} type="button" onClick={() => applyProfile(item.id)} className={cn("rounded-xl border p-3 text-left transition", profileId === item.id ? "border-sky-400/70 bg-sky-400/10" : "border-white/10 bg-white/[0.02] hover:border-white/25")}>
+                  <div className="text-sm font-medium text-slate-100">{item.title}</div>
+                  <div className="mt-1 text-[11px] text-slate-500">{item.detail}</div>
+                </button>
+              ))}
             </div>
-            <div className="space-y-1.5">
-              <Label>FPS</Label>
-              <Input type="number" value={fps} onChange={(e) => setFps(Number(e.target.value))} />
+            <p className="mt-2 text-[11px] text-slate-500">Äang chá»n: <span className="text-slate-300">{selectedProfile.title}</span>. Codec, CRF vÃ  FPS chá»‰ dÃ nh cho trÆ°á»ng há»£p cáº§n tinh chá»‰nh.</p>
+          </section>
+
+          <section className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+            <Label className="text-sm font-semibold">3. Audio Mix</Label>
+            <div className="mt-3 grid gap-4 md:grid-cols-2">
+              <div><div className="mb-1 flex justify-between text-xs"><span>Giá»ng Ä‘á»c</span><span>{Math.round(voiceVol * 100)}%</span></div><Slider value={[voiceVol]} min={0} max={2} step={0.05} onValueChange={(v) => { setVoiceVol(v[0]); invalidatePreflight() }} /></div>
+              <div><div className="mb-1 flex justify-between text-xs"><span>Nháº¡c ná»n</span><span>{Math.round(musicVol * 100)}%</span></div><Slider value={[musicVol]} min={0} max={1} step={0.05} onValueChange={(v) => { setMusicVol(v[0]); invalidatePreflight() }} /></div>
             </div>
-            <div className="space-y-1.5">
-              <Label>Âm lượng nhạc nền: {(musicVol * 100).toFixed(0)}%</Label>
-              <Slider value={[musicVol]} min={0} max={1} step={0.05} onValueChange={(v) => setMusicVol(v[0])} />
+            <div className="mt-4 flex flex-wrap gap-x-6 gap-y-3 text-xs">
+              <label className="flex items-center gap-2"><Switch checked={ducking} onCheckedChange={(v) => { setDucking(v); invalidatePreflight() }} /> Tá»± giáº£m nháº¡c khi cÃ³ giá»ng</label>
+              <label className="flex items-center gap-2"><Switch checked={normalize} onCheckedChange={(v) => { setNormalize(v); invalidatePreflight() }} /> Chuáº©n hÃ³a Ã¢m lÆ°á»£ng</label>
             </div>
-            <div className="space-y-1.5">
-              <Label>Chuyển cảnh theo nhịp: {transitionDuration.toFixed(2)} giây</Label>
-              <Slider value={[transitionDuration]} min={0} max={1.2} step={0.05} onValueChange={(v) => setTransitionDuration(v[0])} />
-              <p className="text-[10px] text-slate-500">Chỉ hòa hình; giọng và phụ đề giữ nguyên thời lượng.</p>
+          </section>
+
+          <section className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+            <div className="flex items-center justify-between"><Label className="text-sm font-semibold">4. Subtitle</Label><Switch checked={enableSubs} onCheckedChange={(v) => { setEnableSubs(v); invalidatePreflight() }} /></div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              {[{ id: "highlight", title: "Ná»•i báº­t", detail: "Chá»¯ lá»›n, tÆ°Æ¡ng pháº£n cao", cfg: { font_size: 64, position: "center", primary_color: "#FFD700", border_width: 4, granularity: "phrase" } }, { id: "basic", title: "CÆ¡ báº£n", detail: "Dá»… Ä‘á»c, gá»n gÃ ng", cfg: { font_size: 48, position: "bottom", primary_color: "#FFFFFF", border_width: 2, granularity: "sentence" } }, { id: "karaoke", title: "Karaoke", detail: "BÃ¡m theo tá»«ng nhá»‹p cÃ¢u", cfg: { font_size: 56, position: "bottom", primary_color: "#00E5FF", border_width: 3, granularity: "phrase" } }].map((item) => (
+                <button key={item.id} type="button" disabled={!enableSubs} onClick={() => { setSubtitleStyle(item.id); setSubtitleConfig(item.cfg); invalidatePreflight() }} className={cn("rounded-lg border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50", subtitleStyle === item.id ? "border-fuchsia-400/70 bg-fuchsia-400/10" : "border-white/10 hover:border-white/25")}><div className="text-sm font-medium">{item.title}</div><div className="mt-1 text-[11px] text-slate-500">{item.detail}</div></button>
+              ))}
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Switch checked={enableSubs} onCheckedChange={setEnableSubs} id="enable-subs" />
-            <Label htmlFor="enable-subs">Embed phụ đề vào video</Label>
-          </div>
-          <div className="rounded-lg border bg-white/[0.03]/50 p-3 text-xs text-slate-500">
-            Output: MP4 H.264 (libx264) + AAC · {project.aspect_ratio === "9:16" ? "1080x1920" : "1920x1080"} ·
-            hiệu ứng zoom/pan, fade giữa cảnh, tự giảm nhạc khi có voice, logo watermark, intro/outro tùy chọn
-          </div>
-          <div className="flex gap-2">
-            <Button
-              onClick={start}
-              disabled={!canRender || rendering || inProgress}
-              className="bg-gradient-to-r from-amber-500 to-amber-300 hover:from-amber-400 hover:to-amber-200"
-            >
-              <Play className="h-4 w-4" />
-              {inProgress ? "Đang xử lý..." : "Xuất video"}
-            </Button>
-            {(inProgress) && (
-              <Button variant="destructive" onClick={cancel}>
-                <Square className="h-4 w-4" />
-                Hủy
-              </Button>
-            )}
-            {job?.status === "failed" && (
-              <Button variant="outline" onClick={retry}>
-                <RotateCcw className="h-4 w-4" />
-                Thử lại từ bước lỗi
-              </Button>
-            )}
-            {job?.status === "completed" && (
-              <Button variant="outline" onClick={retry}>
-                <RotateCcw className="h-4 w-4" />
-                Xuất lại sau chỉnh sửa
-              </Button>
-            )}
-          </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {[{ id: "embed", label: "NhÃºng vÃ o video" }, { id: "srt", label: "Xuáº¥t file .SRT" }, { id: "ass", label: "Xuáº¥t file .ASS" }].map((item) => <label key={item.id} className={cn("flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs", subtitleFormat === item.id && enableSubs ? "border-fuchsia-400/60 bg-fuchsia-400/10" : "border-white/10", !enableSubs && "opacity-50")}><input type="radio" name="subtitle-format" value={item.id} checked={subtitleFormat === item.id} disabled={!enableSubs} onChange={() => { setSubtitleFormat(item.id); invalidatePreflight() }} />{item.label}</label>)}
+            </div>
+          </section>
+
+          <details className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+            <summary className="cursor-pointer text-sm font-medium text-slate-300">NÃ¢ng cao Â· CRF, preset, FPS, codec, bitrate</summary>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              <div><Label className="text-xs">CRF</Label><Input type="number" min={15} max={40} value={crf} onChange={(e) => { setCrf(Number(e.target.value)); invalidatePreflight() }} /></div>
+              <div><Label className="text-xs">FPS</Label><Input type="number" min={15} max={60} value={fps} onChange={(e) => { setFps(Number(e.target.value)); invalidatePreflight() }} /></div>
+              <div><Label className="text-xs">Preset</Label><Select value={preset} onValueChange={(v) => { setPreset(v); invalidatePreflight() }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["ultrafast", "veryfast", "fast", "medium", "slow"].map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></div>
+              <div><Label className="text-xs">Codec</Label><Select value={codec} onValueChange={(v) => { setCodec(v); invalidatePreflight() }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="libx264">H.264 CPU</SelectItem><SelectItem value="h264_nvenc">H.264 NVENC</SelectItem></SelectContent></Select></div>
+              <div><Label className="text-xs">Audio bitrate</Label><Select value={audioBitrate} onValueChange={(v) => { setAudioBitrate(v); invalidatePreflight() }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["128k", "192k", "256k", "320k"].map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></div>
+            </div>
+          </details>
+
+          <div className="rounded-xl border border-amber-300/20 bg-amber-300/[0.05] p-4 text-xs text-slate-400">Output dá»± kiáº¿n: <span className="font-medium text-slate-200">{selectedPreset.title}</span> Â· {selectedPreset.detail}. Render thá»±c táº¿ sáº½ dÃ¹ng media/voice tá»« Timeline vÃ  chá»‰ Ä‘Æ°á»£c Ä‘Ã¡nh dáº¥u hoÃ n táº¥t sau khi FFprobe xÃ¡c minh.</div>
         </div>
       </div>
 
-      {/* Job status */}
-      {job && (
-        <div className="vas-card p-5">
-          <h3 className="mb-4 text-base font-semibold text-slate-100">Trạng thái pipeline</h3>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between text-sm">
-              <span>
-                Bước: <strong>{job.current_step || "—"}</strong>
-              </span>
-              <Badge
-                variant={
-                  job.status === "completed"
-                    ? "success"
-                    : job.status === "failed" || job.status === "cancelled"
-                      ? "destructive"
-                      : "warning"
-                }
-              >
-                {STATUS_LABELS[job.status] || job.status}
-              </Badge>
-            </div>
-            <Progress value={job.progress} />
-            {job.error_message && (
-              <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-xs">
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-                <span className="whitespace-pre-wrap">{job.error_message}</span>
-              </div>
-            )}
-            {job.status === "completed" && job.output_path && (
-              <div className="space-y-2">
-                <video src={outputVideoUrl(project.id, "output")} controls className="w-full max-h-[50vh] rounded-lg border" />
-                <div className="flex gap-2">
-                                    <Button
-                    variant="outline"
-                    onClick={async () => {
-                      try {
-                        const result = await api.openProjectFolder(project.id)
-                        const opened = await openLocalPath(result.path)
-                        if (!opened.ok) throw new Error(opened.message)
-                      } catch (e) {
-                        toast({ title: "Không mở được thư mục đầu ra", description: String(e), variant: "destructive" })
-                      }
-                    }}
-                  >
-                    <FolderOpen className="h-4 w-4" />
-                    Mở thư mục đầu ra
-                  </Button>
+      <div className="vas-card p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-base font-semibold text-slate-100">Kiá»ƒm tra trÆ°á»›c khi xuáº¥t</h3><p className="mt-1 text-xs text-slate-500">KhÃ´ng cÃ³ checklist Ä‘áº¡t thÃ¬ khÃ´ng thá»ƒ báº¯t Ä‘áº§u render.</p></div><Button variant="outline" onClick={runPreflight} disabled={preflightLoading || inProgress}><RefreshCw className={cn("h-4 w-4", preflightLoading && "animate-spin")} />{preflightLoading ? "Äang kiá»ƒm tra..." : "Kiá»ƒm tra láº¡i"}</Button></div>
+        {preflight ? <div className="mt-4 space-y-2">{preflight.checks.map((check) => <div key={check.label} className="flex items-start gap-2 rounded-lg border border-white/5 px-3 py-2 text-xs"><span className={cn("mt-0.5", check.ok ? "text-emerald-400" : "text-red-400")}>{check.ok ? "âœ“" : "Ã—"}</span><div><div className="font-medium text-slate-200">{check.label}</div><div className="text-slate-500">{check.detail}</div></div></div>)}<div className="flex flex-wrap gap-4 pt-2 text-xs text-slate-400"><span>Dung lÆ°á»£ng: {preflight.disk_free_gb.toFixed(2)} GB trá»‘ng</span><span>Æ¯á»›c tÃ­nh: ~{preflight.estimated_size_gb.toFixed(2)} GB</span></div>{preflight.missing_scenes.length > 0 && <div className="text-xs text-red-300">Scene cáº§n xá»­ lÃ½: {preflight.missing_scenes.join(", ")}</div>}</div> : <div className="mt-4 rounded-lg border border-dashed border-white/10 p-4 text-center text-xs text-slate-500">Nháº¥n â€œKiá»ƒm tra láº¡iâ€ Ä‘á»ƒ kiá»ƒm tra media, voice, subtitle, FFmpeg, FFprobe vÃ  dung lÆ°á»£ng trá»‘ng.</div>}
+        <div className="mt-4 flex flex-wrap gap-2"><Button onClick={start} disabled={!canRender || rendering || inProgress || !preflight?.ok} className="bg-gradient-to-r from-amber-500 to-amber-300 text-slate-950 hover:from-amber-400 hover:to-amber-200"><Play className="h-4 w-4" />{inProgress ? "Äang xá»­ lÃ½..." : "Báº¯t Ä‘áº§u render"}</Button>{inProgress && <Button variant="destructive" onClick={cancel}><Square className="h-4 w-4" />Há»§y</Button>}{(job?.status === "failed" || job?.status === "completed") && <Button variant="outline" onClick={retry}><RotateCcw className="h-4 w-4" />{job.status === "failed" ? "Thá»­ láº¡i tá»« bÆ°á»›c lá»—i" : "Xuáº¥t láº¡i sau chá»‰nh sá»­a"}</Button>}</div>
+      </div>
 
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {!job && (
-        <div className="vas-card p-5">
-          <div className="flex flex-col items-center gap-3 py-10">
-            <FileVideo className="h-10 w-10 text-slate-500/40" />
-            <div className="text-sm text-slate-500">Chưa có job render nào. Nhấn "Bắt đầu render" để khởi động pipeline.</div>
-          </div>
-        </div>
-      )}
+      {job && <div className="vas-card p-5"><div className="mb-3 flex items-center justify-between"><h3 className="text-base font-semibold text-slate-100">HÃ ng Ä‘á»£i render</h3><Badge variant={job.status === "completed" ? "success" : job.status === "failed" || job.status === "cancelled" ? "destructive" : "warning"}>{STATUS_LABELS[job.status] || job.status}</Badge></div><div className="space-y-3"><div className="flex justify-between text-sm"><span>BÆ°á»›c: <strong>{job.current_step || "â€”"}</strong></span><span>{job.progress}%</span></div><Progress value={job.progress} />{job.error_message && <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-xs"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" /><span className="whitespace-pre-wrap">{job.error_message}</span></div>}{job.status === "completed" && job.output_path && <div className="space-y-3"><video src={outputVideoUrl(project.id, "output")} controls className="w-full max-h-[50vh] rounded-lg border" />{verifyResult && <div className={cn("rounded-lg border p-3 text-xs", verifyResult.ok ? "border-emerald-400/30 bg-emerald-400/5" : "border-red-400/30 bg-red-400/5")}><div className="font-medium">{verifyResult.ok ? "âœ“ Output Ä‘Ã£ verify báº±ng FFprobe" : "Ã— Verify output tháº¥t báº¡i"}</div><div className="mt-1 text-slate-500">{verifyResult.resolution || "â€”"} Â· {verifyResult.fps || 0} FPS Â· {verifyResult.duration.toFixed(2)} giÃ¢y Â· {verifyResult.file_size_mb.toFixed(2)} MB</div></div>}<Button variant="outline" onClick={async () => { try { const result = await api.openProjectFolder(project.id); const opened = await openLocalPath(result.path); if (!opened.ok) throw new Error(opened.message) } catch (error) { toast({ title: "KhÃ´ng má»Ÿ Ä‘Æ°á»£c thÆ° má»¥c Ä‘áº§u ra", description: String(error), variant: "destructive" }) } }}><FolderOpen className="h-4 w-4" />Má»Ÿ thÆ° má»¥c Ä‘áº§u ra</Button></div>}</div></div>}
+      {!job && <div className="vas-card p-5"><div className="flex flex-col items-center gap-3 py-8"><FileVideo className="h-10 w-10 text-slate-500/40" /><div className="text-sm text-slate-500">ChÆ°a cÃ³ job render. HoÃ n thÃ nh checklist Ä‘á»ƒ báº¯t Ä‘áº§u.</div></div></div>}
     </div>
   )
 }
-
 // ---------------------------------------------------------------------------
 // Main editor page
 // ---------------------------------------------------------------------------
 export default function ProjectEditorPage() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { pathname } = useLocation()
+    const { pathname, search } = useLocation()
+
   const isNew = pathname.endsWith("/projects/new") || id === "new"
   const projectId = isNew ? null : Number(id)
   const { project, setProject, setScenes, setJob } = useEditorStore()
@@ -2017,7 +2048,9 @@ export default function ProjectEditorPage() {
             : ["preparing_media", "media_ready"].includes(p.status)
               ? "media"
               : "script"
-        setActiveTab((current) => userSelectedTab.current ? current : resumeTab)
+        const requestedStage = new URLSearchParams(search).get("stage")
+        const allowedStages = new Set(["idea", "script", "storyboard", "characters", "media", "publish", "subtitles"])
+        setActiveTab((current) => userSelectedTab.current ? current : (requestedStage && allowedStages.has(requestedStage) ? requestedStage : resumeTab))
       })
 
       .catch((e) => toast({ title: "Không mở được dự án", description: String(e), variant: "destructive" }))

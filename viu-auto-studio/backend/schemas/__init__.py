@@ -268,7 +268,9 @@ class SceneReorderRequest(BaseModel):
 class SceneVoiceRequest(BaseModel):
     voice: str = ""
     speed: float = Field(default=1.0, ge=0.25, le=4.0)
+    pitch: float = Field(default=0.0, ge=-12.0, le=12.0)
     volume: float = Field(default=1.0, ge=0.0, le=2.0)
+
     provider: Optional[str] = None
 
 
@@ -284,6 +286,7 @@ class TTSConfigRequest(BaseModel):
     provider: str = "edge"
     voice: str = ""
     speed: float = Field(default=1.0, ge=0.25, le=4.0)
+    pitch: float = Field(default=0.0, ge=-12.0, le=12.0)
     volume: float = Field(default=1.0, ge=0.0, le=2.0)
     model_dir: str = ""
     cloud_api_key: Optional[str] = None
@@ -306,6 +309,7 @@ class TTSConfigRead(BaseModel):
     provider: str
     voice: str
     speed: float
+    pitch: float = 0.0
     volume: float
     model_dir: str
     cloud_api_key_masked: str = ""
@@ -358,7 +362,14 @@ class SubtitleConfig(BaseModel):
 # Render
 # ---------------------------------------------------------------------------
 class RenderConfig(BaseModel):
+    output_preset: str = "youtube"  # youtube | shorts | square | 4k | custom
+    voice_volume: float = Field(default=1.0, ge=0.0, le=2.0)
+    enable_ducking: bool = True
+    normalize_audio: bool = True
+    subtitle_style: str = "highlight"  # highlight | basic | karaoke
+    subtitle_output_format: str = "embed"  # embed | srt | ass
     fps: int = Field(default=30, ge=15, le=60)
+
     crf: int = Field(default=21, ge=15, le=40)
     preset: str = "medium"
     video_encoder: str = "libx264"  # libx264 | h264_nvenc (future)
@@ -505,6 +516,7 @@ class TTSSynthesizeRequest(BaseModel):
     provider: str = "edge"
     voice: str = ""
     text: str = Field(min_length=1)
+    project_id: Optional[int] = Field(default=None, ge=1)
     speed: float = Field(default=1.0, ge=0.25, le=4.0)
     output_format: str = "mp3"  # mp3 | wav
     reference_audio: str = ""

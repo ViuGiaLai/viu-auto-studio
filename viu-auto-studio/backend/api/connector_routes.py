@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from backend.core.config import DATA_DIR, FLOW_BOOTSTRAP_TOKEN, HOST, PORT, PROJECTS_DIR as _CFG_PROJECTS_DIR, FFPROBE_BIN
 from backend.core.database import get_db
 from backend.models import Channel, ConnectorTask, FlowConnection, FlowFactoryRun, PipelineState, Project, RenderJob, Scene
+from backend.api.routes import sync_project_thumbnail
 from backend.services.flow_factory import refresh_task_state, set_factory_state
 from backend.services.media_planner import planned_video_scene_ids
 from backend.services.project_assets import sync_project_media_assets
@@ -867,6 +868,7 @@ async def connector_task_ingest(
         t.updated_at = datetime.utcnow()
         if media_type == "image":
             _queue_factory_video_stage(db, t, project, scene)
+        sync_project_thumbnail(db, project)
         db.commit()
         sync_project_media_assets(db, t.project_id)
         _sync_pipeline_state(db, t.project_id, t.factory_session_id or None)

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useSearchParams } from "react-router-dom"
+
 import {
   Settings as SettingsIcon, Play, RefreshCw, AlertTriangle, CheckCircle2,
   KeyRound, Image, Zap, ExternalLink, FolderOpen, Folder, Send, ShieldCheck,
@@ -27,19 +28,63 @@ import { cn } from "@/utils/cn"
 const SAMPLE_TEXT_VI = "Xin chào, đây là giọng đọc mẫu của Viu Auto Studio. Hãy điều chỉnh tốc độ và âm lượng để phù hợp với video của bạn."
 
 const TABS = [
-  { key: "chung", label: "📁 Chung" },
-  { key: "engine", label: "🔧 Engine & Công cụ" },
-  { key: "ai", label: "✨ AI Dịch & Ảnh" },
-  { key: "voice", label: "🎙 Giọng nói" },
-  { key: "telegram", label: "✈ Telegram" },
-  { key: "publish", label: "▶ Đăng bài & Lập lịch (Đang phát triển)" },
+  { key: "quick", label: "⚡ Thiết lập nhanh" },
+  { key: "content", label: "🧠 Nội dung & AI" },
+  { key: "voice", label: "🎙 Giọng & Âm thanh" },
+  { key: "visual", label: "🎨 Hình ảnh & Video" },
+  { key: "edit", label: "🎬 Dựng & Xuất video" },
+  { key: "connections", label: "🔗 Tài khoản & Kết nối" },
   { key: "performance", label: "⚡ Hiệu năng" },
+  { key: "advanced", label: "🛠 Nâng cao" },
 ]
+
+const VOICE_ENGINE_GROUPS = [
+  { id: "edge", icon: "⭐", label: "Edge TTS", kind: "Cloud", badge: "Mặc định", provider: "edge", description: "Miễn phí · Không cần API key", cta: "Sử dụng" },
+  { id: "kokoro_vi", icon: "🇻🇳", label: "Kokoro Việt Nam", kind: "Local", badge: "Local chính", provider: "kokoro_vi", description: "Local · Offline · Giọng Việt", cta: "Cài đặt" },
+  { id: "gemini_tts", icon: "✨", label: "Gemini TTS", kind: "Cloud API", badge: "AI / Cloud", provider: "gemini_tts", description: "Cloud · API key", cta: "Cấu hình" },
+  { id: "elevenlabs", icon: "🎙", label: "ElevenLabs", kind: "Cloud API", badge: "Cao cấp", provider: "elevenlabs", description: "Premium · API key", cta: "Cấu hình" },
+  { id: "vbee", icon: "🇻🇳", label: "Vbee", kind: "Cloud API", badge: "Giọng Việt", provider: "vbee", description: "Cloud · Giọng Việt", cta: "Cấu hình" },
+] as const
+
+const ADVANCED_VOICE_ENGINES = [
+  {
+    category: "Cloud",
+    engines: [
+      { label: "Google Cloud TTS", provider: "google_cloud_tts", kind: "Cloud API · Studio 48kHz" },
+      { label: "Azure TTS", provider: "azure_tts", kind: "Cloud API · Microsoft Speech" },
+    ],
+  },
+  {
+    category: "Local",
+    engines: [
+      { label: "Kokoro TTS", provider: "kokoro", kind: "Local · Đa ngữ (Anh, Nhật, Trung...)" },
+      { label: "OmniVoice", provider: "omnivoice", kind: "Local · Clone giọng mẫu" },
+      { label: "Piper / Local TTS", provider: "local", kind: "Local · Piper engine" },
+    ],
+  },
+] as const
+
+const DEFAULT_TTS_CONFIG: TTSConfig = {
+  provider: "edge",
+  voice: "",
+  speed: 1,
+  pitch: 0,
+  volume: 1,
+  model_dir: "",
+  cloud_api_key_masked: "",
+}
+
+const EDGE_PROVIDER_FALLBACK = [{ id: "edge", name: "Edge TTS", available: true }]
 
 export default function SettingsPage() {
   const navigate = useNavigate()
-  const [config, setConfig] = useState<TTSConfig | null>(null)
-  const [providers, setProviders] = useState<Array<{ id: string; name: string; available: boolean }>>([])
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedTabRaw = searchParams.get("tab")
+  const requestedTab = ({ chung: "quick", engine: "edit", ai: "content", telegram: "connections", publish: "connections" } as Record<string, string>)[requestedTabRaw || ""] || requestedTabRaw
+  const [activeTab, setActiveTab] = useState(TABS.some((tab) => tab.key === requestedTab) ? requestedTab || "quick" : "quick")
+
+  const [config, setConfig] = useState<TTSConfig | null>(DEFAULT_TTS_CONFIG)
+  const [providers, setProviders] = useState<Array<{ id: string; name: string; available: boolean }>>(EDGE_PROVIDER_FALLBACK)
   const [voices, setVoices] = useState<TTSVoice[]>([])
   const [loading, setLoading] = useState(true)
   const [testingConn, setTestingConn] = useState(false)
@@ -92,8 +137,7 @@ export default function SettingsPage() {
   const [diagnostics, setDiagnostics] = useState<Awaited<ReturnType<typeof api.systemDiagnose>> | null>(null)
   const [telegramTesting, setTelegramTesting] = useState(false)
   const [telegramSending, setTelegramSending] = useState(false)
-  const [sysStats, setSysStats] = useState<{
-
+    const [sysStats, setSysStats] = useState<{
     cpu_percent: number
     ram_total_gb: number
     ram_percent: number
@@ -101,8 +145,105 @@ export default function SettingsPage() {
     active_jobs: number
     ffmpeg_ok: boolean
   } | null>(null)
+  const [capabilities, setCapabilities] = useState<Awaited<ReturnType<typeof api.systemCapabilities>> | null>(null)
+  const [capabilitiesLoading, setCapabilitiesLoading] = useState(false)
+  const [preflight, setPreflight] = useState<Awaited<ReturnType<typeof api.systemPreflight>> | null>(null)
+  const [installingCapability, setInstallingCapability] = useState(false)
+  const [ffmpegAction, setFfmpegAction] = useState<"install" | "upgrade" | null>(null)
+  const [ffmpegBusy, setFfmpegBusy] = useState(false)
+  const [ttsStorageStats, setTtsStorageStats] = useState<Awaited<ReturnType<typeof api.ttsStorage>> | null>(null)
 
-  const setOperatorProfile = useAppStore((s) => s.setOperatorProfile)
+
+
+    const setOperatorProfile = useAppStore((s) => s.setOperatorProfile)
+
+  const refreshCapabilities = async () => {
+    setCapabilitiesLoading(true)
+    try {
+      setCapabilities(await api.systemCapabilities())
+    } catch (error) {
+      toast({ title: "Không đọc được thành phần Viu Studio", description: String(error), variant: "destructive" })
+    } finally {
+      setCapabilitiesLoading(false)
+    }
+  }
+
+  const prepareCapability = async (capabilityId: string) => {
+    try {
+      const result = await api.systemPreflight(capabilityId)
+      if (result.ok) {
+        toast({ title: "Môi trường đã sẵn sàng", description: `Có thể chạy ${result.capability.label}.` })
+        return
+      }
+      setPreflight(result)
+    } catch (error) {
+      toast({ title: "Preflight thất bại", description: String(error), variant: "destructive" })
+    }
+  }
+
+  const checkFfmpegUpdate = async () => {
+    setFfmpegBusy(true)
+    try {
+      const result = await api.manageFfmpeg("check_update")
+      toast({ title: result.update_available ? "Có phiên bản FFmpeg mới" : "FFmpeg đang ở phiên bản hiện tại", description: result.latest_version ? `Catalog: ${result.latest_version}` : "Không đọc được phiên bản catalog" })
+    } catch (error) {
+      toast({ title: "Không kiểm tra được cập nhật FFmpeg", description: String(error), variant: "destructive" })
+    } finally {
+      setFfmpegBusy(false)
+    }
+  }
+
+  const checkFfmpegTools = async () => {
+    setFfmpegBusy(true)
+    try {
+      await api.manageFfmpeg("check")
+      const diagnosis = await api.systemDiagnose()
+      setDiagnostics(diagnosis)
+      setEngineStatus(diagnosis.ffmpeg_version && diagnosis.ffprobe_version ? "installed" : "missing")
+      toast({ title: "Đã kiểm tra FFmpeg và FFprobe", description: diagnosis.ffmpeg_version || "Chưa tìm thấy FFmpeg" })
+    } catch (error) {
+      toast({ title: "Không kiểm tra được FFmpeg", description: String(error), variant: "destructive" })
+    } finally {
+      setFfmpegBusy(false)
+    }
+  }
+
+  const applyFfmpegAction = async () => {
+    if (!ffmpegAction) return
+    setFfmpegBusy(true)
+    try {
+      const result = await api.manageFfmpeg(ffmpegAction)
+      if (!result.ok) throw new Error("Tác vụ FFmpeg thất bại")
+      const diagnosis = await api.systemDiagnose()
+      setDiagnostics(diagnosis)
+      setCapabilities(await api.systemCapabilities())
+      setEngineStatus(diagnosis.ffmpeg_version && diagnosis.ffprobe_version ? "installed" : "missing")
+      toast({ title: ffmpegAction === "install" ? "Đã cài FFmpeg" : "Đã yêu cầu nâng cấp FFmpeg", description: diagnosis.ffmpeg_version || "Đã cập nhật trạng thái công cụ" })
+      setFfmpegAction(null)
+    } catch (error) {
+      toast({ title: "Không thể xử lý FFmpeg", description: String(error), variant: "destructive" })
+    } finally {
+      setFfmpegBusy(false)
+    }
+  }
+
+  const installPreflightDependencies = async () => {
+    if (!preflight || preflight.missing.length === 0) return
+    setInstallingCapability(true)
+    try {
+      const result = await api.installCapability(preflight.missing.map((item) => item.id))
+      if (!result.ok) throw new Error("Cài thành phần thất bại")
+      toast({ title: "Đã cài thành phần", description: `Đã cài: ${result.installed.join(", ")}` })
+      setPreflight(null)
+      await refreshCapabilities()
+    } catch (error) {
+      toast({ title: "Không thể cài thành phần", description: String(error), variant: "destructive" })
+    } finally {
+      setInstallingCapability(false)
+    }
+  }
+
+
   const [globalSettings, setGlobalSettings] = useState<Record<string, unknown>>({})
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const pollingRef = useRef<Record<string, ReturnType<typeof setInterval>>>({})
@@ -128,9 +269,15 @@ export default function SettingsPage() {
       api.systemDiagnose()
         .then(setDiagnostics)
         .catch(() => setDiagnostics(null))
-      api.systemStats()
+            api.systemStats()
         .then(setSysStats)
         .catch(() => {})
+      api.ttsStorage()
+        .then(setTtsStorageStats)
+        .catch(() => {})
+      void refreshCapabilities()
+
+
 
       api.labsGetConfig()
         .then((c) => {
@@ -163,6 +310,8 @@ export default function SettingsPage() {
         saveTTS({ voice: vs[0].id } as Partial<TTSConfig>)
       }
     } catch (e) {
+      setConfig((current) => current || DEFAULT_TTS_CONFIG)
+      setProviders((current) => current.length > 0 ? current : EDGE_PROVIDER_FALLBACK)
       toast({ title: "Không tải được cài đặt", description: String(e), variant: "destructive" })
     } finally {
       setLoading(false)
@@ -429,8 +578,11 @@ export default function SettingsPage() {
       await api.ttsSaveConfig({
         provider: next.provider,
         voice: next.voice,
+
         speed: next.speed,
+        pitch: next.pitch,
         volume: next.volume,
+
         model_dir: next.model_dir,
       })
       setConfig(next)
@@ -621,7 +773,19 @@ export default function SettingsPage() {
     }
   }
 
+    const clearTtsStorage = async () => {
+    try {
+      const result = await api.ttsStorageClear()
+      const refreshed = await api.ttsStorage()
+      setTtsStorageStats(refreshed)
+      toast({ title: "Đã dọn dữ liệu tạm", description: `Đã xóa ${result.removed + result.preview_removed + result.generated_removed} file preview, audio tạm và cache.` })
+    } catch (error) {
+      toast({ title: "Không dọn được TTS cache", description: String(error), variant: "destructive" })
+    }
+  }
+
   const preview = async () => {
+
     if (!config) return
 
     setPreviewing(true)
@@ -632,10 +796,12 @@ export default function SettingsPage() {
         speed: config.speed,
         volume: config.volume,
       })
-      if (res.audio_path) {
+            if (res.audio_path) {
         setPreviewUrl(mediaUrl(res.audio_path))
         setTimeout(() => audioRef.current?.play(), 100)
-        toast({ title: "Đã tạo âm thanh mẫu thành công" })
+        api.ttsStorage().then(setTtsStorageStats).catch(() => {})
+        toast({ title: res.cache_hit ? "Đã dùng lại TTS cache" : "Đã tạo âm thanh mẫu thành công", description: res.cache_hit ? "Nội dung và cấu hình giống lần trước nên không gọi TTS lại." : "Preview được lưu tạm và sẽ tự dọn." })
+
       } else {
         toast({ title: res.message || "Không thể tạo mẫu", variant: "destructive" })
       }
@@ -711,7 +877,8 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="voice">
+            <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setSearchParams({ tab: value }, { replace: true }) }}>
+
         <TabsList className="flex w-full justify-start overflow-x-auto bg-[#141d22] border border-white/8 p-1 rounded-lg">
           {TABS.map((t) => (
             <TabsTrigger key={t.key} value={t.key} className="whitespace-nowrap data-[state=active]:bg-amber-500/20 data-[state=active]:text-amber-300 data-[state=active]:border-amber-500/30 rounded-md border border-transparent">
@@ -720,12 +887,14 @@ export default function SettingsPage() {
           ))}
         </TabsList>
 
-        {/* Chung */}
-        <TabsContent value="chung">
+        {/* Thiết lập nhanh */}
+        <TabsContent value="quick">
           <div className="vas-card p-5">
             <h3 className="mb-4 text-base font-semibold text-slate-100">Cài đặt chung</h3>
-            <p className="mb-4 text-sm text-slate-500">Thư mục dữ liệu, người vận hành và hành vi hệ thống</p>
+                        <p className="mb-4 text-sm text-slate-500">Thư mục dữ liệu, người vận hành và hành vi hệ thống</p>
+            <div className="mb-5 rounded-xl border border-emerald-400/20 bg-emerald-500/[0.05] p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="text-sm font-semibold text-slate-100">Kiểm tra hệ thống</div><p className="mt-1 text-xs text-slate-400">Viu kiểm tra runtime và capability thật trước khi workflow chạy.</p></div><Button type="button" size="sm" variant="outline" onClick={() => void refreshCapabilities()} disabled={capabilitiesLoading}>{capabilitiesLoading ? "Đang kiểm tra…" : "Kiểm tra lại"}</Button></div><div className="mt-3 grid gap-2 sm:grid-cols-3">{(capabilities?.capabilities.filter((item) => ["factory", "movie_recap", "import_media"].includes(item.id)) ?? []).map((item) => <div key={item.id} className="rounded-lg border border-white/[0.06] bg-black/15 p-3"><div className="text-xs font-semibold text-slate-200">{item.label}</div><div className={cn("mt-1 text-xs", item.ready ? "text-emerald-300" : "text-amber-300")}>{item.ready ? "Sẵn sàng" : `Thiếu ${item.missing.length} thành phần`}</div></div>)}</div><Button type="button" size="sm" variant="ghost" className="mt-3 px-0 text-amber-300 hover:bg-transparent hover:text-amber-200" onClick={() => { setActiveTab("edit"); setSearchParams({ tab: "edit" }, { replace: true }) }}>Quản lý Công cụ hệ thống →</Button></div>
             <div className="grid gap-4 sm:grid-cols-2">
+
               <div className="space-y-1.5">
                 <Label>Tên người vận hành</Label>
                 <Input
@@ -825,15 +994,69 @@ export default function SettingsPage() {
           </div>
         </TabsContent>
 
-        {/* Engine & Công cụ */}
-        <TabsContent value="engine">
-          <div className="space-y-6">
+                {/* Hình ảnh & Video */}
+        <TabsContent value="visual" className="space-y-6">
+          <div className="vas-card p-5">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div><h3 className="text-base font-semibold text-slate-100">🎨 Hình ảnh & Video</h3><p className="mt-1 text-sm text-slate-400">Cấu hình Flow, Chrome Profile và năng lực tạo media cho AI Video Factory.</p></div>
+              <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", flowLoggedIn ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300")}>{flowLoggedIn ? "Flow sẵn sàng" : "Cần đăng nhập Flow"}</span>
+            </div>
+            <div className="mt-5 rounded-xl border border-indigo-400/20 bg-indigo-500/[0.06] p-4">
+              <div className="flex flex-wrap items-start justify-between gap-4"><div><div className="flex items-center gap-2 text-sm font-semibold text-slate-100"><Chrome className="h-4 w-4 text-indigo-300" /> Google Flow & Chrome Profile</div><p className="mt-1 text-xs leading-5 text-slate-400">Viu tự mở Chrome Profile riêng, kết nối Flow Connector và tiếp tục queue sau khi đăng nhập.</p></div><span className="text-xs text-slate-400">{flowConnection?.profile_name ? `Profile: ${flowConnection.profile_name}` : "Chưa có profile"}</span></div>
+              <div className="mt-4 flex flex-wrap gap-2"><Button type="button" size="sm" disabled={flowAccountLoading} onClick={() => void (flowLoggedIn ? logoutFlowAccount() : openFlowAccount())} className={flowLoggedIn ? "gap-1.5 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25" : "gap-1.5 bg-indigo-500 text-white hover:bg-indigo-400"}>{flowLoggedIn ? <LogOut className="h-3.5 w-3.5" /> : <Chrome className="h-3.5 w-3.5" />}{flowAccountLoading ? "Đang xử lý…" : flowLoggedIn ? "Đăng xuất" : "Mở Chrome Profile riêng"}</Button><Button type="button" size="sm" variant="outline" onClick={() => void prepareCapability("factory")}>Kiểm tra Factory</Button></div>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4"><div className="text-sm font-semibold text-slate-100">Image generation</div><p className="mt-1 text-xs text-slate-400">Prompt hình ảnh, style và media policy được lấy từ cấu hình project/kênh khi chạy Factory.</p></div><div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4"><div className="text-sm font-semibold text-slate-100">Video generation</div><p className="mt-1 text-xs text-slate-400">Video được tạo theo queue Flow của project; không cần copy/paste prompt thủ công.</p></div></div>
+          </div>
+        </TabsContent>
+
+        {/* Dựng & Xuất video / Engine & Công cụ */}
+
+        <TabsContent value="edit">
+                    <div className="space-y-6">
+            <div className="vas-card overflow-hidden p-5">
+              <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-100">🧩 Thành phần Viu Studio</h3>
+                  <p className="mt-1 text-sm text-slate-400">Cài theo capability: nền tảng luôn kiểm tra trước, thành phần nặng chỉ cài khi workflow cần.</p>
+                </div>
+                <Button type="button" size="sm" variant="outline" onClick={refreshCapabilities} disabled={capabilitiesLoading}>
+                  {capabilitiesLoading ? "Đang kiểm tra…" : "Kiểm tra lại"}
+                </Button>
+              </div>
+              <div className="mb-5 grid gap-3 sm:grid-cols-3">
+                {(capabilities?.capabilities.filter((item) => ["basic", "factory", "movie_recap"].includes(item.id)) ?? []).map((item) => (
+                  <button key={item.id} type="button" onClick={() => prepareCapability(item.id)} className={cn("rounded-xl border p-4 text-left transition-colors", item.ready ? "border-emerald-500/30 bg-emerald-500/[0.06]" : "border-amber-500/30 bg-amber-500/[0.06] hover:border-amber-400/60")}>
+                    <div className="flex items-center justify-between gap-2"><span className="text-sm font-semibold text-slate-100">{item.label === "AI Video Factory" ? "Factory" : item.label === "AI Movie Recap" ? "Movie Recap" : "Cơ bản"}</span><span className={cn("text-xs font-semibold", item.ready ? "text-emerald-400" : "text-amber-300")}>{item.ready ? "Sẵn sàng" : "Thiếu thành phần"}</span></div>
+                    <p className="mt-2 text-xs text-slate-400">{item.ready ? "Workflow có thể chạy preflight." : `Thiếu ${item.missing.length} thành phần`}</p>
+                  </button>
+                ))}
+                {!capabilities && <div className="col-span-full rounded-xl border border-white/[0.06] p-4 text-sm text-slate-400">Đang đọc trạng thái thành phần từ máy…</div>}
+              </div>
+              {preflight && (
+                <div className="mb-5 rounded-xl border border-amber-500/40 bg-amber-500/[0.08] p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div><div className="font-semibold text-amber-200">Preflight: {preflight.capability.label}</div><p className="mt-1 text-sm text-slate-300">Thiếu: {preflight.missing.map((item) => item.label).join(", ")}. Dung lượng dự kiến: {preflight.estimated_size}.</p><p className="mt-1 text-xs text-slate-400">Viu Studio sẽ tự tải, xác minh và cài thành phần vào thư mục riêng của ứng dụng sau khi bạn xác nhận. Cần kết nối mạng trong quá trình tải.</p></div>
+                    <div className="flex shrink-0 gap-2"><Button type="button" variant="ghost" size="sm" onClick={() => setPreflight(null)}>Huỷ</Button><Button type="button" size="sm" onClick={installPreflightDependencies} disabled={installingCapability}>{installingCapability ? "Đang cài…" : "Cài đặt & tiếp tục"}</Button></div>
+                  </div>
+                </div>
+              )}
+              <div className="mb-5"><div className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Nền tảng bắt buộc</div><div className="grid gap-3 sm:grid-cols-3">{(capabilities?.dependencies.filter((item) => item.tier === "platform") ?? []).map((item) => <div key={item.id} className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3"><div className="flex items-center justify-between gap-2"><span className="text-sm text-slate-200">{item.label}</span><span className={cn("text-xs font-semibold", item.installed ? "text-emerald-400" : "text-red-400")}>{item.installed ? "● Sẵn sàng" : "● Thiếu"}</span></div><div className="mt-1 text-xs text-slate-500">{item.version || item.reason}</div>{!item.installed && (item.id === "ffmpeg" || item.id === "ffprobe") && <Button type="button" size="sm" className="mt-3 w-full" onClick={() => setFfmpegAction("install")} disabled={ffmpegBusy}>Tải & cài đặt trong Viu</Button>}</div>)}</div></div>
+              <div className="grid gap-4 md:grid-cols-3">
+                {["factory", "movie_recap", "import_media"].map((tier) => {
+                  const item = capabilities?.capabilities.find((capability) => capability.id === tier)
+                  const dependencies = capabilities?.dependencies.filter((dependency) => dependency.tier === tier) ?? []
+                  if (!item) return null
+                  return <div key={tier} className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4"><div className="flex items-center justify-between gap-2"><div className="text-sm font-semibold text-slate-100">{item.label}</div><span className={cn("text-xs font-semibold", item.ready ? "text-emerald-400" : "text-amber-300")}>{item.ready ? "Sẵn sàng" : "Theo nhu cầu"}</span></div><div className="mt-3 space-y-2">{dependencies.map((dependency) => <div key={dependency.id} className="flex items-center justify-between gap-2 text-xs"><span className="text-slate-300">{dependency.label}</span><span className={dependency.installed ? "text-emerald-400" : "text-amber-300"}>{dependency.installed ? "Đã cài" : "Chưa cài"}</span></div>)}</div>{!item.ready && <Button type="button" size="sm" variant="outline" className="mt-4 w-full" onClick={() => prepareCapability(item.id)}>Kiểm tra & cài khi cần</Button>}</div>
+                })}
+              </div>
+            </div>
             <div className="vas-card p-5">
+
               <div className="mb-1 flex items-center justify-between">
-                <h3 className="text-base font-semibold text-slate-100">🔧 Bộ Công cụ Viu Studio</h3>
+                <h3 className="text-base font-semibold text-slate-100">⚙️ Render Profile</h3>
                 <span className="text-xs text-slate-500">{engineStatus === "installed" ? "Đã cài đặt" : "Chưa cài đặt"}</span>
               </div>
-              <p className="mb-5 text-sm text-slate-500">Chọn profile FFmpeg thật cho các lần render tiếp theo. Công cụ được kiểm tra tại máy; ứng dụng không tải gói hệ thống ngầm.</p>
+              <p className="mb-5 text-sm text-slate-500">Cấu hình tốc độ/chất lượng render cho lần xuất video tiếp theo. Đây là cấu hình hiệu năng, không phải dependency.</p>
 
               <div className="grid gap-4 sm:grid-cols-3">
                 <div
@@ -913,109 +1136,33 @@ export default function SettingsPage() {
                     size="sm"
                     variant="outline"
                     className="gap-1.5"
-                    onClick={() => openExternalUrl("https://ffmpeg.org/download.html")}
+                    onClick={() => document.querySelector("[data-tool-management]")?.scrollIntoView({ behavior: "smooth", block: "center" })}
                   >
-                    <ExternalLink className="h-3.5 w-3.5" /> Hướng dẫn FFmpeg
+                    Quản lý công cụ
                   </Button>
 
                 </div>
+              </div>
+            </div>
+            
+                        <div className="vas-card p-5" data-tool-management>
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-base font-semibold text-slate-100">🧩 Công cụ xử lý</h3><p className="mt-1 text-sm text-slate-400">Quản lý các binary mà Viu Studio dùng thật để render, encode, subtitle và đọc metadata.</p></div><Button type="button" size="sm" variant="outline" onClick={() => void checkFfmpegTools()} disabled={ffmpegBusy}>{ffmpegBusy ? "Đang kiểm tra…" : "Kiểm tra tất cả"}</Button></div>
+              {ffmpegAction && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-400/30 bg-amber-500/[0.08] p-3"><div><div className="text-sm font-semibold text-amber-100">Xác nhận {ffmpegAction === "install" ? "cài đặt" : "nâng cấp"} FFmpeg</div><p className="mt-1 text-xs text-slate-400">Viu Studio sẽ tự tải gói FFmpeg có FFprobe, xác minh và cài vào thư mục runtime riêng của ứng dụng. Chỉ thực hiện sau khi bạn xác nhận.</p></div><div className="flex gap-2"><Button type="button" size="sm" variant="ghost" onClick={() => setFfmpegAction(null)}>Huỷ</Button><Button type="button" size="sm" onClick={() => void applyFfmpegAction()} disabled={ffmpegBusy}>{ffmpegBusy ? "Đang xử lý…" : "Xác nhận"}</Button></div></div>}
+              <div className="grid gap-4 md:grid-cols-2">
+                {[{ id: "ffmpeg", label: "FFmpeg", version: diagnostics?.ffmpeg_version, description: "Render · encode · subtitle · audio" }, { id: "ffprobe", label: "FFprobe", version: diagnostics?.ffprobe_version, description: "Đọc thông tin và metadata video" }].map((tool) => { const installed = Boolean(tool.version); return <div key={tool.id} className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4"><div className="flex items-center justify-between gap-3"><div className="text-sm font-semibold text-slate-100">{tool.label}</div><span className={cn("text-xs font-semibold", installed ? "text-emerald-400" : "text-amber-300")}>{installed ? "● Đã cài đặt" : "○ Chưa cài đặt"}</span></div><div className="mt-2 text-xs text-slate-400">{installed ? tool.version : `Viu Studio cần ${tool.label} để hoạt động.`}</div><div className="mt-1 text-xs text-slate-500">{tool.description}</div><div className="mt-4 flex flex-wrap gap-2">{installed ? <><Button type="button" size="sm" variant="outline" onClick={() => void checkFfmpegUpdate()} disabled={ffmpegBusy}>Kiểm tra cập nhật</Button><Button type="button" size="sm" variant="outline" onClick={() => setFfmpegAction("upgrade")} disabled={ffmpegBusy}>Nâng cấp</Button></> : <Button type="button" size="sm" onClick={() => setFfmpegAction("install")} disabled={ffmpegBusy}>Tải & cài đặt</Button>}</div></div> })}
               </div>
             </div>
             <div className="vas-card p-5">
-              <h3 className="mb-4 text-base font-semibold text-slate-100">🔧 Công cụ nâng cao</h3>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
-                  <div className="mb-1 flex items-center justify-between">
-                    <div className="text-sm font-semibold text-slate-100">Nhập video từ nguồn được hỗ trợ</div>
-                    <span className={cn("text-xs font-semibold", diagnostics?.yt_dlp_available ? "text-emerald-400" : "text-amber-400")}>
-                      {diagnostics ? (diagnostics.yt_dlp_available ? "Sẵn sàng" : "Chưa cài") : "Đang kiểm tra"}
-                    </span>
-
-                  </div>
-                  <p className="mb-4 text-xs text-slate-400">Công cụ nhập video từ nguồn được hỗ trợ. Chỉ dùng với video bạn sở hữu, quản lý hoặc có giấy phép phù hợp; tuân thủ điều khoản của nền tảng nguồn.</p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full gap-1.5 text-sm"
-                    onClick={() => openExternalUrl("https://github.com/yt-dlp/yt-dlp#installation")}
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" /> Hướng dẫn yt-dlp
-                  </Button>
-
-                </div>
-                <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
-                  <div className="mb-1 flex items-center justify-between gap-2">
-                    <div className="text-sm font-semibold text-slate-100">♫ Demucs — tách giọng / nhạc nền</div>
-                    <span className={cn("text-xs font-semibold", diagnostics?.demucs_available ? "text-emerald-400" : "text-amber-400")}>
-                      {diagnostics ? (diagnostics.demucs_available ? "Sẵn sàng" : "Chưa cài") : "Đang kiểm tra"}
-                    </span>
-                  </div>
-                  <p className="mb-4 text-xs text-slate-400">Tách giọng và nhạc nền thật bằng Demucs. Công cụ cần PyTorch và có thể chiếm nhiều dung lượng.</p>
-                  <Button type="button" variant="outline" className="w-full gap-1.5 text-sm" onClick={() => openExternalUrl("https://github.com/facebookresearch/demucs#installation")}>
-                    <ExternalLink className="h-3.5 w-3.5" /> Hướng dẫn cài Demucs
-                  </Button>
-
-                </div>
-              </div>
+              <h3 className="mb-4 text-base font-semibold text-slate-100">Chẩn đoán hệ thống</h3>
+              {diagnostics && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><DiagnosticItem label="Viu Runtime" value={diagnostics.python_runtime} ok /><DiagnosticItem label="Ổ đĩa trống" value={`${diagnostics.disk_free_gb} GB`} ok={diagnostics.disk_free_gb > 2} /><DiagnosticItem label="Thư mục dự án" value={diagnostics.write_permission_projects ? "Có quyền ghi" : "Không ghi được"} ok={diagnostics.write_permission_projects} /><DiagnosticItem label="App data" value={diagnostics.write_permission_app_data ? "Có quyền ghi" : "Không ghi được"} ok={diagnostics.write_permission_app_data} /><DiagnosticItem label="Demucs" value={diagnostics.demucs_available ? "Sẵn sàng" : "Chưa cài"} ok={diagnostics.demucs_available} /><DiagnosticItem label="yt-dlp" value={diagnostics.yt_dlp_available ? "Sẵn sàng" : "Chưa cài"} ok={diagnostics.yt_dlp_available} /></div>}
+              <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-slate-300">FFmpeg và FFprobe được dùng thật cho toàn bộ pipeline; cài/nâng cấp chỉ chạy sau xác nhận của bạn.</div>
             </div>
-            <div className="vas-card p-5">
-              <h3 className="mb-4 text-base font-semibold text-slate-100">Trạng thái công cụ hiện tại</h3>
-              <EngineCheckRow />
-              {diagnostics && (
-                <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <DiagnosticItem label="Python" value={diagnostics.python_runtime} ok />
-                  <DiagnosticItem label="FFmpeg" value={diagnostics.ffmpeg_version || "Chưa có"} ok={Boolean(diagnostics.ffmpeg_version)} />
-                  <DiagnosticItem label="FFprobe" value={diagnostics.ffprobe_version || "Chưa có"} ok={Boolean(diagnostics.ffprobe_version)} />
-                  <DiagnosticItem label="Ổ đĩa trống" value={`${diagnostics.disk_free_gb} GB`} ok={diagnostics.disk_free_gb > 2} />
-                  <DiagnosticItem label="Thư mục dự án" value={diagnostics.write_permission_projects ? "Có quyền ghi" : "Không ghi được"} ok={diagnostics.write_permission_projects} />
-                  <DiagnosticItem label="App data" value={diagnostics.write_permission_app_data ? "Có quyền ghi" : "Không ghi được"} ok={diagnostics.write_permission_app_data} />
-                  <DiagnosticItem label="Demucs" value={diagnostics.demucs_available ? "Sẵn sàng" : "Chưa cài"} ok={diagnostics.demucs_available} />
-                  <DiagnosticItem label="yt-dlp" value={diagnostics.yt_dlp_available ? "Sẵn sàng" : "Chưa cài"} ok={diagnostics.yt_dlp_available} />
-                </div>
-              )}
-              <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-slate-300">
 
-                💡 FFmpeg được dùng thật cho toàn bộ pipeline: dựng video, lồng tiếng, nhúng phụ đề ASS và xuất H.264/AAC.
-              </div>
-            </div>
           </div>
         </TabsContent>
 
-        {/* AI Dịch & Ảnh */}
-                <TabsContent value="ai" className="space-y-6">
-          <div className="rounded-xl border border-indigo-400/20 bg-[#111a2d] p-5 shadow-xl">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-200">
-                  <Chrome className="h-4 w-4 text-indigo-300" /> TÀI KHOẢN GOOGLE FLOW
-                </div>
-                <p className="mt-2 max-w-2xl text-xs leading-5 text-slate-400">
-                  {flowLoggedIn
-                    ? `Đã đăng nhập${flowDisplayEmail ? `: ${flowDisplayEmail}` : ""}. Chrome Profile riêng và Flow Connector đang sẵn sàng.`
-                    : "Chưa thêm tài khoản nào. Bấm mở Chrome Profile riêng để đăng nhập Google Flow; app sẽ tự kiểm tra trạng thái."}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={cn("h-2 w-2 rounded-full", flowLoggedIn ? "bg-emerald-400" : "bg-amber-400")} />
-                <span className="text-xs text-slate-400">{flowLoggedIn ? "Đã đăng nhập" : "Chưa đăng nhập"}</span>
-              </div>
-            </div>
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <Button
-                type="button"
-                size="sm"
-                disabled={flowAccountLoading}
-                onClick={() => void (flowLoggedIn ? logoutFlowAccount() : openFlowAccount())}
-                className={flowLoggedIn ? "gap-1.5 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25" : "gap-1.5 bg-indigo-500 text-white hover:bg-indigo-400"}
-              >
-                {flowLoggedIn ? <LogOut className="h-3.5 w-3.5" /> : <Chrome className="h-3.5 w-3.5" />}
-                {flowAccountLoading ? "Đang xử lý…" : flowLoggedIn ? "Đăng xuất" : "Mở Chrome Profile riêng"}
-              </Button>
-              {flowConnection?.profile_name && <span className="text-[11px] text-slate-500">Profile: {flowConnection.profile_name}</span>}
-            </div>
-            <p className="mt-3 text-[11px] text-slate-500">Quản lý đầy đủ ở đây: bật/tắt, xóa, sắp thứ tự tài khoản trong Cấu hình → Tài khoản Google Flow.</p>
-          </div>
-
+        {/* Nội dung & AI */}
+                <TabsContent value="content" className="space-y-6">
           {/* Card 1: Dịch & SEO (AI) */}
 
           <div className="vas-card p-6 border border-white/10 bg-[#0d1527] rounded-xl shadow-xl space-y-6">
@@ -1509,72 +1656,216 @@ export default function SettingsPage() {
         <TabsContent value="voice">
           <div className="vas-card p-5">
             <h3 className="mb-4 text-base font-semibold text-slate-100">🎙 Chuyển văn bản thành giọng nói</h3>
-            <div className="space-y-5">
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Nhà cung cấp mặc định</Label>
-                  <Select
-                    value={config?.provider}
-                    onValueChange={(v) => saveTTS({ provider: v } as Partial<TTSConfig>)}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {providers.map((p) => (
-                        <SelectItem key={p.id} value={p.id} disabled={!p.available}>
-                          {p.name}
-                          {!p.available && " (chưa cài)"}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                        <div className="space-y-5">
+              <section className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4">
+                <div className="mb-4">
+                  <h4 className="text-sm font-semibold text-slate-100">1. Giọng đọc mặc định</h4>
+                  <p className="mt-1 text-xs text-slate-400">Chọn engine và voice mặc định cho video mới. Các tuỳ chọn kỹ thuật nằm trong phần nâng cao.</p>
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Giọng mặc định</Label>
-                  <Select
-                    value={config?.voice}
-                    onValueChange={(v) => saveTTS({ voice: v } as Partial<TTSConfig>)}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="— Chọn giọng —" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {voices.map((v) => (
-                        <SelectItem key={v.id} value={v.id}>
-                          {v.name}
-                          {v.language ? ` (${v.language})` : ""}
-                          {v.gender ? ` · ${v.gender === "female" ? "Nữ" : "Nam"}` : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Trạng thái</Label>
-                  <div className="flex h-9 items-center gap-2 rounded-md border bg-card px-3 text-xs">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                    <span>● Sẵn sàng</span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="ml-auto h-7 gap-1 text-xs"
-                      disabled={testingConn}
-                      onClick={testConnection}
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Engine</Label>
+                    <Select
+                      value={config?.provider || "edge"}
+                      onValueChange={(v) => saveTTS({ provider: v } as Partial<TTSConfig>)}
                     >
-                      <RefreshCw className={cn("h-3 w-3", testingConn && "animate-spin")} />
-                      Test kết nối
-                    </Button>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {VOICE_ENGINE_GROUPS.map((g) => {
+                          const p = providers.find((item) => item.id === g.provider)
+                          const available = p?.available ?? (g.provider === "edge")
+                          return (
+                            <SelectItem key={g.provider} value={g.provider} disabled={!available}>
+                              {g.icon} {g.label} ({g.description})
+                              {!available && " — Chưa cài"}
+                            </SelectItem>
+                          )
+                        })}
+                        {ADVANCED_VOICE_ENGINES.flatMap((grp) => grp.engines).map((adv) => {
+                          const p = providers.find((item) => item.id === adv.provider)
+                          const available = p?.available ?? false
+                          return (
+                            <SelectItem key={adv.provider} value={adv.provider} disabled={!available}>
+                              ⚙ {adv.label} ({adv.kind})
+                              {!available && " — Chưa cài"}
+                            </SelectItem>
+                          )
+                        })}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Giọng mặc định</Label>
+                    <Select
+                      value={config?.voice}
+                      onValueChange={(v) => saveTTS({ voice: v } as Partial<TTSConfig>)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="— Chọn giọng —" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {voices.map((v) => (
+                          <SelectItem key={v.id} value={v.id}>
+                            {v.name}
+                            {v.language ? ` (${v.language})` : ""}
+                            {v.gender ? ` · ${v.gender === "female" ? "Nữ" : "Nam"}` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Trạng thái</Label>
+                    <div className="flex h-9 items-center gap-2 rounded-md border bg-card px-3 text-xs">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                      <span>● Sẵn sàng</span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="ml-auto h-7 gap-1 text-xs"
+                        disabled={testingConn}
+                        onClick={testConnection}
+                      >
+                        <RefreshCw className={cn("h-3 w-3", testingConn && "animate-spin")} />
+                        Test kết nối
+                      </Button>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </section>
 
-              <p className="text-xs text-muted-foreground">
-                Provider mặc định áp dụng cho video mới. Mỗi video có thể chọn provider riêng ở trang dự án.
-              </p>
+              <section className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-5">
+                <div className="mb-4">
+                  <h4 className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+                    🎙 2. Engine giọng nói
+                  </h4>
+                  <p className="mt-1 text-xs text-slate-400">
+                    5 lựa chọn chính được tối ưu cho Viu Auto Studio. Các engine mở rộng nằm trong phần Thêm engine bên dưới.
+                  </p>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {VOICE_ENGINE_GROUPS.map((group) => {
+                    const active = config?.provider === group.provider
+                    const available = providers.some((item) => item.id === group.provider && item.available) || group.provider === "edge"
+                    return (
+                      <div
+                        key={group.id}
+                        className={cn(
+                          "flex flex-col justify-between rounded-xl border p-4 transition",
+                          active
+                            ? "border-amber-400/60 bg-amber-400/[0.08] shadow-[0_0_15px_rgba(251,191,36,0.08)]"
+                            : "border-white/[0.08] bg-black/20 hover:border-white/15"
+                        )}
+                      >
+                        <div>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-100">
+                              <span>{group.icon}</span>
+                              <span>{group.label}</span>
+                            </div>
+                            <span
+                              className={cn(
+                                "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                                active
+                                  ? "bg-amber-400/20 text-amber-200"
+                                  : available
+                                  ? "bg-emerald-400/15 text-emerald-300"
+                                  : "bg-slate-500/10 text-slate-400"
+                              )}
+                            >
+                              {group.badge}
+                            </span>
+                          </div>
+                          <div className="mt-1.5 text-xs text-slate-400">
+                            {group.description}
+                          </div>
+                        </div>
+
+                        <div className="mt-4 flex items-center justify-between border-t border-white/[0.06] pt-3">
+                          <span className="text-[11px] text-slate-500">{group.kind}</span>
+                          {active ? (
+                            <span className="flex items-center gap-1 text-xs font-semibold text-amber-300">
+                              <Check className="h-3.5 w-3.5" /> Đang sử dụng
+                            </span>
+                          ) : available ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs"
+                              onClick={() => void saveTTS({ provider: group.provider })}
+                            >
+                              Sử dụng
+                            </Button>
+                          ) : (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 text-xs text-slate-400 hover:text-slate-200"
+                              onClick={() =>
+                                toast({
+                                  title: `${group.label} chưa sẵn sàng`,
+                                  description: "Engine này cần cấu hình API key hoặc tải model local trong phần Nâng cao.",
+                                })
+                              }
+                            >
+                              [ {group.cta} ]
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                <details className="mt-4 rounded-xl border border-white/[0.08] bg-black/15 p-4">
+                  <summary className="cursor-pointer text-xs font-semibold text-slate-300 hover:text-slate-100">
+                    ＋ Thêm engine (Cloud & Local mở rộng)
+                  </summary>
+                  <div className="mt-4 space-y-4">
+                    {ADVANCED_VOICE_ENGINES.map((grp) => (
+                      <div key={grp.category} className="space-y-2">
+                        <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                          {grp.category} Engines
+                        </div>
+                        <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
+                          {grp.engines.map((engine) => {
+                            const available = providers.some((item) => item.id === engine.provider && item.available)
+                            return (
+                              <div
+                                key={engine.provider}
+                                className="flex items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.01] px-3 py-2.5"
+                              >
+                                <div>
+                                  <div className="text-xs font-medium text-slate-200">{engine.label}</div>
+                                  <div className="text-[10px] text-slate-500">{engine.kind}</div>
+                                </div>
+                                <span className={cn("text-[10px] font-medium", available ? "text-emerald-300" : "text-slate-500")}>
+                                  {available ? "Sẵn sàng" : "Chưa cài"}
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              </section>
+
+              <section className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4"><div className="flex items-center justify-between gap-3"><div><h4 className="text-sm font-semibold text-slate-100">3. Âm thanh</h4><p className="mt-1 text-xs text-slate-400">Nhạc nền, tách giọng và chuẩn hoá audio được xử lý theo workflow; không trộn với engine TTS.</p></div><span className="rounded-full bg-slate-500/10 px-2 py-1 text-[10px] text-slate-400">Theo project</span></div><div className="mt-3 grid gap-3 sm:grid-cols-3"><div className="rounded-lg border border-white/[0.06] p-3"><div className="text-xs font-semibold text-slate-200">Nhạc nền</div><div className="mt-1 text-[11px] text-slate-500">Chọn trong Timeline của project</div></div><div className="rounded-lg border border-white/[0.06] p-3"><div className="text-xs font-semibold text-slate-200">Tách giọng / nhạc</div><div className={cn("mt-1 text-[11px]", capabilities?.capabilities.find((item) => item.id === "movie_recap")?.ready ? "text-emerald-300" : "text-amber-300")}>{capabilities?.capabilities.find((item) => item.id === "movie_recap")?.ready ? "Demucs sẵn sàng" : "Demucs cài khi cần"}</div><Button type="button" variant="ghost" size="sm" className="mt-2 h-7 px-0 text-xs text-amber-300" onClick={() => void prepareCapability("movie_recap")}>Kiểm tra & cài khi cần</Button></div><div className="rounded-lg border border-white/[0.06] p-3"><div className="text-xs font-semibold text-slate-200">Audio normalization</div><div className="mt-1 text-[11px] text-emerald-300">FFmpeg xử lý khi render</div></div><div className="rounded-lg border border-white/[0.06] p-3"><div className="text-xs font-semibold text-slate-200">Phụ đề</div><div className="mt-1 text-[11px] text-slate-500">Generate, style và timing theo project</div><Button type="button" variant="ghost" size="sm" className="mt-2 h-7 px-0 text-xs text-amber-300" onClick={() => { setActiveTab("edit"); setSearchParams({ tab: "edit" }, { replace: true }) }}>Mở cấu hình dựng →</Button></div></div></section>
+
+              <p className="text-xs text-muted-foreground">Engine mặc định áp dụng cho video mới. Mỗi project vẫn có thể chọn voice riêng khi tạo voiceover.</p>
+
+              <section className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h4 className="text-sm font-semibold text-slate-100">4. Bộ nhớ & Cache</h4><p className="mt-1 text-xs text-slate-400">Preview tự xóa sau 30 phút; TTS Cache chỉ giữ lại để dùng lại và không đụng vào asset của project.</p></div><Button type="button" size="sm" variant="outline" onClick={() => void clearTtsStorage()}>🗑 Dọn dẹp</Button></div><div className="mt-3 grid gap-3 sm:grid-cols-2"><DiagnosticItem label="Preview" value={ttsStorageStats ? `${(ttsStorageStats.preview_bytes / 1024 / 1024).toFixed(1)} MB · 30 phút` : "Đang tải"} ok={true} /><DiagnosticItem label="TTS Cache" value={ttsStorageStats ? `${(ttsStorageStats.cache_bytes / 1024 / 1024).toFixed(1)} MB · 7 ngày` : "Đang tải"} ok={true} /></div><p className="mt-3 text-xs text-slate-400">Audio trong project không nằm trong chính sách tự dọn.</p></section>
 
               <div className="rounded-md border bg-background p-4">
                 <div className="mb-3 flex items-center justify-between">
+
                   <Label className="text-sm font-bold">Nghe thử</Label>
                   <Button
                     variant="outline"
@@ -1587,6 +1878,11 @@ export default function SettingsPage() {
                     {previewing ? "Đang tạo..." : "▶ Nghe thử"}
                   </Button>
                 </div>
+                <div className="mb-4 grid gap-4 sm:grid-cols-3">
+                  <div className="space-y-2"><div className="flex justify-between text-xs"><Label>Tốc độ</Label><span className="text-muted-foreground">{config?.speed.toFixed(2)}x</span></div><Slider min={0.5} max={2} step={0.05} value={[config?.speed ?? 1]} onValueChange={([v]) => void saveTTS({ speed: v })} /></div>
+                  <div className="space-y-2"><div className="flex justify-between text-xs"><Label>Cao độ</Label><span className="text-muted-foreground">{(config?.pitch ?? 0).toFixed(1)} st</span></div><Slider min={-12} max={12} step={0.5} value={[config?.pitch ?? 0]} onValueChange={([v]) => void saveTTS({ pitch: v })} /></div>
+                  <div className="space-y-2"><div className="flex justify-between text-xs"><Label>Âm lượng</Label><span className="text-muted-foreground">{Math.round((config?.volume ?? 1) * 100)}%</span></div><Slider min={0} max={1} step={0.05} value={[config?.volume ?? 1]} onValueChange={([v]) => void saveTTS({ volume: v })} /></div>
+                </div>
                 <Textarea
                   value={customText}
                   onChange={(e) => setCustomText(e.target.value)}
@@ -1598,38 +1894,13 @@ export default function SettingsPage() {
                     <audio ref={audioRef} src={previewUrl} controls className="w-full" />
                   </div>
                 )}
-                <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-xs">
-                      <Label>Tốc độ</Label>
-                      <span className="text-muted-foreground">{config?.speed.toFixed(2)}x</span>
-                    </div>
-                    <Slider
-                      min={0.5}
-                      max={2}
-                      step={0.05}
-                      value={[config?.speed ?? 1]}
-                      onValueChange={([v]) => saveTTS({ speed: v } as Partial<TTSConfig>)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-xs">
-                      <Label>Âm lượng</Label>
-                      <span className="text-muted-foreground">{Math.round((config?.volume ?? 1) * 100)}%</span>
-                    </div>
-                    <Slider
-                      min={0}
-                      max={1}
-                      step={0.05}
-                      value={[config?.volume ?? 1]}
-                      onValueChange={([v]) => saveTTS({ volume: v } as Partial<TTSConfig>)}
-                    />
-                  </div>
-                </div>
               </div>
 
               {/* Voice list */}
-              <div>
+              <details className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4">
+                <summary className="cursor-pointer text-sm font-semibold text-slate-200">Danh sách giọng</summary>
+                <div className="mt-3">
+
                 <h3 className="mb-2 text-sm font-bold">Danh sách giọng</h3>
                 <div className="space-y-1.5">
                   {voices.length === 0 ? (
@@ -1672,13 +1943,15 @@ export default function SettingsPage() {
                     ))
                   )}
                 </div>
-              </div>
+                              </div>
+              </details>
             </div>
           </div>
         </TabsContent>
 
-        {/* Telegram */}
-        <TabsContent value="telegram">
+        {/* Tài khoản & Kết nối - Telegram */}
+
+        <TabsContent value="connections">
           <div className="vas-card p-5">
             <h3 className="mb-4 text-base font-semibold text-slate-100">✈ Telegram</h3>
 <p className="mb-4 text-sm text-slate-500">Nhận thông báo và duyệt video qua Telegram</p>
@@ -1729,8 +2002,8 @@ export default function SettingsPage() {
 
         </TabsContent>
 
-        {/* Đăng bài & Lập lịch */}
-        <TabsContent value="publish">
+        {/* Tài khoản & Kết nối - Xuất bản */}
+        <TabsContent value="connections">
           <div className="vas-card p-5 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
@@ -1884,6 +2157,11 @@ export default function SettingsPage() {
               </div>
             </div>
           </div>
+        </TabsContent>
+
+        {/* Nâng cao */}
+        <TabsContent value="advanced" className="space-y-6">
+          <div className="vas-card p-5"><div className="flex items-start justify-between gap-3"><div><h3 className="text-base font-semibold text-slate-100">🛠 Nâng cao</h3><p className="mt-1 text-sm text-slate-400">Các cấu hình kỹ thuật chỉ dành cho người cần chẩn đoán hoặc thử nghiệm.</p></div><span className="rounded-full bg-slate-500/15 px-2.5 py-1 text-xs text-slate-300">Advanced</span></div><div className="mt-5 space-y-3"><details className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4"><summary className="cursor-pointer text-sm font-semibold text-slate-200">Runtime & thư mục dữ liệu</summary><div className="mt-3 grid gap-3 sm:grid-cols-2"><DiagnosticItem label="Viu Runtime" value={diagnostics?.python_runtime || "Đang kiểm tra"} ok={Boolean(diagnostics)} /><DiagnosticItem label="App data" value={diagnostics?.write_permission_app_data ? "Có quyền ghi" : "Chưa kiểm tra"} ok={Boolean(diagnostics?.write_permission_app_data)} /><DiagnosticItem label="Thư mục project" value={diagnostics?.write_permission_projects ? "Có quyền ghi" : "Chưa kiểm tra"} ok={Boolean(diagnostics?.write_permission_projects)} /></div></details><details className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4" open><summary className="cursor-pointer text-sm font-semibold text-slate-200">💾 TTS Cache & Bộ nhớ tạm</summary><div className="mt-3 grid gap-3 sm:grid-cols-3"><DiagnosticItem label="TTS Preview" value={ttsStorageStats ? `${(ttsStorageStats.preview_bytes / 1024 / 1024).toFixed(1)} MB` : "Đang tải"} ok={true} /><DiagnosticItem label="TTS Cache" value={ttsStorageStats ? `${(ttsStorageStats.cache_bytes / 1024 / 1024).toFixed(1)} MB` : "Đang tải"} ok={true} /><DiagnosticItem label="Giới hạn cache" value={ttsStorageStats ? `${(ttsStorageStats.cache_limit_bytes / 1024 / 1024 / 1024).toFixed(1)} GB` : "1.0 GB"} ok={true} /></div><p className="mt-3 text-xs text-slate-400">Preview nằm trong thư mục tạm và tự dọn sau 30 phút. Cache TTS tự dọn sau 7 ngày và bị giới hạn dung lượng.</p><div className="mt-3 flex flex-wrap items-center gap-2"><Button type="button" size="sm" variant="outline" onClick={() => void api.ttsStorage().then(setTtsStorageStats)}>Kiểm tra bộ nhớ</Button><Button type="button" size="sm" variant="outline" onClick={() => void clearTtsStorage()}>Dọn cache ngay</Button></div></details><details className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4"><summary className="cursor-pointer text-sm font-semibold text-slate-200">Logs & Debug</summary><p className="mt-3 text-xs text-slate-400">Log backend được lưu trong App data. Dùng Chẩn đoán hệ thống và Nhật ký job để kiểm tra lỗi theo workflow.</p><Button type="button" size="sm" variant="outline" className="mt-3" onClick={() => navigate("/queue")}>Mở hàng đợi và nhật ký</Button></details><details className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4"><summary className="cursor-pointer text-sm font-semibold text-slate-200">Experimental</summary><p className="mt-3 text-xs text-slate-400">Các provider hoặc engine thử nghiệm chỉ hiển thị trong khu vực này khi backend đã có capability tương ứng.</p></details></div></div>
         </TabsContent>
       </Tabs>
     </div>

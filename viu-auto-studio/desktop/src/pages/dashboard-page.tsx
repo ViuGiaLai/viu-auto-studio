@@ -4,7 +4,8 @@ import {
   Bell, CheckCircle2, Clapperboard, Clock3, FolderOpen, MoreVertical,
   RefreshCw, Search, Sparkles, Trash2, TriangleAlert,
 } from "lucide-react"
-import { api, mediaUrl } from "@/services/api"
+import { api } from "@/services/api"
+
 import { flowApi, globalApi, notificationsApi, queueApi, type AppNotification, type JobRead } from "@/services/pages-api"
 import { toast } from "@/hooks/use-toast"
 import type { Project, RenderJob } from "@/types"
@@ -14,6 +15,8 @@ import {
 } from "@/components/design-system"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/utils/cn"
+import { ProjectThumbnail } from "@/components/project-thumbnail"
+
 import { useAppStore } from "@/stores/app-store"
 import {
   formatDelta, initialsFromName, overviewBucket, overviewLabel, overviewTone,
@@ -431,19 +434,14 @@ export default function DashboardPage() {
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 {recent.map((p) => {
                   const tone = overviewTone(p.status)
-                  const scenes = sceneCounts[p.id]
-                  const thumb = p.thumbnail_path ? mediaUrl(p.thumbnail_path) : ""
+                                    const scenes = sceneCounts[p.id]
                   return (
+
                     <div key={p.id} className="group relative overflow-hidden rounded-xl border border-[#24313A] bg-[#141D22]">
                       <Link to={`/projects/${p.id}`} className="block">
                         <div className="relative aspect-[16/10] overflow-hidden bg-[#0c161c]">
-                          {thumb ? (
-                            <img src={thumb} alt="" className="h-full w-full object-cover" onError={(e) => { e.currentTarget.style.display = "none" }} />
-                          ) : (
-                            <div className="flex h-full items-center justify-center bg-gradient-to-br from-[#1a2830] to-[#0c161c] text-slate-600">
-                              <Clapperboard className="h-10 w-10" />
-                            </div>
-                          )}
+                                                    <ProjectThumbnail project={p} className="absolute inset-0" />
+
                           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
                           <span className={cn("absolute left-2.5 top-2.5 rounded px-2 py-0.5 text-[10px] font-semibold", tone.badge)}>
                             {overviewLabel(p.status)}

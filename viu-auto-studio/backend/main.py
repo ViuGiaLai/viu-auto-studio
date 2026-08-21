@@ -20,6 +20,7 @@ from backend.api.routes import router
 from backend.api.connector_routes import router as connector_router
 from backend.api.pages_routes import router as pages_router
 from backend.api.skill_routes import router as skill_router
+from backend.services.tts_storage import cleanup_all_tts_storage
 
 logging.basicConfig(
     level=logging.INFO,
@@ -51,6 +52,9 @@ async def lifespan(_: FastAPI):
     removed_uploads = cleanup_stale_uploads()
     if removed_uploads:
         logging.getLogger("viu.startup").info("Đã dọn %s upload tạm cũ", removed_uploads)
+    tts_cleanup = cleanup_all_tts_storage()
+    if tts_cleanup["preview_removed"] or tts_cleanup["cache_removed"]:
+        logging.getLogger("viu.startup").info("Đã dọn TTS: %s preview, %s cache", tts_cleanup["preview_removed"], tts_cleanup["cache_removed"])
     init_db()
     yield
 

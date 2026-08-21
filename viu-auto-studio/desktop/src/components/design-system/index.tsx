@@ -55,8 +55,8 @@ export function Sidebar({ collapsed, onToggle, backendOnline, version, operatorN
 }) {
   const location = useLocation()
   const isActive = (to: string, exact?: boolean) => {
-    if (to === "/studio") return location.pathname === "/studio" || /^\/projects\/\d+/.test(location.pathname)
-    if (to === "/projects") return location.pathname === "/projects" || location.pathname === "/projects/new"
+    if (to === "/studio") return location.pathname === "/studio"
+    if (to === "/projects") return location.pathname === "/projects" || location.pathname === "/projects/new" || /^\/projects\/\d+/.test(location.pathname)
     return exact ? location.pathname === to : location.pathname.startsWith(to)
   }
   return (

@@ -283,6 +283,9 @@ class FFmpegEngine:
         output_path: str,
         transition: float = 0.5,
         transition_types: Optional[List[str]] = None,
+        voice_volume: float = 1.0,
+        enable_ducking: bool = True,
+        normalize_audio: bool = True,
     ) -> str:
         """Compose all scene clips + music + logo + intro/outro into the final MP4."""
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -365,20 +368,27 @@ class FFmpegEngine:
         inputs2: List[str] = ["-i", concat_tmp]
         filter_parts = []
 
+        voice_gain = max(0.0, min(2.0, float(voice_volume)))
+        voice_chain = f"volume={voice_gain:.3f}"
+        if normalize_audio:
+            voice_chain += ",loudnorm=I=-16:TP=-1.5:LRA=11"
         if music_path and Path(music_path).exists():
             inputs2 += ["-i", music_path]
+            filter_parts.append(f"[0:a]{voice_chain}[voice]")
             filter_parts.append(
                 "[1:a]volume="
                 f"{max(0.0, min(1.0, music_volume)):.3f},"
                 "afade=t=in:d=2,afade=t=out:st=3:d=3[music]"
             )
-            # sidechain compress to duck music under voiceover
-            filter_parts.append(
-                "[0:a][music]sidechaincompress=threshold=0.03:ratio=8:attack=100:release=800,"
-                "amix=inputs=2:duration=first:dropout_transition=2[aout]"
-            )
+            if enable_ducking:
+                filter_parts.append(
+                    "[voice][music]sidechaincompress=threshold=0.03:ratio=8:attack=100:release=800,"
+                    "amix=inputs=2:duration=first:dropout_transition=2[aout]"
+                )
+            else:
+                filter_parts.append("[voice][music]amix=inputs=2:duration=first:dropout_transition=2[aout]")
         else:
-            filter_parts.append("[0:a]aformat=sample_rates=44100:channel_layouts=stereo[aout]")
+            filter_parts.append(f"[0:a]{voice_chain},aformat=sample_rates=44100:channel_layouts=stereo[aout]")
 
         # Logo watermark
         if logo_path and Path(logo_path).exists():

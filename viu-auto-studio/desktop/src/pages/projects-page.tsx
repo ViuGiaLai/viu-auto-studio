@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import { Plus, Search, Trash2, FolderOpen, Play, ChevronDown } from "lucide-react"
-import { api, mediaUrl, openLocalPath } from "@/services/api"
+import { api, openLocalPath } from "@/services/api"
 import { toast } from "@/hooks/use-toast"
 import type { Project } from "@/types"
 import { useAppStore } from "@/stores/app-store"
@@ -11,6 +11,7 @@ import { Button } from "@/components/design-system"
 import { Input } from "@/components/design-system"
 import { Card, CardContent } from "@/components/design-system"
 import { Progress } from "@/components/ui/progress"
+import { ProjectThumbnail } from "@/components/project-thumbnail"
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/design-system"
@@ -156,11 +157,6 @@ export default function ProjectsPage() {
     { value: "size", label: "Dung lượng" },
   ]
 
-  const thumbnailFor = (p: Project) => {
-    if (p.thumbnail_path) return mediaUrl(p.thumbnail_path)
-    return `/api/projects/${p.id}/preview`
-  }
-
   return (
     <div className="min-h-full space-y-6 p-8">
       {/* Header */}
@@ -288,18 +284,7 @@ export default function ProjectsPage() {
               {/* Thumbnail */}
               <Link to={`/projects/${p.id}`} className="block">
                 <div className="relative aspect-video w-full overflow-hidden bg-[#0c161c]">
-                  {p.aspect_ratio === "9:16" ? (
-                    <div className="flex h-full items-center justify-center bg-gradient-to-b from-[#111827] to-[#0a0e1a]">
-                      <FolderOpen className="h-10 w-10 text-slate-600/40" />
-                    </div>
-                  ) : (
-                    <img
-                      src={thumbnailFor(p)}
-                      alt={p.name}
-                      className="h-full w-full object-cover"
-                      onError={(e) => { e.currentTarget.style.display = "none" }}
-                    />
-                  )}
+                  <ProjectThumbnail project={p} className="absolute inset-0" />
                   <span className="absolute left-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-bold text-white backdrop-blur-sm">
                     {p.aspect_ratio}
                   </span>

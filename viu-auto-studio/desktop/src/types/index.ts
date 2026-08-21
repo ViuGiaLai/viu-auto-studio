@@ -35,6 +35,7 @@ export interface PipelineState {
   step_data_json: Record<string, string>
   error_step: string
   last_log: string
+  steps?: Array<{ key: string; label: string; status: string; progress: number; error?: string }>
 }
 
 export interface StudioSettings {
@@ -208,6 +209,7 @@ export interface TTSConfig {
   provider: string
   voice: string
   speed: number
+  pitch: number
   volume: number
   model_dir: string
   cloud_api_key_masked: string
@@ -242,6 +244,12 @@ export interface RenderJob {
 }
 
 export interface RenderConfig {
+  output_preset: string
+  voice_volume: number
+  enable_ducking: boolean
+  normalize_audio: boolean
+  subtitle_style: string
+  subtitle_output_format: string
   fps: number
   crf: number
   preset: string

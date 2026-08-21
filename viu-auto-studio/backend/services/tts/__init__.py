@@ -75,6 +75,7 @@ def get_tts_config(db) -> dict:
         "provider": provider,
         "voice": settings.get("voice", ""),
         "speed": _float("speed", 1.0),
+        "pitch": _float("pitch", 0.0),
         "volume": _float("volume", 1.0),
         "model_dir": settings.get("model_dir", TTS_MODEL_DIR),
         "cloud_api_key": settings.get("cloud_api_key", ""),
@@ -100,6 +101,7 @@ def save_tts_config(db, config: TTSConfigRequest) -> dict:
         "provider": config.provider,
         "voice": config.voice,
         "speed": config.speed,
+        "pitch": config.pitch,
         "volume": config.volume,
         "model_dir": config.model_dir,
         "cloud_api_key": cloud_api_key,
@@ -144,18 +146,17 @@ def get_provider(config: Optional[dict] = None) -> TTSProvider:
 
 def list_tts_providers() -> List[dict]:
     return [
-        {"id": "edge", "name": "Edge TTS (giọng thật, miễn phí, không cần key)", "available": True},
-        {"id": "revo", "name": "Revo Voice (chưa cài engine giọng thật)", "available": False},
-        {"id": "kokoro", "name": "Kokoro TTS (Anh/Mỹ/Anh-Úc..., local)", "available": False},
-        {"id": "kokoro_vi", "name": "Kokoro Việt Nam (local)", "available": False},
-        {"id": "omnivoice", "name": "OmniVoice (clone đa ngữ, local)", "available": OmniVoiceProvider.is_available()},
-        {"id": "elevenlabs", "name": "ElevenLabs", "available": False},
-        {"id": "google_cloud_tts", "name": "Google Cloud TTS (Studio 48kHz)", "available": False},
-        {"id": "gemini_tts", "name": "Gemini TTS (AI Studio)", "available": False},
-        {"id": "vbee", "name": "Vbee (giọng Việt)", "available": False},
-        {"id": "azure_tts", "name": "Azure TTS", "available": False},
-        {"id": "local", "name": "Local TTS (Piper framework)", "available": True},
-        {"id": "cloud", "name": "Cloud TTS (framework)", "available": True},
+        {"id": "edge", "name": "Edge TTS", "category": "main", "kind": "Cloud", "badge": "Mặc định", "available": True},
+        {"id": "kokoro_vi", "name": "Kokoro Việt Nam", "category": "main", "kind": "Local", "badge": "Local chính", "available": False},
+        {"id": "gemini_tts", "name": "Gemini TTS", "category": "main", "kind": "Cloud API", "badge": "AI / Cloud", "available": False},
+        {"id": "elevenlabs", "name": "ElevenLabs", "category": "main", "kind": "Cloud API", "badge": "Cao cấp", "available": False},
+        {"id": "vbee", "name": "Vbee", "category": "main", "kind": "Cloud API", "badge": "Giọng Việt", "available": False},
+        # Thêm engine
+        {"id": "google_cloud_tts", "name": "Google Cloud TTS", "category": "cloud", "kind": "Cloud", "available": False},
+        {"id": "azure_tts", "name": "Azure TTS", "category": "cloud", "kind": "Cloud", "available": False},
+        {"id": "kokoro", "name": "Kokoro TTS", "category": "local", "kind": "Local", "available": False},
+        {"id": "omnivoice", "name": "OmniVoice", "category": "local", "kind": "Local", "available": OmniVoiceProvider.is_available()},
+        {"id": "local", "name": "Piper / Local TTS", "category": "local", "kind": "Local", "available": True},
     ]
 
 
@@ -169,12 +170,46 @@ def test_connection(config: Optional[dict] = None) -> dict:
 
 
 def synthesize(text: str, output_path: str, config: Optional[dict] = None) -> str:
-    """Convenience wrapper used by the pipeline."""
+    """Synthesize speech and apply pitch with the app's FFmpeg when requested."""
+    import math
+    import os
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    from backend.core.config import FFMPEG_BIN
+
     settings = config or {}
     provider = get_provider(settings)
-    return provider.synthesize(
-        text=text,
-        voice=str(settings.get("voice", "")),
-        speed=float(settings.get("speed", 1.0)),
-        output_path=output_path,
-    )
+    pitch = max(-12.0, min(12.0, float(settings.get("pitch", 0.0) or 0.0)))
+    if abs(pitch) < 0.01:
+        return provider.synthesize(
+            text=text,
+            voice=str(settings.get("voice", "")),
+            speed=float(settings.get("speed", 1.0)),
+            output_path=output_path,
+        )
+
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    raw_fd, raw_name = tempfile.mkstemp(prefix="viu_tts_pitch_", suffix=output.suffix or ".mp3")
+    os.close(raw_fd)
+    raw = Path(raw_name)
+    try:
+        provider.synthesize(
+            text=text,
+            voice=str(settings.get("voice", "")),
+            speed=float(settings.get("speed", 1.0)),
+            output_path=str(raw),
+        )
+        ratio = math.pow(2.0, pitch / 12.0)
+        result = subprocess.run([
+            FFMPEG_BIN, "-y", "-i", str(raw),
+            "-af", f"asetrate=44100*{ratio:.8f},aresample=44100",
+            "-ar", "44100", "-c:a", "libmp3lame", "-b:a", "128k", str(output),
+        ], capture_output=True, text=True, timeout=120)
+        if result.returncode != 0 or not output.exists() or output.stat().st_size < 1000:
+            raise RuntimeError(f"Không thể áp dụng cao độ bằng FFmpeg: {result.stderr[:300]}")
+        return str(output)
+    finally:
+        raw.unlink(missing_ok=True)

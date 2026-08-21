@@ -13,8 +13,12 @@ import os
 import platform
 import secrets
 import shutil
+import subprocess
+import sys
+import importlib.util
 
 import threading
+
 import time
 from datetime import datetime, timedelta
 from typing import Optional
@@ -61,6 +65,7 @@ from backend.services.media_planner import IMAGE_ONLY_MODES, planned_video_scene
 from backend.services.media import get_audio_duration
 from backend.services.project_assets import sync_project_media_assets
 from backend.services.project_config import effective_project_config
+from backend.services.tool_installer import install_dependencies, install_ffmpeg, latest_ffmpeg_info, internal_tool_paths
 
 router = APIRouter()
 
@@ -1893,7 +1898,120 @@ def system_diagnose():
     return items
 
 
+@router.get("/system/capabilities")
+def system_capabilities():
+    """Return real dependency/capability state without installing anything."""
+    diagnosis = system_diagnose()
+    flow_connector_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "flow-connector", "manifest.json")
+    chrome_candidates = [shutil.which(name) for name in ("chrome", "chrome.exe", "chromium", "chromium.exe", "msedge", "msedge.exe")]
+    playwright_root = os.path.join(os.environ.get("LOCALAPPDATA", ""), "ms-playwright")
+    if os.path.isdir(playwright_root):
+        for root, _dirs, files in os.walk(playwright_root):
+            if "chrome.exe" in files:
+                chrome_candidates.append(os.path.join(root, "chrome.exe"))
+    chrome_candidates.extend([
+        os.path.join(os.environ.get("PROGRAMFILES", ""), "Google", "Chrome", "Application", "chrome.exe"),
+        os.path.join(os.environ.get("PROGRAMFILES(X86)", ""), "Google", "Chrome", "Application", "chrome.exe"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Google", "Chrome", "Application", "chrome.exe"),
+        os.path.join(os.environ.get("PROGRAMFILES", ""), "Microsoft", "Edge", "Application", "msedge.exe"),
+    ])
+    chrome_available = any(path and os.path.isfile(path) for path in chrome_candidates)
+    torch_available = importlib.util.find_spec("torch") is not None
+    demucs_available = bool(diagnosis.get("demucs_available"))
+    internal_paths = internal_tool_paths()
+    yt_dlp_available = bool(diagnosis.get("yt_dlp_available")) or importlib.util.find_spec("yt_dlp") is not None or bool(internal_paths.get("yt_dlp"))
+    dependencies = [
+        {"id": "ffmpeg", "label": "FFmpeg", "tier": "platform", "installed": bool(diagnosis.get("ffmpeg_version")), "version": diagnosis.get("ffmpeg_version") or "", "installable": False, "reason": "Dùng để dựng, mã hóa và xuất video thật."},
+        {"id": "ffprobe", "label": "FFprobe", "tier": "platform", "installed": bool(diagnosis.get("ffprobe_version")), "version": diagnosis.get("ffprobe_version") or "", "installable": False, "reason": "Đọc metadata và xác minh media."},
+        {"id": "viu_runtime", "label": "Viu Runtime", "tier": "platform", "installed": True, "version": diagnosis.get("python_runtime") or "", "installable": False, "reason": "Runtime backend đã được ứng dụng khởi động."},
+        {"id": "chrome_profile", "label": "Chrome Profile", "tier": "factory", "installed": chrome_available, "version": "", "installable": False, "reason": "Cần cho tự động hóa Google Flow."},
+        {"id": "flow_connector", "label": "Flow Connector", "tier": "factory", "installed": os.path.isfile(flow_connector_path), "version": "bundled", "installable": False, "reason": "Extension được đóng gói trong project."},
+        {"id": "media_processing", "label": "Media Processing", "tier": "factory", "installed": bool(diagnosis.get("ffmpeg_version") and diagnosis.get("ffprobe_version")), "version": "", "installable": False, "reason": "Năng lực xử lý media dùng FFmpeg/FFprobe."},
+        {"id": "demucs", "label": "Demucs", "tier": "movie_recap", "installed": demucs_available, "version": "", "installable": True, "reason": "Tách giọng và nhạc nền cho AI Movie Recap.", "size_label": "Khoảng 2 GB trở lên"},
+        {"id": "pytorch", "label": "PyTorch", "tier": "movie_recap", "installed": torch_available, "version": "", "installable": True, "reason": "Runtime inference cho Demucs.", "size_label": "Khoảng 2 GB trở lên"},
+        {"id": "yt_dlp", "label": "yt-dlp", "tier": "import_media", "installed": yt_dlp_available, "version": "", "installable": True, "reason": "Nhập nguồn video được hỗ trợ khi người dùng có quyền sử dụng.", "size_label": "Nhỏ"},
+    ]
+    by_id = {item["id"]: item for item in dependencies}
+    capability_defs = [
+        {"id": "basic", "label": "Cơ bản", "dependencies": ["ffmpeg", "ffprobe", "viu_runtime"]},
+        {"id": "factory", "label": "AI Video Factory", "dependencies": ["chrome_profile", "flow_connector", "media_processing"]},
+        {"id": "movie_recap", "label": "AI Movie Recap", "dependencies": ["demucs", "pytorch"]},
+        {"id": "import_media", "label": "Import Media", "dependencies": ["yt_dlp"]},
+    ]
+    capabilities = [{**item, "ready": all(by_id[dep]["installed"] for dep in item["dependencies"]), "missing": [dep for dep in item["dependencies"] if not by_id[dep]["installed"]]} for item in capability_defs]
+    return {"dependencies": dependencies, "capabilities": capabilities, "diagnostics": diagnosis}
+
+
+def _apply_internal_tool_paths() -> dict[str, str]:
+    paths = internal_tool_paths()
+    if paths.get("ffmpeg"):
+        os.environ["VIU_FFMPEG_BIN"] = paths["ffmpeg"]
+        globals()["FFMPEG_BIN"] = paths["ffmpeg"]
+        try:
+            import backend.api.routes as api_routes
+            import backend.render.ffmpeg_engine as ffmpeg_engine
+            api_routes.FFMPEG_BIN = paths["ffmpeg"]
+            ffmpeg_engine.FFMPEG_BIN = paths["ffmpeg"]
+        except Exception:
+            pass
+    if paths.get("ffprobe"):
+        os.environ["VIU_FFPROBE_BIN"] = paths["ffprobe"]
+        globals()["FFPROBE_BIN"] = paths["ffprobe"]
+    return paths
+
+
+@router.post("/system/tools/ffmpeg")
+def manage_ffmpeg_tool(payload: dict = Body(...)):
+    """Manage FFmpeg through Viu Auto Studio's internal downloader and runtime directory."""
+    action = str(payload.get("action") or "check").strip().lower()
+    if action == "check":
+        _apply_internal_tool_paths()
+        return {"ok": True, "action": action, "state": system_capabilities()}
+    if action == "check_update":
+        try:
+            latest = latest_ffmpeg_info()
+        except Exception as exc:
+            raise HTTPException(502, f"Không đọc được phiên bản FFmpeg mới: {exc}") from exc
+        current = next((item.get("version", "") for item in system_capabilities()["dependencies"] if item["id"] == "ffmpeg"), "")
+        return {"ok": True, "action": action, "latest_version": latest.get("version", ""), "current_version": current, "asset_name": latest.get("asset_name", ""), "asset_size": latest.get("asset_size"), "update_available": bool(latest.get("version") and latest.get("version") not in current)}
+    if action not in {"install", "upgrade"}:
+        raise HTTPException(400, "Action FFmpeg không hợp lệ")
+    try:
+        result = install_ffmpeg()
+        paths = _apply_internal_tool_paths()
+    except Exception as exc:
+        raise HTTPException(502, f"Viu Studio không thể tải/cài FFmpeg nội bộ: {exc}") from exc
+    return {"ok": True, "action": action, "result": result, "paths": paths, "state": system_capabilities()}
+
+
+@router.post("/system/preflight")
+def system_preflight(payload: dict = Body(...)):
+    capability_id = str(payload.get("capability_id") or "").strip()
+    state = system_capabilities()
+    capability = next((item for item in state["capabilities"] if item["id"] == capability_id), None)
+    if capability is None:
+        raise HTTPException(404, "Capability không tồn tại")
+    missing = [item for item in state["dependencies"] if item["id"] in capability["missing"]]
+    return {"ok": bool(capability["ready"]), "capability": capability, "missing": missing, "estimated_size": "; ".join(item.get("size_label", "") for item in missing) or "0 MB"}
+
+
+@router.post("/system/capabilities/install")
+def install_capability_dependencies(payload: dict = Body(...)):
+    dependency_ids = [str(item) for item in payload.get("dependency_ids") or []]
+    supported = {"ffmpeg", "ffprobe", "yt_dlp", "demucs", "pytorch"}
+    requested = [dep for dep in dependency_ids if dep in supported]
+    if not requested:
+        raise HTTPException(400, "Không có dependency hợp lệ để cài")
+    try:
+        result = install_dependencies(requested)
+        paths = _apply_internal_tool_paths()
+    except Exception as exc:
+        raise HTTPException(502, f"Viu Studio không thể cài thành phần nội bộ: {exc}") from exc
+    return {"ok": True, "installed": result.get("installed", requested), "output": result.get("output", ""), "paths": paths, "state": system_capabilities()}
+
+
 def _tool_version(bin_path: str) -> str:
+
     import subprocess
     try:
         p = subprocess.run([bin_path, "-version"], capture_output=True,

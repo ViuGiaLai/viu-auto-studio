@@ -1,34 +1,49 @@
-import { useEffect, useMemo, useState } from "react"
-import { Link, useNavigate, useParams } from "react-router-dom"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { Link, useSearchParams, useNavigate } from "react-router-dom"
 import {
-  RefreshCw, Settings, BarChart3, Play, RotateCcw, ScrollText, ArrowRight,
-  Sparkles, MessageSquare, Clock, AlertTriangle, CheckCircle2,
+  AlertTriangle,
+  ArrowRight,
+  BarChart3,
+  CheckCircle2,
+  Clock,
+  FileText,
+  ImageIcon,
+  MessageSquare,
+  Play,
+  RefreshCw,
+  RotateCcw,
+  ScrollText,
+  Settings,
+  Sparkles,
+  Users,
 } from "lucide-react"
-import { api } from "@/services/api"
+import { api, startFlowBrowser } from "@/services/api"
 import { toast } from "@/hooks/use-toast"
 import { cn } from "@/utils/cn"
-import { Progress } from "@/components/ui/progress"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/design-system"
-import { Button } from "@/components/design-system"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/design-system"
+import { Button, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/design-system"
 import { STATUS_LABELS } from "@/types"
+import type { Character, PipelineState, Project, Scene, ScriptData } from "@/types"
 
-type Channel = { id: number; name: string; description: string; niche: string }
-type Idea = {
-  id: number
-  title: string
-  subtitle: string
+type PipelineView = {
   status: string
-  aspect: string
-  script?: { sentences: string[]; duration_s?: number }
-  error?: string
-  voiceProgress?: number
+  error: string
+  steps: Array<{ key: string; label: string; status: string; progress: number; error: string }>
 }
 
-const STEP_META = [
-  { key: "kịch_bản_giọng", label: "Kịch bản & Giọng" },
-  { key: "phan_canh", label: "Phân cảnh Visual" },
-  { key: "nhan_vat", label: "Nhân vật" },
+type Snapshot = {
+  project: Project
+  script: ScriptData | null
+  scenes: Scene[]
+  characters: Character[]
+  pipeline: PipelineView | null
+}
+
+const STAGES = [
+  { key: "script", label: "Kịch bản & Giọng", short: "Kịch bản", icon: FileText },
+  { key: "storyboard", label: "Phân cảnh Visual", short: "Visual", icon: ImageIcon },
+  { key: "characters", label: "Nhân vật", short: "Nhân vật", icon: Users },
+  { key: "media", label: "Media", short: "Media", icon: Sparkles },
+  { key: "publish", label: "Dựng phim", short: "Dựng phim", icon: Play },
 ]
 
 const STEP_LABEL_MAP: Record<string, string> = {
@@ -41,522 +56,406 @@ const STEP_LABEL_MAP: Record<string, string> = {
   "SEO": "SEO",
 }
 
-const PROGRESS_STEPS = [
-  { key: "Dữ kiện", label: "Thu thập dữ liệu" },
-  { key: "Kịch bản", label: "Kịch bản" },
-  { key: "Lồng tiếng", label: "Lồng tiếng" },
-  { key: "Storyboard", label: "Storyboard" },
-  { key: "Ảnh/Video", label: "Ảnh/Video" },
-  { key: "Dựng phim", label: "Dựng phim" },
-  { key: "SEO", label: "SEO" },
-]
+function pipelineToView(state: PipelineState | null): PipelineView | null {
+  if (!state) return null
+  const steps = state.steps?.length
+    ? state.steps.map((step) => ({
+        key: step.key,
+        label: step.label,
+        status: step.status === "done" ? "done" : step.status,
+        progress: step.progress ?? 0,
+        error: step.error || "",
+      }))
+    : Object.entries(state.step_data_json || {}).map(([label, value]) => {
+        let status = "pending"
+        let progress = 0
+        if (value === "success" || value === "skipped") {
+          status = "done"
+          progress = 100
+        } else if (value === "failed") {
+          status = "failed"
+        } else if (value === "running") {
+          status = "running"
+          progress = 50
+        } else if (typeof value === "string" && value.endsWith("%")) {
+          progress = Number.parseInt(value, 10) || 0
+          status = progress > 0 ? "running" : "pending"
+        }
+        return { key: label, label: STEP_LABEL_MAP[label] || label, status, progress, error: "" }
+      })
+  return {
+    status: state.status,
+    error: state.error_step ? `Lỗi ở bước ${state.error_step}` : state.last_log || "",
+    steps,
+  }
+}
 
 export default function WorkspacePage() {
   const navigate = useNavigate()
-  const { channelId } = useParams()
-  const [channels, setChannels] = useState<Channel[]>([])
-  const [selected, setSelected] = useState<Channel | null>(null)
-  const [channelsLoading, setChannelsLoading] = useState(true)
-  const [videoType, setVideoType] = useState("🎬 Video dài")
-  const [ideas, setIdeas] = useState<Idea[]>([])
-  const [generating, setGenerating] = useState(false)
-  const [selectedIdea, setSelectedIdea] = useState<number | null>(null)
-  const [activeStep, setActiveStep] = useState("kịch_bản_giọng")
-  const [pipeline, setPipeline] = useState<{
-    status: string
-    error: string
-    steps: Array<{ key: string; label: string; status: string; progress: number; error: string }>
-  } | null>(null)
-  const [scripts, setScripts] = useState<Record<number, { title: string; sentences: string[] }>>({})
-  const [jobs, setJobs] = useState<
-    Array<{ id: number; project_id: number; status: string; current_step: string; error_message: string; progress: number }>
-  >([])
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [projects, setProjects] = useState<Project[]>([])
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null)
+  const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [action, setAction] = useState<"prepare" | "flow" | "retry" | null>(null)
+  const [factoryPreflight, setFactoryPreflight] = useState<Awaited<ReturnType<typeof api.systemPreflight>> | null>(null)
+  const [installingFactory, setInstallingFactory] = useState(false)
+
+  const loadProjects = useCallback(async () => {
+    const list = await api.listProjects()
+    setProjects(list)
+    const queryId = Number(searchParams.get("projectId") || 0)
+    const storedId = Number(localStorage.getItem("vas.studio.projectId") || 0)
+    const preferred = queryId || storedId
+    const nextId = list.some((project) => project.id === preferred) ? preferred : list[0]?.id ?? null
+    setSelectedProjectId(nextId)
+    if (nextId && String(queryId) !== String(nextId)) {
+      setSearchParams({ projectId: String(nextId) }, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
+
+  const loadSnapshot = useCallback(async (projectId: number, quiet = false) => {
+    if (!quiet) setLoading(true)
+    try {
+      const [project, script, scenes, characters, pipeline] = await Promise.all([
+        api.getProject(projectId),
+        api.getScript(projectId).catch(() => null),
+        api.listScenes(projectId).catch(() => []),
+        api.listCharacters(projectId).catch(() => []),
+        api.pipelineStatus(projectId).then(pipelineToView).catch(() => null),
+      ])
+      setSnapshot({ project, script, scenes, characters, pipeline })
+    } catch (error) {
+      setSnapshot(null)
+      toast({ title: "Không tải được dữ liệu sản xuất", description: String(error), variant: "destructive" })
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
-    api
-      .listChannels()
-      .then((list) => {
-        setChannels(list)
-        if (channelId) {
-          const found = list.find((c) => String(c.id) === channelId) || null
-          setSelected(found)
-        } else {
-          setSelected(list[0] ?? null)
-        }
+    let active = true
+    setLoading(true)
+    loadProjects()
+      .catch((error) => {
+        if (active) toast({ title: "Không tải được danh sách dự án", description: String(error), variant: "destructive" })
       })
-      .catch(() => toast({ title: "Không thể tải kênh", variant: "destructive" }))
-      .finally(() => setChannelsLoading(false))
-  }, [channelId])
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [loadProjects])
 
   useEffect(() => {
-    if (!selected) return
-    api
-      .listProjects()
-      .then(async (projects) => {
-        const channelProjects = projects.filter(
-          (p) => (p as { channel_id?: number | null }).channel_id === selected.id,
-        )
-        const ideasList: Idea[] = channelProjects.map((p) => ({
-          id: p.id,
-          title: p.name,
-          subtitle: p.topic || "",
-          status: p.status,
-          aspect: p.aspect_ratio === "9:16" ? "📱 9:16" : "🖼 16:9",
-        }))
-        setIdeas(ideasList)
-        setSelectedIdea(ideasList[0]?.id ?? null)
-
-        const scriptsMap: Record<number, { title: string; sentences: string[] }> = {}
-        for (const p of channelProjects.slice(0, 5)) {
-          try {
-            const script = await api.getScript(p.id)
-            if (script?.approved && script.full_script) {
-              scriptsMap[p.id] = { title: script.title || p.name, sentences: script.full_script.split("\n").filter(Boolean) }
-            }
-          } catch {
-            /* skip */
-          }
-        }
-        setScripts(scriptsMap)
-
-        try {
-          const jobsList = await api.listJobs()
-          setJobs(jobsList.slice(0, 10))
-        } catch {
-          /* skip */
-        }
-      })
-      .catch(() => {
-        /* ignore */
-      })
-  }, [selected])
-
-  useEffect(() => {
-    if (!selectedIdea || selectedIdea <= 0) {
-      setPipeline(null)
+    if (!selectedProjectId) {
+      setSnapshot(null)
       return
     }
-    api
-      .pipelineStatus(selectedIdea)
-      .then((state) => {
-        const steps = Object.entries(state.step_data_json || {}).map(([label, status]) => {
-          let s = "pending"
-          let p = 0
-          if (status === "success") { s = "done"; p = 100 }
-          else if (status === "skipped") { s = "done"; p = 100 }
-          else if (status === "failed") { s = "failed"; p = 0 }
-          else if (status === "running") { s = "running"; p = 50 }
-          else if (typeof status === "string" && status.endsWith("%")) {
-            p = parseInt(status.replace("%", ""))
-            s = p > 0 ? "running" : "pending"
-          }
-          return { key: label, label: STEP_LABEL_MAP[label] || label, status: s, progress: p, error: "" }
-        })
-        const errorStep = state.error_step || ""
-        setPipeline({
-          status: state.status,
-          error: errorStep ? `Lỗi ở bước ${errorStep}` : "",
-          steps,
-        })
-      })
-      .catch(() => setPipeline(null))
-  }, [selectedIdea])
+    localStorage.setItem("vas.studio.projectId", String(selectedProjectId))
+    void loadSnapshot(selectedProjectId)
+    const timer = window.setInterval(() => void loadSnapshot(selectedProjectId, true), 5000)
+    return () => window.clearInterval(timer)
+  }, [selectedProjectId, loadSnapshot])
 
-  const idea = ideas.find((i) => i.id === selectedIdea) ?? null
-  const ideaScript = idea ? scripts[idea.id] : undefined
-  const ideaJob = jobs.find((j) => j.project_id === selectedIdea)
-  const voiceProgress = useMemo(() => {
-    if (!ideaJob) return null
-    if (ideaJob.status === "running") return ideaJob.progress
-    return null
-  }, [ideaJob])
+  const selectProject = (value: string) => {
+    const id = Number(value)
+    if (!id) return
+    setSelectedProjectId(id)
+    setSearchParams({ projectId: String(id) })
+  }
 
-  const handleGenerate = async () => {
-    if (!selected) return
-    setGenerating(true)
+  const refresh = async () => {
+    setRefreshing(true)
     try {
-      const created = await api.createProject({
-        name: `Tập #${ideas.filter((i) => i.id > 0).length + 1} — ${selected.name}`,
-        channel_id: selected.id,
-        topic: selected.niche || selected.description || "Chủ đề mới",
-        video_type: videoType.includes("dài") ? "long" : "short",
-        aspect_ratio: videoType.includes("dài") ? "16:9" : "9:16",
-        language: "vi",
-        target_duration: videoType.includes("dài") ? 240 : 90,
-      })
-      toast({ title: "Đã tạo tập mới cho kênh", description: "Đang mở trình biên tập để tiếp tục sản xuất." })
-      navigate(`/projects/${created.id}`)
-    } catch (e) {
-      toast({ title: "Không thể sinh tập", description: String(e), variant: "destructive" })
+      await loadProjects()
+      if (selectedProjectId) await loadSnapshot(selectedProjectId, true)
+      toast({ title: "Đã cập nhật Production Dashboard" })
+    } catch (error) {
+      toast({ title: "Không thể cập nhật", description: String(error), variant: "destructive" })
     } finally {
-      setGenerating(false)
+      setRefreshing(false)
     }
   }
 
-  const stepProgressColor = (status: string) => {
-    if (status === "done") return "progress-fill-green"
-    if (status === "running") return "progress-fill-orange"
-    if (status === "failed") return "progress-fill-red"
-    return "progress-fill-gray"
+  const openStage = (stage: string) => {
+    if (!selectedProjectId) {
+      toast({ title: "Chưa chọn dự án", description: "Chọn một project có sẵn để mở bước sản xuất." })
+      return
+    }
+    navigate(`/projects/${selectedProjectId}?stage=${stage}`)
+  }
+
+  const prepareProduction = async () => {
+    if (!selectedProjectId || !snapshot) return
+    setAction("prepare")
+    try {
+      let scenes = snapshot.scenes
+      const needsScenePreparation = scenes.length === 0 || scenes.some((scene) => !scene.visual_prompt)
+      if (!snapshot.script?.approved) {
+        const approval = await api.approveScript(selectedProjectId)
+        if (approval.needs_scene_analysis || needsScenePreparation) {
+          const analysis = await api.semanticAnalyze(selectedProjectId, {
+            existing_narrations: scenes.map((scene) => scene.narration).filter(Boolean),
+          })
+          await api.buildScenes(selectedProjectId, analysis.scenes.length ? { semantic_analysis: analysis.scenes } : undefined)
+        }
+      } else if (needsScenePreparation) {
+        const analysis = await api.semanticAnalyze(selectedProjectId, {
+          existing_narrations: scenes.map((scene) => scene.narration).filter(Boolean),
+        })
+        await api.buildScenes(selectedProjectId, analysis.scenes.length ? { semantic_analysis: analysis.scenes } : undefined)
+      }
+      const prepared = await api.pipelineStartAuto(selectedProjectId)
+      if (!prepared.ok) throw new Error("Backend không khởi động được bước chuẩn bị sản xuất")
+      await loadSnapshot(selectedProjectId, true)
+      toast({ title: "Đã tiếp tục sản xuất", description: "Kịch bản, phân cảnh và TTS đang được chuẩn bị bằng pipeline thật." })
+    } catch (error) {
+      toast({ title: "Không thể tiếp tục sản xuất", description: String(error), variant: "destructive" })
+    } finally {
+      setAction(null)
+    }
+  }
+
+  const startFactory = async () => {
+    if (!selectedProjectId || !snapshot) return
+    setAction("flow")
+    try {
+      const preflight = await api.systemPreflight("factory")
+      if (!preflight.ok) {
+        setFactoryPreflight(preflight)
+        setAction(null)
+        return
+      }
+      const factory = await api.factoryStart(selectedProjectId, {
+        media_type: "image",
+        aspect: snapshot.project.aspect_ratio || "16:9",
+        include_video: true,
+        factory_mode: true,
+      })
+      const browser = await startFlowBrowser(selectedProjectId, factory.factory_session_id)
+      if (!browser.ok) throw new Error(browser.message || "Không mở được Chrome Profile Google Flow")
+      await loadSnapshot(selectedProjectId, true)
+      toast({
+        title: factory.requires_login ? "Đã mở Google Flow để đăng nhập" : "Factory Flow đã khởi động",
+        description: factory.requires_login ? "Đăng nhập một lần trong Chrome Profile riêng; queue sẽ tự tiếp tục." : "Ảnh/video sẽ được tạo theo queue của project.",
+      })
+    } catch (error) {
+      toast({ title: "Không thể khởi động Factory Flow", description: String(error), variant: "destructive" })
+    } finally {
+      setAction(null)
+    }
+  }
+
+  const installAndContinueFactory = async () => {
+    if (!factoryPreflight || !selectedProjectId || !snapshot) return
+    setInstallingFactory(true)
+    try {
+      const installable = factoryPreflight.missing.filter((item) => item.id === "yt_dlp" || item.id === "demucs" || item.id === "pytorch")
+      if (installable.length) await api.installCapability(installable.map((item) => item.id))
+      const refreshed = await api.systemPreflight("factory")
+      if (!refreshed.ok) throw new Error(`Factory vẫn thiếu: ${refreshed.missing.map((item) => item.label).join(", ")}`)
+      setFactoryPreflight(null)
+      await startFactory()
+    } catch (error) {
+      toast({ title: "Factory chưa sẵn sàng", description: String(error), variant: "destructive" })
+    } finally {
+      setInstallingFactory(false)
+    }
+  }
+
+  const retryFailed = async () => {
+    if (!selectedProjectId) return
+    setAction("retry")
+    try {
+      const jobs = await api.listJobs()
+      const job = jobs.find((item) => item.project_id === selectedProjectId && item.status === "failed")
+      if (!job) throw new Error("Project chưa có render job thất bại để thử lại")
+      await api.retryJob(job.id)
+      await loadSnapshot(selectedProjectId, true)
+      toast({ title: "Đã đưa job lỗi vào hàng đợi thử lại" })
+    } catch (error) {
+      toast({ title: "Không thể thử lại", description: String(error), variant: "destructive" })
+    } finally {
+      setAction(null)
+    }
+  }
+
+  const copyJobLog = async () => {
+    if (!selectedProjectId) return
+    try {
+      const jobs = await api.listJobs()
+      const job = jobs.find((item) => item.project_id === selectedProjectId)
+      if (!job) throw new Error("Project chưa có job để đọc nhật ký")
+      const log = await api.getJobLog(job.id, 80)
+      await navigator.clipboard.writeText(log.lines.join("\n"))
+      toast({ title: "Đã sao chép nhật ký job" })
+    } catch (error) {
+      toast({ title: "Không lấy được nhật ký", description: String(error), variant: "destructive" })
+    }
+  }
+
+  const stats = useMemo(() => {
+    const scenes = snapshot?.scenes || []
+    const total = scenes.length
+    const visuals = scenes.filter((scene) => Boolean(scene.media_path || scene.image_path || scene.video_path)).length
+    const voices = scenes.filter((scene) => Boolean(scene.audio_path)).length
+    const failedScenes = scenes.filter((scene) => scene.status === "failed" || Boolean(scene.error_message)).length
+    const scriptReady = Boolean(snapshot?.script?.approved)
+    const progressParts = [scriptReady, total > 0, voices === total && total > 0, visuals === total && total > 0, snapshot?.project.status === "completed"]
+    const productionProgress = Math.round((progressParts.filter(Boolean).length / progressParts.length) * 100)
+    return { total, visuals, voices, failedScenes, scriptReady, productionProgress }
+  }, [snapshot])
+
+  const nextAction = stats.failedScenes > 0
+    ? "retry"
+    : !stats.scriptReady || stats.total === 0
+      ? "prepare"
+      : stats.visuals < stats.total
+        ? "flow"
+        : "open"
+
+  if (loading && !snapshot) {
+    return <div className="p-8 text-sm text-slate-400">Đang tải Production Dashboard…</div>
   }
 
   return (
-    <div className="min-h-full p-8">
-      {/* Channel bar header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          {channelsLoading ? (
-            <span className="text-sm text-slate-500">Đang tải kênh...</span>
-          ) : (
-            channels.map((c) => (
-              <Button variant="ghost"
-                key={c.id}
-                onClick={() => setSelected(c)}
-                className={cn(
-                  "rounded-lg border px-3 py-1.5 text-sm font-medium transition-all duration-200",
-                  selected?.id === c.id
-                    ? "border-amber-500/40 bg-amber-500/15 text-amber-300"
-                    : "border-white/8 bg-white/[0.03] text-slate-400 hover:bg-white/[0.06] hover:text-slate-300",
-                )}
-              >
-                🦌 {c.name}
-              </Button>
-            ))
-          )}
-          <span className="rounded-lg bg-gradient-to-r from-[#d9940a] to-[#faaa02] px-2.5 py-1 text-xs font-bold text-white shadow-md">
-            AI STUDIO
-          </span>
-          <span className="rounded-lg bg-amber-500/20 px-2.5 py-1 text-xs font-bold text-amber-400">
-            🎬 Video
-          </span>
+    <div className="min-h-full bg-[#0B0F12] p-6 text-slate-100 lg:p-8">
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 px-3 py-1 text-xs font-black text-slate-950">AI STUDIO</span>
+            <span className="text-sm font-semibold text-slate-300">Production Dashboard</span>
+          </div>
+          <p className="mt-2 max-w-2xl text-sm text-slate-500">Nơi tiếp tục sản xuất project đã có. Quản lý và tạo project vẫn nằm ở trang Dự án.</p>
         </div>
         <div className="flex items-center gap-2">
           <FlowLoginButton />
-          <Button variant="ghost"
-            onClick={() => navigate("/analytics")}
-            className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-sm text-slate-300 transition-colors hover:bg-white/[0.06]"
-          >
-            <BarChart3 className="h-3.5 w-3.5" />
-            Thống kê
+          <Button variant="ghost" onClick={() => void refresh()} disabled={refreshing} className="gap-1.5 border border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07]">
+            <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} /> Cập nhật
           </Button>
-          <Link to="/settings">
-            <Button variant="outline" size="sm" className="gap-1.5 border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.06]">
-              <Settings className="h-3.5 w-3.5" />
-              Cấu hình
-            </Button>
-          </Link>
+          <Link to="/analytics"><Button variant="ghost" className="gap-1.5 border border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07]"><BarChart3 className="h-4 w-4" /> Thống kê</Button></Link>
+          <Link to="/settings"><Button variant="outline" size="sm" className="gap-1.5 border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07]"><Settings className="h-4 w-4" /> Cấu hình</Button></Link>
         </div>
-      </div>
+      </header>
 
-      <p className="mt-3 text-sm text-slate-500">
-        {selected
-          ? `Kênh ${selected.name} — dây chuyền sản xuất tập mới`
-          : "Chưa có kênh nào. Hãy tạo kênh ở trang Dự án."}
-        {" — bấm Sinh ý tưởng để bắt đầu"}
-      </p>
+      <section className="mt-6 rounded-2xl border border-cyan-400/20 bg-[#101A20] p-4 shadow-[0_12px_40px_rgba(0,0,0,0.2)]">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <label htmlFor="studio-project" className="text-sm font-semibold text-slate-300">Project đang sản xuất</label>
+            <Select value={selectedProjectId ? String(selectedProjectId) : ""} onValueChange={selectProject}>
+              <SelectTrigger id="studio-project" className="min-w-[280px] border-white/10 bg-[#0C1419] text-slate-200"><SelectValue placeholder="Chọn dự án có sẵn" /></SelectTrigger>
+              <SelectContent className="border-white/10 bg-[#141d22]">
+                {projects.map((project) => <SelectItem key={project.id} value={String(project.id)}>{project.name} · {STATUS_LABELS[project.status] || project.status}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          {selectedProjectId && <Button variant="ghost" onClick={() => navigate(`/projects/${selectedProjectId}`)} className="gap-1.5 text-cyan-300 hover:bg-cyan-500/10">Mở Project Editor <ArrowRight className="h-4 w-4" /></Button>}
+        </div>
+      </section>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-[300px_1fr_340px]">
-        {/* Left: Ý tưởng */}
-        <div className="vas-card self-start p-4">
-          <h3 className="mb-3 text-sm font-semibold text-slate-200">💡 Ý tưởng</h3>
-          <Select value={videoType} onValueChange={setVideoType}>
-            <SelectTrigger className="mb-3 border-white/10 bg-white/[0.03] text-slate-300">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="border-white/10 bg-[#141d22]">
-              <SelectItem value="🎬 Video dài">🎬 Video dài (16:9)</SelectItem>
-              <SelectItem value="📱 Video ngắn">📱 Video ngắn (9:16)</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button variant="ghost"
-            onClick={handleGenerate}
-            disabled={generating || !selected}
-            className="mb-4 flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[#f97316] to-[#ef4444] px-3 py-2.5 text-sm font-bold text-white shadow-lg shadow-orange-500/20 transition-all hover:brightness-110 disabled:opacity-50"
-          >
-            <Sparkles className="h-4 w-4" />
-            {generating ? "Đang sinh..." : "✨ Sinh"}
-          </Button>
-
-          <div className="space-y-2">
-            {ideas.length === 0 && (
-              <div className="rounded-lg border border-dashed border-white/10 px-3 py-6 text-center text-xs text-slate-500">
-                Chưa có tập thật. Bấm Sinh để tạo dự án mới trên kênh này.
+      {!projects.length ? (
+        <section className="mt-6 flex min-h-[360px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/15 bg-white/[0.02] p-8 text-center">
+          <MessageSquare className="h-10 w-10 text-slate-600" />
+          <h2 className="mt-4 text-lg font-semibold text-slate-200">Chọn một dự án để bắt đầu sản xuất</h2>
+          <p className="mt-2 max-w-md text-sm text-slate-500">AI Studio không tạo project mới. Hãy tạo hoặc mở project ở trang Dự án, sau đó quay lại đây để tiếp tục pipeline.</p>
+          <Button onClick={() => navigate("/projects")} className="mt-5 gap-2 bg-amber-500 font-semibold text-slate-950 hover:bg-amber-400">Chọn dự án <ArrowRight className="h-4 w-4" /></Button>
+        </section>
+      ) : !snapshot ? (
+        <section className="mt-6 flex min-h-[360px] flex-col items-center justify-center rounded-2xl border border-cyan-400/15 bg-cyan-500/[0.03] p-8 text-center">
+          <RefreshCw className="h-8 w-8 animate-spin text-cyan-300" />
+          <h2 className="mt-4 text-lg font-semibold text-slate-200">Đang tải dữ liệu project</h2>
+          <p className="mt-2 text-sm text-slate-500">Đang đọc script, scenes, nhân vật và pipeline từ backend thật.</p>
+        </section>
+      ) : (
+        <>
+          {factoryPreflight && (
+            <section className="mt-6 rounded-2xl border border-amber-400/30 bg-amber-500/[0.06] p-5">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div><h2 className="text-base font-semibold text-amber-100">Preflight Factory Flow</h2><p className="mt-1 text-sm text-slate-300">Thiếu: {factoryPreflight.missing.map((item) => item.label).join(", ")}. Dung lượng dự kiến: {factoryPreflight.estimated_size}.</p><p className="mt-1 text-xs text-slate-400">Bạn có thể cài thành phần tùy chọn hoặc xử lý yêu cầu Chrome/Profile trong Settings.</p></div>
+                <div className="flex shrink-0 gap-2"><Button type="button" variant="ghost" size="sm" onClick={() => setFactoryPreflight(null)}>Huỷ</Button><Button type="button" size="sm" onClick={() => void installAndContinueFactory()} disabled={installingFactory}>{installingFactory ? "Đang cài…" : "Cài đặt & tiếp tục"}</Button></div>
               </div>
-            )}
-            {ideas.map((i) => (
-              <Button variant="ghost"
-                key={i.id}
-                onClick={() => setSelectedIdea(i.id)}
-                className={cn(
-                  "w-full rounded-lg border p-2.5 text-left text-sm transition-all duration-200",
-                  selectedIdea === i.id
-                    ? "border-amber-500/40 bg-amber-500/10"
-                    : "border-white/8 bg-white/[0.02] hover:bg-white/[0.05]",
-                )}
-              >
-                <div className="flex items-center justify-between gap-1">
-                  <span className="truncate font-medium text-slate-200">{i.title}</span>
-                  <span className="shrink-0 text-[10px] text-slate-500">{i.aspect}</span>
-                </div>
-                <div className="truncate text-xs text-slate-500">{i.subtitle}</div>
-                <StatusPill status={i.status} />
-              </Button>
-            ))}
-          </div>
-        </div>
+            </section>
+          )}
 
-        {/* Center */}
-        <div className="space-y-4">
-          {/* Steps bar */}
-          <div className="flex items-center gap-1 rounded-lg border border-white/8 bg-[#141d22] p-1">
-            {STEP_META.map((s) => (
-              <Button variant="ghost"
-                key={s.key}
-                onClick={() => setActiveStep(s.key)}
-                className={cn(
-                  "rounded-md px-4 py-2 text-sm font-medium transition-all duration-200",
-                  activeStep === s.key
-                    ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-                    : "text-slate-400 hover:bg-white/[0.05]",
-                )}
-              >
-                {s.label}
-                {s.key === "phan_canh" && pipeline?.status === "failed" && (
-                  <span className="ml-1.5 rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] text-red-400">failed</span>
-                )}
-              </Button>
-            ))}
-          </div>
-
-          {/* Error banner */}
-          {pipeline?.error && (
-            <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+          <section className="mt-6 rounded-2xl border border-white/10 bg-[#101A20] p-5">
+            <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <span className="font-semibold text-red-300">⚠ Lỗi ở bước {pipeline.steps.find((s) => s.status === "failed")?.label || "product"} — </span>
-                <span className="text-slate-300">{pipeline.error}</span>
-                <Link to="/settings" className="ml-1 text-amber-400 hover:underline">
-                  Mở Cấu hình để sửa →
-                </Link>
+                <div className="flex flex-wrap items-center gap-2"><h1 className="text-xl font-bold text-white">{snapshot.project.name}</h1><StatusPill status={snapshot.project.status} /></div>
+                <p className="mt-1 text-sm text-slate-500">{snapshot.project.topic || "Chưa có chủ đề"} · {snapshot.project.aspect_ratio} · {snapshot.project.target_duration}s mục tiêu</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => void prepareProduction()} disabled={action !== null} className="gap-2 bg-gradient-to-r from-amber-500 to-orange-500 font-bold text-slate-950 hover:brightness-110"><Play className="h-4 w-4" />{action === "prepare" ? "Đang chuẩn bị…" : "Tiếp tục sản xuất"}</Button>
+                <Button variant="ghost" onClick={() => void startFactory()} disabled={action !== null || stats.total === 0} className="gap-2 border border-cyan-400/30 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/20"><Sparkles className="h-4 w-4" />{action === "flow" ? "Đang mở Flow…" : "Chạy Factory Flow"}</Button>
               </div>
             </div>
-          )}
+            <div className="mt-5 flex items-center gap-3"><div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-emerald-400 transition-all" style={{ width: `${stats.productionProgress}%` }} /></div><span className="text-sm font-bold text-cyan-300">{stats.productionProgress}%</span></div>
+          </section>
 
-          {/* Idea title card */}
-          {idea && idea.id > 0 && (
-            <div className="vas-card p-5">
-              <h2 className="text-lg font-bold text-slate-100">{ideaScript?.title ?? idea.title}</h2>
-              <p className="mt-1 italic text-slate-500">"{idea.subtitle}"</p>
-            </div>
-          )}
+          <section className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <MetricCard label="Kịch bản" value={stats.scriptReady ? "Đã duyệt" : "Chưa duyệt"} hint={stats.scriptReady ? "Sẵn sàng cho pipeline" : "Cần duyệt trước khi sản xuất"} icon={<FileText className="h-4 w-4" />} onClick={() => openStage("script")} />
+            <MetricCard label="Voiceover" value={`${stats.voices}/${stats.total}`} hint="Cảnh đã có audio" icon={<MessageSquare className="h-4 w-4" />} onClick={() => openStage("script")} />
+            <MetricCard label="Phân cảnh Visual" value={`${stats.visuals}/${stats.total}`} hint="Cảnh đã có media" icon={<ImageIcon className="h-4 w-4" />} onClick={() => openStage("storyboard")} />
+            <MetricCard label="Nhân vật" value={String(snapshot.characters.length)} hint="Đồng bộ trong project" icon={<Users className="h-4 w-4" />} onClick={() => openStage("characters")} />
+            <MetricCard label="Lỗi cần xử lý" value={String(stats.failedScenes)} hint={stats.failedScenes ? "Cần kiểm tra ngay" : "Không phát hiện lỗi cảnh"} icon={<AlertTriangle className="h-4 w-4" />} tone={stats.failedScenes ? "danger" : "normal"} onClick={stats.failedScenes ? () => void retryFailed() : undefined} />
+          </section>
 
-          {/* Voiceover card */}
-          <div className="vas-card p-4">
-            <h3 className="mb-3 text-sm font-semibold text-slate-200">🎙 Giọng đọc (voiceover)</h3>
-            {voiceProgress !== null ? (
-              <div>
-                <div className="mb-2 flex items-center gap-2 text-sm text-slate-300">
-                  <Clock className="h-4 w-4 animate-pulse text-amber-400" />
-                  Đang tạo lại giọng đọc — {voiceProgress}%
-                </div>
-                <div className="progress-track">
-                  <div className="progress-fill progress-fill-orange" style={{ width: `${voiceProgress}%` }} />
-                </div>
+          <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_360px]">
+            <section className="rounded-2xl border border-white/10 bg-[#101A20] p-5">
+              <div className="flex items-center justify-between"><h2 className="flex items-center gap-2 text-base font-semibold text-slate-100"><Sparkles className="h-4 w-4 text-amber-400" /> Quy trình sản xuất</h2><span className="text-xs text-slate-500">Bấm một bước để mở editor đúng vị trí</span></div>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                {STAGES.map((stage) => {
+                  const Icon = stage.icon
+                  const done = stage.key === "script" ? stats.scriptReady : stage.key === "storyboard" ? stats.visuals === stats.total && stats.total > 0 : stage.key === "characters" ? snapshot.characters.length > 0 : stage.key === "media" ? stats.visuals > 0 : snapshot.project.status === "completed"
+                  return <button key={stage.key} type="button" onClick={() => openStage(stage.key)} className="group flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3 text-left transition-colors hover:border-cyan-400/30 hover:bg-cyan-500/[0.06]"><span className={cn("flex h-9 w-9 items-center justify-center rounded-lg", done ? "bg-emerald-500/15 text-emerald-300" : "bg-white/[0.06] text-slate-400")}>
+                    {done ? <CheckCircle2 className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
+                  </span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-slate-200">{stage.label}</span><span className="block text-xs text-slate-500">{done ? "Đã sẵn sàng" : "Cần tiếp tục xử lý"}</span></span><ArrowRight className="h-4 w-4 text-slate-600 transition-transform group-hover:translate-x-1 group-hover:text-cyan-300" /></button>
+                })}
               </div>
-            ) : idea && idea.id > 0 ? (
-              <div className="text-sm text-slate-500">
-                Giọng đọc sẽ được tạo tự động khi chạy render. Mỗi cảnh có giọng đọc riêng.
-              </div>
-            ) : (
-              <div className="text-sm text-slate-500">Chọn một tập bên trái để xem trạng thái giọng đọc.</div>
-            )}
+            </section>
+
+            <section className="rounded-2xl border border-white/10 bg-[#101A20] p-5">
+              <h2 className="text-base font-semibold text-slate-100">Tiến độ pipeline</h2>
+              <div className="mt-4 space-y-3">{snapshot.pipeline?.steps.length ? snapshot.pipeline.steps.map((step) => <div key={step.key}><div className="mb-1 flex items-center gap-2 text-xs"><span>{statusDot(step.status)}</span><span className="font-medium text-slate-300">{step.label}</span><span className="ml-auto text-slate-500">{step.progress}%</span></div><div className="h-1.5 overflow-hidden rounded-full bg-white/10"><div className={cn("h-full transition-all", step.status === "done" ? "bg-emerald-400" : step.status === "failed" ? "bg-red-400" : step.status === "running" ? "bg-amber-400" : "bg-slate-600")} style={{ width: `${step.progress}%` }} /></div></div>) : <p className="text-sm text-slate-500">Chưa có trạng thái pipeline.</p>}</div>
+              {snapshot.pipeline?.error && <div className="mt-4 rounded-lg border border-red-500/25 bg-red-500/10 p-3 text-xs text-red-200"><AlertTriangle className="mr-1 inline h-3.5 w-3.5" />{snapshot.pipeline.error}</div>}
+            </section>
           </div>
 
-          {/* Script card */}
-          <div className="vas-card p-4">
-            <h3 className="mb-3 flex items-center justify-between text-sm font-semibold text-slate-200">
-              <span>📋 Kịch bản</span>
-              {ideaScript && <span className="text-xs font-normal text-slate-500">{ideaScript.sentences.length} câu</span>}
-            </h3>
-            {ideaScript ? (
-              <div className="max-h-72 space-y-1 overflow-y-auto pr-1">
-                {ideaScript.sentences.slice(0, 40).map((s, idx) => (
-                  <div key={idx} className="flex items-start gap-2 rounded px-2 py-1 text-xs text-slate-300 hover:bg-white/[0.04]">
-                    <span className="w-8 shrink-0 font-mono text-slate-600">
-                      {Math.floor(idx * 5 / 60)}:{String((idx * 5) % 60).padStart(2, "0")}
-                    </span>
-                    <span>{s}</span>
-                  </div>
-                ))}
-                <div className="pt-1 text-right text-xs text-slate-600">
-                  Tập #{idea?.id} · {ideaScript.sentences.length} câu
-                </div>
-              </div>
-            ) : (
-              <div className="py-4 text-center text-sm text-slate-500">
-                Chưa có kịch bản. Hãy tạo và duyệt kịch bản ở tab Kịch bản.
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right: Tiến độ sản xuất */}
-        <div className="vas-card self-start p-4">
-          <h3 className="text-sm font-semibold text-slate-200">Tiến độ sản xuất</h3>
-          <div className="mt-2 flex items-center gap-2 text-xs">
-            <span className="text-slate-500">Trạng thái:</span>
-            <span
-              className={cn(
-                "font-semibold",
-                (pipeline?.status ?? "") === "completed" && "text-emerald-400",
-                (pipeline?.status ?? "") === "failed" && "text-red-400",
-                ["running", "rendering", "generating_voice", "building_scenes", "preparing_media", "generating_subtitles"].includes(pipeline?.status ?? "") && "text-amber-400",
-                (!pipeline || pipeline.status === "idle" || pipeline.status === "draft") && "text-slate-600",
-              )}
-            >
-              {STATUS_LABELS[pipeline?.status ?? "idle"] || pipeline?.status || "Chưa bắt đầu"}
-            </span>
-          </div>
-
-          <div className="mt-4 space-y-3">
-            {pipeline?.steps.length ? (
-              pipeline.steps.map((s) => (
-                <div key={s.key} className="text-xs">
-                  <div className="mb-1 flex items-center gap-2">
-                    {statusDot(s.status)}
-                    <span className="font-medium text-slate-300">{s.label}</span>
-                    <span className="ml-auto text-slate-600">{s.progress}%</span>
-                  </div>
-                  <div className="progress-track h-1.5">
-                    <div className={`progress-fill ${stepProgressColor(s.status)}`} style={{ width: `${s.progress}%` }} />
-                  </div>
-                  {s.status === "failed" && s.error && (
-                    <div className="mt-1 rounded border border-red-500/30 bg-red-500/10 p-2 text-red-300">
-                      {s.error}
-                    </div>
-                  )}
-                </div>
-              ))
-            ) : (
-              <div className="py-4 text-center text-sm text-slate-500">
-                Chọn một tập để xem tiến độ.
-              </div>
-            )}
-          </div>
-
-          {pipeline?.status === "failed" && (
-            <div className="mt-4 space-y-2 border-t border-white/5 pt-4">
-              <div className="flex gap-2">
-                <Link to={selectedIdea ? `/projects/${selectedIdea}` : "/projects"} className="flex-1">
-                  <Button variant="ghost" className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-[#f97316] to-[#ef4444] px-3 py-2.5 text-sm font-bold text-white shadow-lg shadow-orange-500/20 transition-all hover:brightness-110">
-                    <Play className="h-3.5 w-3.5" />
-                    Tiếp tục
-                  </Button>
-                </Link>
-                <Button variant="ghost"
-                  onClick={async () => {
-                    if (!selectedIdea || selectedIdea <= 0) return
-                    try {
-                      const list = await api.listJobs()
-                      const job = list.find((j) => j.project_id === selectedIdea && j.status === "failed")
-                      if (job) {
-                        await api.retryJob(job.id)
-                        toast({ title: "Đang thử lại từ bước lỗi..." })
-                      }
-                    } catch (e) {
-                      toast({ title: "Không thể thử lại", description: String(e), variant: "destructive" })
-                    }
-                  }}
-                  className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm text-slate-300 transition-colors hover:bg-white/[0.06]"
-                >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  Từ bước lỗi
-                </Button>
-                <Button variant="ghost"
-                  onClick={async () => {
-                    if (!selectedIdea || selectedIdea <= 0) return
-                    try {
-                      const list = await api.listJobs()
-                      const job = list.find((j) => j.project_id === selectedIdea)
-                      if (job) {
-                        const log = await api.getJobLog(job.id, 50)
-                        const text = log.lines.join("\n")
-                        navigator.clipboard.writeText(text)
-                        toast({ title: "Nhật ký đã sao chép" })
-                      }
-                    } catch {
-                      toast({ title: "Không lấy được nhật ký", variant: "destructive" })
-                    }
-                  }}
-                  className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm text-slate-300 transition-colors hover:bg-white/[0.06]"
-                >
-                  <ScrollText className="h-3.5 w-3.5" />
-                  Nhật ký
-                </Button>
-              </div>
-              <Link
-                to="/queue"
-                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-sm font-medium text-amber-300 transition-colors hover:bg-amber-500/15"
-              >
-                Xem Queue kênh này
-                <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            </div>
-          )}
-        </div>
-      </div>
+          <section className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-500/[0.05] p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="flex items-center gap-2 text-base font-semibold text-amber-100"><Clock className="h-4 w-4" /> Việc cần làm</h2><p className="mt-1 text-xs text-amber-200/60">Các mục này được tính từ script, scenes, characters và trạng thái pipeline thực tế.</p></div><div className="flex gap-2">{stats.failedScenes > 0 && <Button size="sm" variant="ghost" onClick={() => void retryFailed()} disabled={action !== null} className="gap-1.5 border border-red-400/25 bg-red-500/10 text-red-200"><RotateCcw className="h-3.5 w-3.5" />{action === "retry" ? "Đang thử…" : "Thử lại lỗi"}</Button>}<Button size="sm" variant="ghost" onClick={() => void copyJobLog()} className="gap-1.5 border border-white/10 bg-white/[0.04] text-slate-300"><ScrollText className="h-3.5 w-3.5" />Nhật ký</Button></div></div>
+            <div className="mt-4 grid gap-2 md:grid-cols-3"><TaskItem text={!stats.scriptReady ? "Duyệt kịch bản để bắt đầu pipeline" : "Kịch bản đã duyệt"} done={stats.scriptReady} onClick={() => openStage("script")} /><TaskItem text={stats.total === 0 ? "Chưa có phân cảnh" : `${stats.total - stats.visuals} cảnh chưa có visual`} done={stats.total > 0 && stats.visuals === stats.total} onClick={() => openStage("storyboard")} /><TaskItem text={stats.total === 0 ? "Chưa có voiceover" : `${stats.total - stats.voices} voice chưa tạo`} done={stats.total > 0 && stats.voices === stats.total} onClick={() => openStage("script")} /></div>
+          </section>
+        </>
+      )}
     </div>
   )
 }
 
+function MetricCard({ label, value, hint, icon, tone = "normal", onClick }: { label: string; value: string; hint: string; icon: React.ReactNode; tone?: "normal" | "danger"; onClick?: () => void }) {
+  return <button type="button" onClick={onClick} disabled={!onClick} className={cn("rounded-xl border p-4 text-left transition-colors", onClick ? "cursor-pointer hover:border-cyan-400/30 hover:bg-cyan-500/[0.04]" : "cursor-default", tone === "danger" ? "border-red-400/25 bg-red-500/[0.06]" : "border-white/10 bg-[#101A20]")}><div className="flex items-center justify-between"><span className="text-xs font-medium text-slate-500">{label}</span><span className={tone === "danger" ? "text-red-300" : "text-cyan-300"}>{icon}</span></div><div className="mt-2 text-xl font-bold text-slate-100">{value}</div><div className="mt-1 text-[11px] text-slate-500">{hint}</div></button>
+}
+
+function TaskItem({ text, done, onClick }: { text: string; done: boolean; onClick: () => void }) {
+  return <button type="button" onClick={onClick} className="flex items-center gap-2 rounded-lg border border-white/10 bg-[#101A20]/70 px-3 py-2.5 text-left text-xs text-slate-300 hover:border-amber-300/30"><span className={cn("flex h-5 w-5 items-center justify-center rounded-full", done ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300")}>{done ? <CheckCircle2 className="h-3.5 w-3.5" /> : <ArrowRight className="h-3.5 w-3.5" />}</span><span className="flex-1">{text}</span></button>
+}
+
 function statusDot(status: string) {
-  return status === "done" ? (
-    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-  ) : status === "running" ? (
-    <Clock className="h-4 w-4 animate-pulse text-amber-400" />
-  ) : status === "failed" ? (
-    <AlertTriangle className="h-4 w-4 text-red-400" />
-  ) : (
-    <span className="h-4 w-4 rounded-full border border-slate-600/40" />
-  )
+  return status === "done" ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> : status === "running" ? <Clock className="h-4 w-4 animate-pulse text-amber-400" /> : status === "failed" ? <AlertTriangle className="h-4 w-4 text-red-400" /> : <span className="inline-block h-3.5 w-3.5 rounded-full border border-slate-600/40" />
 }
 
 function FlowLoginButton() {
   const [flowState, setFlowState] = useState<{ factory_state?: string; status?: string } | null>(null)
   useEffect(() => {
     let cancelled = false
-    const poll = () => {
-      fetch("/api/flow-connection")
-        .then((response) => response.ok ? response.json() : {})
-        .then((value) => { if (!cancelled) setFlowState(value as { factory_state?: string; status?: string }) })
-        .catch(() => undefined)
-    }
+    const poll = () => fetch("/api/flow-connection").then((response) => response.ok ? response.json() : {}).then((value) => { if (!cancelled) setFlowState(value as { factory_state?: string; status?: string }) }).catch(() => undefined)
     poll()
-    const timer = setInterval(poll, 5000)
-    return () => { cancelled = true; clearInterval(timer) }
+    const timer = window.setInterval(poll, 5000)
+    return () => { cancelled = true; window.clearInterval(timer) }
   }, [])
   const state = flowState?.factory_state || "waiting_login"
   const label = ({ waiting_login: "Waiting Login", ready: "Ready", processing: "Processing", generate_image: "Generate Image", generate_video: "Generate Video", completed: "Completed", failed: "Failed" } as Record<string, string>)[state] || state
-  return (
-    <div
-      className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-sm"
-      title="Flow tự kết nối khi chạy Factory Mode"
-    >
-      <span className="text-xs text-slate-400">Flow</span>
-      <span className={cn("h-2 w-2 rounded-full", state === "failed" ? "bg-red-400" : state === "waiting_login" ? "bg-amber-400" : state === "completed" ? "bg-emerald-400" : "bg-blue-400")} />
-      <span className="text-[11px] text-slate-400">{label}</span>
-    </div>
-  )
+  return <div className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-sm" title="Trạng thái Flow của project đang chọn"><span className="text-xs text-slate-400">Flow</span><span className={cn("h-2 w-2 rounded-full", state === "failed" ? "bg-red-400" : state === "waiting_login" ? "bg-amber-400" : state === "completed" ? "bg-emerald-400" : "bg-blue-400")} /><span className="text-[11px] text-slate-400">{label}</span></div>
 }
 
 function StatusPill({ status }: { status: string }) {
-  const cls =
-    status === "completed"
-      ? "bg-emerald-500/15 text-emerald-400"
-      : status === "failed"
-        ? "bg-red-500/15 text-red-400"
-        : status === "running" || status.startsWith("generating") || status.startsWith("render")
-          ? "bg-amber-500/15 text-amber-400"
-          : "bg-white/[0.04] text-slate-500"
-  return <span className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${cls}`}>{status}</span>
+  const cls = status === "completed" ? "bg-emerald-500/15 text-emerald-400" : status === "failed" ? "bg-red-500/15 text-red-400" : status === "running" || status.startsWith("generating") || status.startsWith("render") || status === "producing" ? "bg-amber-500/15 text-amber-400" : "bg-white/[0.04] text-slate-400"
+  return <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${cls}`}>{STATUS_LABELS[status] || status || "Bản nháp"}</span>
 }

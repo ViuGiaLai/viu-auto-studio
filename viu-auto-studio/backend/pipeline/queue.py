@@ -15,7 +15,9 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
+import shutil
 import threading
+
 import time
 import uuid
 
@@ -24,7 +26,8 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from backend.core.database import SessionLocal
-from backend.core.config import PROJECTS_DIR, CRF, PRESET
+from backend.core.config import PROJECTS_DIR, CRF, PRESET, FFPROBE_BIN
+
 from backend.models import AppSetting, ConnectorTask, Project, RenderJob, Scene, Script, PipelineState, Timeline, TimelineClip
 
 from backend.render.ffmpeg_engine import FFmpegEngine, RenderError, check_ffmpeg
@@ -38,7 +41,47 @@ from backend.services.project_config import effective_project_config
 
 log = logging.getLogger("viu.pipeline")
 
+
+def verify_output_file(path: str, expected_fps: int | None = None) -> tuple[bool, dict, str]:
+    """Verify the final container with FFprobe before marking a job completed."""
+    output = Path(path)
+    if not output.is_file() or output.stat().st_size <= 0:
+        return False, {}, "File output không tồn tại hoặc rỗng"
+    try:
+        result = subprocess.run([
+            FFPROBE_BIN, "-v", "error", "-show_entries",
+            "format=duration:stream=codec_type,width,height,r_frame_rate",
+            "-of", "json", str(output),
+        ], capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            return False, {}, result.stderr.strip()[:500] or "FFprobe không đọc được output"
+        payload = json.loads(result.stdout or "{}")
+        streams = payload.get("streams") or []
+        format_info = payload.get("format") or {}
+        video = next((item for item in streams if item.get("codec_type") == "video"), None)
+        audio = next((item for item in streams if item.get("codec_type") == "audio"), None)
+        duration = float(format_info.get("duration") or 0)
+        if not video:
+            return False, payload, "Output thiếu video stream"
+        if not audio:
+            return False, payload, "Output thiếu audio stream"
+        if duration <= 0:
+            return False, payload, "Output có duration không hợp lệ"
+        if expected_fps and video.get("r_frame_rate"):
+            try:
+                numerator, denominator = str(video["r_frame_rate"]).split("/")
+                actual_fps = float(numerator) / float(denominator or 1)
+                if abs(actual_fps - expected_fps) > 1.0:
+                    return False, payload, f"FPS output {actual_fps:.2f} không khớp {expected_fps}"
+            except (ValueError, ZeroDivisionError):
+                pass
+        return True, payload, "Output đã được FFprobe xác minh"
+    except (OSError, subprocess.SubprocessError, ValueError, TypeError) as exc:
+        return False, {}, f"Không thể verify output bằng FFprobe: {exc}"
+
+
 VALID_STATUSES = [
+
     "draft", "script_ready", "script_approved", "generating_voice",
     "voice_ready", "preparing_media", "media_ready", "generating_subtitles",
     "rendering", "completed", "failed", "cancelled",
@@ -49,6 +92,21 @@ ENGINE_PROFILES = {
     "balanced": {"crf": 21, "preset": "medium"},
     "high": {"crf": 18, "preset": "slow"},
 }
+
+OUTPUT_PRESETS = {
+    "youtube": (1920, 1080, 30),
+    "shorts": (1080, 1920, 30),
+    "square": (1080, 1080, 30),
+    "4k": (3840, 2160, 30),
+}
+
+
+def output_size(project: Project | None, render_config: RenderConfig) -> tuple[int, int]:
+    preset = str(render_config.output_preset or "youtube").lower()
+    if preset in OUTPUT_PRESETS:
+        return OUTPUT_PRESETS[preset][:2]
+    return (1080, 1920) if (project and project.aspect_ratio == "9:16") else (1920, 1080)
+
 
 SUBTITLE_STYLE_PRESETS = {
     "clean": {"font_size": 44, "primary_color": "#FFFFFF", "border_color": "#000000", "border_width": 2, "position": "bottom", "max_chars_per_line": 52},
@@ -552,7 +610,7 @@ class PipelineManager:
         # Rendering can resume directly at media_ready/generating_subtitles.
         # Canvas dimensions therefore belong to the whole job, not only to the
         # optional prepare-media step that a Flow-completed project skips.
-        width, height = (1080, 1920) if (project and project.aspect_ratio == "9:16") else (1920, 1080)
+        width, height = output_size(project, render_cfg)
 
         # ------------------------------------------------------------------
         # Step 1: voice
@@ -770,7 +828,7 @@ class PipelineManager:
         )
         project = db.query(Project).filter(Project.id == project_id).first()
         render_cfg = RenderConfig(**render_config)
-        width, height = (1080, 1920) if (project and project.aspect_ratio == "9:16") else (1920, 1080)
+        width, height = output_size(project, render_cfg)
 
         # Timeline is the source of truth after the user edits the CapCut-like editor.
         # If no timeline exists, preserve the original scene-driven behavior.
@@ -904,8 +962,11 @@ class PipelineManager:
                 log.warning("Không gộp được file ASS: %s", exc)
 
         output_path = str(project_dir / "output.mp4")
+        subtitle_format = str(render_cfg.subtitle_output_format or "embed").lower()
+        subtitle_for_video = global_ass if render_cfg.enable_subtitles and subtitle_format == "embed" else None
 
         try:
+
             engine.concat_scenes(
                 clip_paths=clip_paths,
                 audio_path="",
@@ -915,7 +976,8 @@ class PipelineManager:
                 logo_position=render_cfg.logo_position,
                 intro_path=render_cfg.intro_path,
                 outro_path=render_cfg.outro_path,
-                subtitle_ass=global_ass if render_cfg.enable_subtitles else None,
+                subtitle_ass=subtitle_for_video,
+
                 width=width,
                 height=height,
                 fps=render_cfg.fps,
@@ -924,9 +986,39 @@ class PipelineManager:
                 output_path=output_path,
                 transition=render_cfg.transition_duration,
                 transition_types=transition_types[:-1],
+                voice_volume=render_cfg.voice_volume,
+                enable_ducking=render_cfg.enable_ducking,
+                normalize_audio=render_cfg.normalize_audio,
             )
         except RenderError as exc:
             self._fail(db, job_id, f"Render tổng hợp thất bại: {exc}")
+            return
+
+        if render_cfg.enable_subtitles and subtitle_format in {"srt", "ass"}:
+            if subtitle_format == "ass" and global_ass and Path(global_ass).is_file():
+                shutil.copyfile(global_ass, project_dir / "subtitles.ass")
+            elif subtitle_format == "srt":
+                srt_lines = []
+                subtitle_index = 1
+                for item in rendered_scenes:
+                    text = (item.subtitle_text or item.narration or "").strip()
+                    if not text:
+                        continue
+                    start = max(float(item.start_time or 0), 0.0)
+                    end = max(float(item.end_time or (start + item.duration or 0)), start + 0.1)
+                    def _srt_time(value: float) -> str:
+                        millis = int(round(value * 1000))
+                        hours, millis = divmod(millis, 3600000)
+                        minutes, millis = divmod(millis, 60000)
+                        seconds, millis = divmod(millis, 1000)
+                        return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
+                    srt_lines.extend([str(subtitle_index), f"{_srt_time(start)} --> {_srt_time(end)}", text, ""])
+                    subtitle_index += 1
+                (project_dir / "subtitles.srt").write_text("\n".join(srt_lines), encoding="utf-8")
+
+        verified, verify_payload, verify_message = verify_output_file(output_path, expected_fps=render_cfg.fps)
+        if not verified:
+            self._fail(db, job_id, f"Output verification thất bại: {verify_message}")
             return
 
         # preview
@@ -937,6 +1029,7 @@ class PipelineManager:
             log.warning("Không tạo được preview: %s", exc)
 
         self._set_status(db, job_id, "completed", 100, "completed")
+
         job = db.query(RenderJob).filter(RenderJob.id == job_id).first()
         if job is not None:
             job.completed_at = datetime.utcnow()

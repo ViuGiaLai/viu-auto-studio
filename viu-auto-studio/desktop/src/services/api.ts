@@ -440,7 +440,9 @@ export const api = {
   ttsTestConnection: (data?: { provider?: string }) =>
     post<{ ok: boolean; message: string }>(`/tts/test-connection`, data ?? {}),
   ttsPreview: (text: string, overrides?: Partial<TTSConfig>) =>
-    post<{ ok: boolean; audio_path?: string; message?: string }>(`/tts/preview`, { text, ...overrides }),
+    post<{ ok: boolean; audio_path?: string; cache_hit?: boolean; cache_key?: string; message?: string }>(`/tts/preview`, { text, ...overrides }),
+  ttsStorage: () => request<{ ok: boolean; preview_bytes: number; generated_bytes: number; cache_bytes: number; cache_limit_bytes: number; preview_ttl_seconds: number; generated_ttl_seconds: number; cache_ttl_seconds: number; preview_dir: string; cache_dir: string }>(`/tts/storage`),
+  ttsStorageClear: () => post<{ ok: boolean; removed: number; preview_removed: number; generated_removed: number; preview_bytes: number; generated_bytes: number; cache_bytes: number }>(`/tts/storage/clear`, {}),
 
   // Google Labs image provider
   labsGetConfig: () =>
@@ -552,8 +554,14 @@ export const api = {
   renderStart: (project_id: number, config: Partial<RenderConfig> = {}) =>
     post<{ ok: boolean; job_id?: number; message: string }>(`/render/start`, {
       project_id,
-      config: {
+            config: {
+        output_preset: "youtube",
+        voice_volume: 1,
+        enable_ducking: true,
+        normalize_audio: true,
+        subtitle_style: "highlight",
         fps: 30,
+
         crf: 21,
         preset: "medium",
         enable_subtitles: true,
@@ -578,19 +586,54 @@ export const api = {
   cancelJob: (jobId: number) => post<{ ok: boolean }>(`/render/jobs/${jobId}/cancel`),
   retryJob: (jobId: number, config: Partial<RenderConfig> = {}) =>
     post<{ ok: boolean; message: string }>(`/render/jobs/${jobId}/retry`, { config }),
-  getJobLog: (jobId: number, lines = 100) =>
+    getJobLog: (jobId: number, lines = 100) =>
     request<{ ok: boolean; lines: string[] }>(`/render/jobs/${jobId}/log?lines=${lines}`),
+  renderPreflight: (projectId: number, subtitleDisabled = false) =>
+    post<{
+      ok: boolean
+      checks: Array<{ label: string; ok: boolean; detail: string }>
+      missing_scenes: number[]
+      disk_free_gb: number
+      estimated_size_gb: number
+      scene_count: number
+    }>(`/render/preflight`, { project_id: projectId, subtitle_disabled: subtitleDisabled }),
+  renderVerifyOutput: (jobId: number) =>
+    post<{
+      ok: boolean
+      checks: Array<{ label: string; ok: boolean; detail: string }>
+      duration: number
+      resolution: string
+      fps: number
+      file_size_mb: number
+      message?: string
+    }>(`/render/verify/${jobId}`, {}),
 
     // Skill Lab
+
   skillCatalog: () => request<SkillCatalogItem[]>(`/skills/catalog`),
   skillRuns: (projectId?: number) => request<SkillRun[]>(`/skills/runs${projectId ? `?project_id=${projectId}` : ""}`),
   skillRun: (data: { skill_id: string; prompt?: string; project_id?: number; input?: Record<string, unknown>; use_manus?: boolean }) =>
     post<SkillRun>(`/skills/runs`, data),
   skillRunRefresh: (runId: number) => post<SkillRun>(`/skills/runs/${runId}/refresh`, {}),
 
+    // Thành phần Viu Studio / Install by Capability
+  manageFfmpeg: (action: "check" | "check_update" | "install" | "upgrade") =>
+    post<{ ok: boolean; action: string; output?: string; state?: unknown; latest_version?: string; current_version?: string; update_available?: boolean }>(`/system/tools/ffmpeg`, { action }),
+  systemCapabilities: () =>
+    request<{
+      dependencies: Array<{ id: string; label: string; tier: string; installed: boolean; version?: string; installable: boolean; reason: string; size_label?: string }>
+      capabilities: Array<{ id: string; label: string; dependencies: string[]; ready: boolean; missing: string[] }>
+      diagnostics: Record<string, unknown>
+    }>(`/system/capabilities`),
+  systemPreflight: (capabilityId: string) =>
+    post<{ ok: boolean; capability: { id: string; label: string; ready: boolean; missing: string[] }; missing: Array<{ id: string; label: string; reason: string; size_label?: string }>; estimated_size: string }>(`/system/preflight`, { capability_id: capabilityId }),
+  installCapability: (dependencyIds: string[]) =>
+    post<{ ok: boolean; installed: string[]; output: string; state: unknown }>(`/system/capabilities/install`, { dependency_ids: dependencyIds }),
+
   // System stats
 
   systemStats: () =>
+
     request<{
       cpu_percent: number
       ram_total_gb: number
@@ -601,6 +644,7 @@ export const api = {
     }>(`/system/stats`),
 }
 
-export const mediaUrl = (path: string) => `${API_BASE}/media/file?path=${encodeURIComponent(path)}`
+export const mediaUrl = (path: string) => formatApiUrl(`/media/file?path=${encodeURIComponent(path)}`)
+export const projectThumbnailUrl = (projectId: number) => formatApiUrl(`/projects/${projectId}/thumbnail`)
 export const outputVideoUrl = (projectId: number, kind: "output" | "preview" = "output") =>
-  `${API_BASE}/render/output/${projectId}?kind=${kind}`
+  formatApiUrl(`/render/output/${projectId}?kind=${kind}`)
