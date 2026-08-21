@@ -554,6 +554,8 @@ function createWindow(): void {
           await new Promise((resolve) => setTimeout(resolve, 2200))
           const after = String(await mainWindow.webContents.executeJavaScript(`document.body.innerText`))
           if (!after.includes("FFmpeg") || !after.includes("Dung lượng trống")) throw new Error("Preflight chưa hiển thị checklist thật")
+          const renderGate = await mainWindow.webContents.executeJavaScript(`(() => { const button = [...document.querySelectorAll('button')].find((node) => (node.textContent || '').includes('Bắt đầu render')); return { found: Boolean(button), disabled: Boolean(button?.disabled), text: button?.textContent || '' }; })()`)
+          if (!renderGate.found || !renderGate.disabled) throw new Error(`Preflight gate không khóa render khi thiếu asset: ${JSON.stringify(renderGate)}`)
           fs.writeFileSync(path.join(captureDir, "render-option-d-before.png"), (await mainWindow.webContents.capturePage()).toPNG())
           fs.writeFileSync(path.join(captureDir, "render-option-d-result.json"), JSON.stringify({ projectId: renderProjectId, before, after, detailsCount, url: mainWindow.webContents.getURL() }, null, 2), "utf8")
         }
