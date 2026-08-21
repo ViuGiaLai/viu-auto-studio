@@ -13,7 +13,7 @@ from datetime import datetime
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from backend.models import ConnectorTask, FlowConnection
+from backend.models import ConnectorTask, FlowConnection, FlowFactoryRun
 
 FACTORY_STATES = {
     "waiting_login",
@@ -40,6 +40,77 @@ def new_factory_session_id() -> str:
     return uuid.uuid4().hex
 
 
+def activate_next_factory_run(db: Session, *, commit: bool = True) -> FlowFactoryRun | None:
+    """Keep one serialized browser run active and leave every other project queued."""
+    # SessionLocal disables autoflush; state transitions must be visible to the
+    # scheduler queries below before choosing the next project.
+    db.flush()
+    connection = get_or_create_connection(db)
+    # Upgrade compatibility: builds before project-bound runs stored the active
+    # session only on FlowConnection. Adopt that session once when unfinished
+    # tasks still exist, so an app restart cannot strand Chrome on Flow's home
+    # page with tasks that have no owning run.
+    if connection.factory_session_id and connection.factory_project_id:
+        legacy_run = db.query(FlowFactoryRun).filter(
+            FlowFactoryRun.session_id == connection.factory_session_id,
+        ).first()
+        if not legacy_run:
+            unfinished = db.query(ConnectorTask).filter(
+                ConnectorTask.project_id == connection.factory_project_id,
+                ConnectorTask.factory_session_id == connection.factory_session_id,
+                ConnectorTask.status.in_(["pending", "assigned", "in_progress", "retrying"]),
+            ).count()
+            if unfinished:
+                legacy_run = FlowFactoryRun(
+                    project_id=connection.factory_project_id,
+                    session_id=connection.factory_session_id,
+                    status="running",
+                    factory_mode=bool(connection.factory_mode),
+                    include_video=bool(connection.include_video),
+                    stage=connection.factory_stage or "image",
+                    started_at=datetime.utcnow(),
+                )
+                db.add(legacy_run)
+                db.flush()
+    current = None
+    if connection.factory_session_id:
+        current = db.query(FlowFactoryRun).filter(
+            FlowFactoryRun.session_id == connection.factory_session_id,
+            FlowFactoryRun.status == "running",
+        ).first()
+    if current:
+        return current
+
+    run = db.query(FlowFactoryRun).filter(FlowFactoryRun.status == "running").order_by(
+        FlowFactoryRun.started_at.asc(), FlowFactoryRun.id.asc()
+    ).first()
+    if not run:
+        run = db.query(FlowFactoryRun).filter(FlowFactoryRun.status == "queued").order_by(
+            FlowFactoryRun.created_at.asc(), FlowFactoryRun.id.asc()
+        ).first()
+        if run:
+            run.status = "running"
+            run.started_at = run.started_at or datetime.utcnow()
+            run.updated_at = datetime.utcnow()
+
+    if run:
+        connection.factory_project_id = run.project_id
+        connection.factory_session_id = run.session_id
+        connection.factory_mode = bool(run.factory_mode)
+        connection.include_video = bool(run.include_video)
+        connection.factory_stage = run.stage or "image"
+        connection.factory_state = "ready"
+        connection.last_error = ""
+    else:
+        connection.factory_project_id = None
+        connection.factory_session_id = ""
+        connection.factory_state = "ready" if connection.status == "paired" else "waiting_login"
+    connection.last_state_at = datetime.utcnow()
+    if commit:
+        db.commit()
+    return run
+
+
 def set_factory_state(
     db: Session,
     state: str,
@@ -64,10 +135,12 @@ def set_factory_state(
     return connection
 
 
-def infer_task_state(db: Session, project_id: int, *, fallback: str = "processing") -> str:
+def infer_task_state(db: Session, project_id: int, *, session_id: str | None = None, fallback: str = "processing") -> str:
+    query = db.query(ConnectorTask.status, func.count(ConnectorTask.id)).filter(ConnectorTask.project_id == project_id)
+    if session_id:
+        query = query.filter(ConnectorTask.factory_session_id == session_id)
     rows = (
-        db.query(ConnectorTask.status, func.count(ConnectorTask.id))
-        .filter(ConnectorTask.project_id == project_id)
+        query
         .group_by(ConnectorTask.status)
         .all()
     )
@@ -84,15 +157,35 @@ def infer_task_state(db: Session, project_id: int, *, fallback: str = "processin
     return "ready"
 
 
-def refresh_task_state(db: Session, project_id: int, *, commit: bool = True) -> FlowConnection:
+def refresh_task_state(
+    db: Session,
+    project_id: int,
+    *,
+    session_id: str | None = None,
+    commit: bool = True,
+) -> FlowConnection:
     connection = get_or_create_connection(db)
-    state = infer_task_state(db, project_id, fallback="processing")
-    if connection.factory_project_id == project_id or state in {"completed", "failed"}:
+    session_id = session_id or (
+        connection.factory_session_id if connection.factory_project_id == project_id else None
+    )
+    state = infer_task_state(db, project_id, session_id=session_id, fallback="processing")
+    run = db.query(FlowFactoryRun).filter(FlowFactoryRun.session_id == session_id).first() if session_id else None
+    if run and state in {"completed", "failed"}:
+        run.status = state
+        run.error = connection.last_error if state == "failed" else ""
+        run.finished_at = datetime.utcnow()
+        run.updated_at = datetime.utcnow()
+    if connection.factory_project_id == project_id and (not session_id or connection.factory_session_id == session_id):
         connection.factory_state = state
-        connection.factory_project_id = project_id
         connection.last_state_at = datetime.utcnow()
         if state != "failed":
             connection.last_error = ""
+        if state in {"completed", "failed"}:
+            # Clear the just-finished browser slot and immediately activate the
+            # oldest queued project, exactly like Revo's serialized job worker.
+            connection.factory_project_id = None
+            connection.factory_session_id = ""
+            activate_next_factory_run(db, commit=False)
     if commit:
         db.commit()
     return connection

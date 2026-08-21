@@ -4,11 +4,11 @@ import json
 import tempfile
 from pathlib import Path
 
-from backend.api.connector_routes import connector_task_complete, connector_task_progress
+from backend.api.connector_routes import connector_task_complete, connector_task_progress, media_tasks_cancel
 from backend.api.pages_routes import FactoryStartRequest, start_factory_flow
 from backend.core.database import SessionLocal
 from backend.db import init_db
-from backend.models import Channel, ConnectorTask, FlowConnection, PipelineState, Project, Scene
+from backend.models import Channel, ConnectorTask, FlowConnection, FlowFactoryRun, PipelineState, Project, Scene
 from backend.test_flow_factory_smoke import png_bytes
 
 
@@ -30,6 +30,7 @@ def make_project(db, name: str, config: dict) -> tuple[Project, Scene]:
 
 def cleanup(db, project: Project) -> None:
     db.query(ConnectorTask).filter(ConnectorTask.project_id == project.id).delete()
+    db.query(FlowFactoryRun).filter(FlowFactoryRun.project_id == project.id).delete()
     db.query(Scene).filter(Scene.project_id == project.id).delete()
     db.query(PipelineState).filter(PipelineState.project_id == project.id).delete()
     db.query(FlowConnection).filter(FlowConnection.factory_project_id == project.id).delete()
@@ -50,6 +51,7 @@ def main() -> None:
         image_result = start_factory_flow(FactoryStartRequest(project_id=image_project.id, include_video=True), db)
         assert image_result["include_video"] is False
         assert db.query(ConnectorTask).filter(ConnectorTask.project_id == image_project.id, ConnectorTask.stage == "video").count() == 0
+        media_tasks_cancel(image_project.id, db)
 
         video_project, video_scene = make_project(db, "Channel video-model smoke", {"image_mode": "mix", "video_model": "Veo Custom Test"})
         projects.append(video_project)

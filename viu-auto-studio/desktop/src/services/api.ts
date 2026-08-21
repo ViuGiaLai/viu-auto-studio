@@ -372,7 +372,7 @@ export const api = {
   pipelineStatus: (projectId: number) =>
     request<PipelineState>(`/projects/${projectId}/pipeline`),
   pipelineStartAuto: (projectId: number) =>
-    post<{ ok: boolean }>(`/workspace/approve`, { project_id: projectId }),
+    post<{ ok: boolean }>(`/workspace/approve`, { project_id: projectId, prepare_only: true }),
   pipelineStop: (projectId: number) =>
     post<{ ok: boolean }>(`/workspace/stop/${projectId}`),
 
@@ -508,7 +508,7 @@ export const api = {
 
     // Flow Connector (Chrome Extension) — Factory session + media queue Google Flow
   factoryStart: (projectId: number, options: { media_type?: string; aspect?: string; model?: string; factory_mode?: boolean; include_video?: boolean } = {}) =>
-    post<{ ok: boolean; project_id: number; factory_session_id: string; factory_state: string; requires_login: boolean; created: number; skipped: number; missing_prompts: number }>(
+    post<{ ok: boolean; project_id: number; factory_session_id: string; factory_state: string; requires_login: boolean; queue_position: number; created: number; skipped: number; missing_prompts: number }>(
       `/flow-connection/factory/start`, { project_id: projectId, ...options },
     ),
   flowConnection: () => request<{ status: string; factory_state: string; factory_project_id?: number | null; factory_session_id?: string; last_error?: string; heartbeat_at?: string | null }>(`/flow-connection`),
@@ -544,7 +544,7 @@ export const api = {
   mediaTasksCancel: (projectId: number) =>
     post<{ ok: boolean; cancelled: number }>(`/connector/projects/${projectId}/media-tasks/cancel`, {}),
   mediaTasksState: (projectId: number) =>
-    request<{ state: string; paused: boolean; counts: Record<string, number>; total: number; completed: number; cancelled: number; failed: number }>(
+    request<{ state: string; run_status: string; factory_session_id: string; paused: boolean; counts: Record<string, number>; total: number; completed: number; cancelled: number; failed: number }>(
       `/connector/projects/${projectId}/media-tasks/state`,
     ),
 

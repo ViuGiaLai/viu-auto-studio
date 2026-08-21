@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process"
-import { existsSync, mkdirSync, rmSync } from "node:fs"
+import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs"
 import path from "node:path"
 import { findFreePort, getUserDataDir, dirnameOf, type RuntimeConfig } from "./runtime-config"
 
@@ -40,6 +40,20 @@ function candidateChromePaths(): string[] {
     const programFiles = process.env.ProgramFiles || "C:\\Program Files"
     const programFilesX86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)"
     const localAppData = process.env.LOCALAPPDATA || path.join(process.env.USERPROFILE || "", "AppData", "Local")
+    // Chrome-branded builds removed --load-extension in M137. Prefer Chrome
+    // for Testing/Chromium, otherwise the Flow connector is silently ignored.
+    const playwrightRoot = path.join(localAppData, "ms-playwright")
+    if (existsSync(playwrightRoot)) {
+      try {
+        const installs = readdirSync(playwrightRoot)
+          .filter((name) => name.startsWith("chromium-") && !name.includes("headless"))
+          .sort()
+          .reverse()
+        for (const install of installs) {
+          values.push(path.join(playwrightRoot, install, "chrome-win64", "chrome.exe"))
+        }
+      } catch { /* fall through to other browser candidates */ }
+    }
     values.push(
       // Google Chrome
       path.join(programFiles, "Google", "Chrome", "Application", "chrome.exe"),
@@ -287,6 +301,39 @@ function tryConfigureInBackground(runtime: RuntimeConfig, input: FlowBrowserStar
 }
 
 /**
+ * Chrome restores tabs from the dedicated profile after an unclean shutdown.
+ * Keep exactly one Flow workspace so the 1.1.8 automation always targets the
+ * same active tab instead of getting stuck behind several restored home pages.
+ */
+async function normalizeFlowPages(port: number, flowUrl: string): Promise<void> {
+  let browser: Awaited<ReturnType<(typeof import("puppeteer-core"))["connect"]>> | null = null
+  try {
+    const puppeteer = await import("puppeteer-core")
+    browser = await puppeteer.connect({ browserURL: `http://127.0.0.1:${port}` })
+    const pages = await browser.pages()
+    const flowPages = pages.filter((page) => {
+      const url = page.url()
+      return url.includes("labs.google/fx") && url.includes("/tools/flow")
+    })
+
+    let keep = flowPages[flowPages.length - 1]
+    if (!keep) {
+      keep = await browser.newPage()
+      await keep.goto(flowUrl, { waitUntil: "domcontentloaded", timeout: 15_000 })
+    }
+
+    for (const page of flowPages) {
+      if (page !== keep) await page.close().catch(() => {})
+    }
+    await keep.bringToFront().catch(() => {})
+  } catch (error) {
+    console.warn("[Flow] Could not normalize restored Flow tabs:", error)
+  } finally {
+    try { await browser?.disconnect() } catch { /* ignore */ }
+  }
+}
+
+/**
  * Check if user has logged in to Google in the Flow Chrome profile (on disk).
  */
 export function isFlowGoogleLoggedIn(): { loggedIn: boolean; email: string } {
@@ -354,7 +401,10 @@ export async function startFlowBrowser(runtime: RuntimeConfig, input: FlowBrowse
   if (browserProcess && browserPort && await waitForDevTools(browserPort, 500)) {
     // Try puppeteer config first
     const ok = await configureExtension(runtime, input, 5000)
-    if (ok) return { ok: true, status: "reused", message: "Đã tái sử dụng Chrome Flow profile.", profilePath }
+    if (ok) {
+      await normalizeFlowPages(browserPort, flowUrl)
+      return { ok: true, status: "reused", message: "Đã tái sử dụng Chrome Flow profile.", profilePath }
+    }
     // Navigate to bootstrap URL to trigger content script auto-config
     try {
       const puppeteer = await import("puppeteer-core")
@@ -366,8 +416,20 @@ export async function startFlowBrowser(runtime: RuntimeConfig, input: FlowBrowse
       }
       await browser.disconnect()
     } catch { /* continue */ }
-    tryConfigureInBackground(runtime, input)
-    return { ok: true, status: "reused", message: "Chrome Flow đang chạy, extension đang nhận config.", profilePath }
+    await normalizeFlowPages(browserPort, flowUrl)
+    // A DevTools endpoint only proves that Chrome is alive. During extension
+    // development/reload the browser can remain alive while the unpacked
+    // extension (and its service worker) has been unloaded. Do not report that
+    // dead browser as reusable: restart the app-owned profile so the exact
+    // bundled 1.1.8 connector (including its retry/recovery adapter) is loaded
+    // again and the active Factory session can resume automatically.
+    const recovered = await configureExtension(runtime, input, 5_000)
+    if (recovered) {
+      return { ok: true, status: "reused", message: "Đã khôi phục Chrome Flow và gửi lại phiên Factory.", profilePath }
+    }
+    terminateBrowserTree(browserProcess)
+    browserProcess = null
+    browserPort = 0
   }
 
   // Launch new Chrome with bootstrap URL
@@ -403,6 +465,7 @@ export async function startFlowBrowser(runtime: RuntimeConfig, input: FlowBrowse
   if (!configured) {
     tryConfigureInBackground(runtime, input)
   }
+  await normalizeFlowPages(browserPort, flowUrl)
 
   const googleStatus = isFlowGoogleLoggedIn()
   return {
@@ -424,17 +487,7 @@ function resolveFlowConnectorPath(): string | null {
     here = __dirname ?? process.cwd()
   }
   const candidates = [
-    // Primary: 1.1.8_0 extension
-    "D:\\all_my_project\\viu-auto-studio\\1.1.8_0",
-    path.resolve(process.cwd(), "../1.1.8_0"),
-    path.resolve(process.cwd(), "1.1.8_0"),
-    path.resolve(here, "../../../1.1.8_0"),
-    path.resolve(here, "../../1.1.8_0"),
-    path.resolve(here, "../1.1.8_0"),
-    path.resolve(here, "1.1.8_0"),
-    path.join(process.resourcesPath || "", "1.1.8_0"),
-    path.join(process.resourcesPath || "", "app.asar.unpacked", "1.1.8_0"),
-    // Development fallback
+    // 1.1.8_0 is reference-only; only Viu's connector can consume its queue.
     path.resolve(process.cwd(), "flow-connector"),
     path.resolve(process.cwd(), "../flow-connector"),
     path.resolve(here, "../../flow-connector"),

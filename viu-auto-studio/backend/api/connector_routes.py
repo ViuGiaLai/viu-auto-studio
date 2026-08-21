@@ -25,8 +25,10 @@ from sqlalchemy.orm import Session
 
 from backend.core.config import DATA_DIR, FLOW_BOOTSTRAP_TOKEN, HOST, PORT, PROJECTS_DIR as _CFG_PROJECTS_DIR, FFPROBE_BIN
 from backend.core.database import get_db
-from backend.models import Channel, ConnectorTask, FlowConnection, PipelineState, Project, RenderJob, Scene
+from backend.models import Channel, ConnectorTask, FlowConnection, FlowFactoryRun, PipelineState, Project, RenderJob, Scene
 from backend.services.flow_factory import refresh_task_state, set_factory_state
+from backend.services.media_planner import planned_video_scene_ids
+from backend.services.project_assets import sync_project_media_assets
 
 router = APIRouter(prefix="/connector", tags=["flow-connector"])
 
@@ -39,14 +41,20 @@ def _require_connector_token(value: str | None) -> None:
         raise HTTPException(403, "Flow Connector token không hợp lệ")
 
 
-def _sync_pipeline_state(db: Session, project_id: int) -> None:
+def _sync_pipeline_state(db: Session, project_id: int, session_id: str | None = None) -> None:
     state = db.query(PipelineState).filter(PipelineState.project_id == project_id).first()
     if not state:
         return
     scenes = db.query(Scene).filter(Scene.project_id == project_id).all()
     if not scenes:
         return
-    tasks = db.query(ConnectorTask).filter(ConnectorTask.project_id == project_id).all()
+    if not session_id:
+        run = db.query(FlowFactoryRun).filter(FlowFactoryRun.project_id == project_id).order_by(FlowFactoryRun.created_at.desc()).first()
+        session_id = run.session_id if run else None
+    task_query = db.query(ConnectorTask).filter(ConnectorTask.project_id == project_id)
+    if session_id:
+        task_query = task_query.filter(ConnectorTask.factory_session_id == session_id)
+    tasks = task_query.all()
     total = len(tasks) if tasks else len(scenes)
     ready = sum(1 for task in tasks if task.status == "completed") if tasks else sum(1 for scene in scenes if scene.media_path and os.path.isfile(scene.media_path))
     failed = sum(1 for task in tasks if task.status == "failed") + sum(1 for scene in scenes if scene.status == "media_failed" and not any(task.scene_id == scene.id for task in tasks))
@@ -321,6 +329,8 @@ def recent_connector_tasks(
 def connector_tasks(
     worker_id: str,
     project_id: int,
+    task_limit: int | None = None,
+    factory_session_id: str | None = None,
     x_viu_flow_token: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
@@ -361,7 +371,7 @@ def connector_tasks(
                     t.updated_at = now
             except Exception:
                 pass
-    tasks = (
+    task_query = (
         db.query(ConnectorTask)
         .filter(
             ConnectorTask.project_id == project_id,
@@ -369,14 +379,17 @@ def connector_tasks(
             ConnectorTask.attempts < MAX_ATTEMPTS,
         )
         .order_by(ConnectorTask.scene_order.asc())
-        .all()
     )
+    if factory_session_id:
+        task_query = task_query.filter(ConnectorTask.factory_session_id == factory_session_id)
+    if task_limit is not None:
+        task_query = task_query.limit(task_limit)
+    tasks = task_query.all()
+    video_scene_ids = planned_video_scene_ids(db, project)
     result = []
     for t in tasks:
         if t.status in ("pending", "retrying"):
             t.status = "assigned"
-        else:
-            t.attempts = (t.attempts or 0) + 1
         t.assigned_to = str(worker_id)
         t.updated_at = now
         scene = db.query(Scene).get(t.scene_id) if t.scene_id else None
@@ -387,6 +400,7 @@ def connector_tasks(
             "project_id": t.project_id,
             "project_name": project.name,
             "prompt": t.prompt,
+            "script_text": (scene.narration if scene else "") or "",
             "style_prompt": (scene.style_prompt if scene else None),
             "transition_description": (scene.transition_description if scene else None),
             "media_type": t.media_type or "image",
@@ -396,6 +410,7 @@ def connector_tasks(
             "max_attempts": MAX_ATTEMPTS,
             "factory_session_id": t.factory_session_id or "",
             "stage": t.stage or "image",
+            "make_video": bool(t.scene_id in video_scene_ids),
             "reference_url": f"http://{HOST}:{PORT}/api/connector/tasks/{t.task_id}/reference" if (t.stage == "video" and scene and (scene.image_path or scene.media_path)) else None,
         })
     db.commit()
@@ -430,7 +445,14 @@ def connector_next_task(
         if row[0] is not None
     ]
     for project_id in project_ids:
-        tasks = connector_tasks(worker_id=worker_id, project_id=project_id, db=db)
+        tasks = connector_tasks(
+            worker_id=worker_id,
+            project_id=project_id,
+            task_limit=1,
+            factory_session_id=active.factory_session_id or None,
+            x_viu_flow_token=x_viu_flow_token,
+            db=db,
+        )
         if tasks:
             return tasks[0]
     return {}
@@ -461,10 +483,36 @@ def media_tasks_resume(project_id: int, db: Session = Depends(get_db)):
 def media_tasks_cancel(project_id: int, db: Session = Depends(get_db)):
     """Hủy toàn bộ task chưa hoàn thành của project (pending/assigned/in_progress/retrying → cancelled).
     Task cancelled KHÔNG bao giờ được poll lại; cảnh đã hoàn thành không bị ảnh hưởng."""
-    n = db.query(ConnectorTask).filter(
+    run = db.query(FlowFactoryRun).filter(
+        FlowFactoryRun.project_id == project_id,
+        FlowFactoryRun.status.in_(["queued", "running", "paused"]),
+    ).order_by(FlowFactoryRun.created_at.desc()).first()
+    query = db.query(ConnectorTask).filter(
         ConnectorTask.project_id == project_id,
         ConnectorTask.status.in_(["pending", "assigned", "in_progress", "retrying"]),
-    ).update({"status": "cancelled"}, synchronize_session=False)
+    )
+    if run:
+        query = query.filter(ConnectorTask.factory_session_id == run.session_id)
+    n = query.update({"status": "cancelled"}, synchronize_session=False)
+    if run:
+        run.status = "cancelled"
+        run.finished_at = datetime.utcnow()
+        run.updated_at = datetime.utcnow()
+        connection = db.query(FlowConnection).order_by(FlowConnection.id.desc()).first()
+        if connection and connection.factory_session_id == run.session_id:
+            connection.factory_project_id = None
+            connection.factory_session_id = ""
+            from backend.services.flow_factory import activate_next_factory_run
+            activate_next_factory_run(db, commit=False)
+    else:
+        # Clear a stale pre-migration browser slot as well. This is safe because
+        # the query above cancelled only unfinished work of this project.
+        connection = db.query(FlowConnection).order_by(FlowConnection.id.desc()).first()
+        if connection and connection.factory_project_id == project_id:
+            connection.factory_project_id = None
+            connection.factory_session_id = ""
+            from backend.services.flow_factory import activate_next_factory_run
+            activate_next_factory_run(db, commit=False)
     db.commit()
     return {"ok": True, "cancelled": n}
 
@@ -480,18 +528,30 @@ def media_tasks_state(project_id: int, db: Session = Depends(get_db)):
     except Exception:
         pass
     from sqlalchemy import func as sa_func
+    run = db.query(FlowFactoryRun).filter(FlowFactoryRun.project_id == project_id).order_by(FlowFactoryRun.created_at.desc()).first()
+    if not run:
+        # Old attempts belong to history and must never make a fresh project
+        # appear running/failed. Revo presents the status of the current run.
+        return {"state": "idle", "paused": False, "counts": {},
+                "factory_session_id": "", "run_status": "idle",
+                "total": 0, "completed": 0, "cancelled": 0, "failed": 0}
+    count_query = db.query(ConnectorTask.status, sa_func.count(ConnectorTask.id)).filter(
+        ConnectorTask.project_id == project_id,
+        ConnectorTask.factory_session_id == run.session_id,
+    )
     counts = {}
-    for s, cnt in db.query(ConnectorTask.status, sa_func.count(ConnectorTask.id)).filter(
-        ConnectorTask.project_id == project_id
-    ).group_by(ConnectorTask.status).all():
+    for s, cnt in count_query.group_by(ConnectorTask.status).all():
         counts[s] = cnt
     total = sum(counts.values())
     done = counts.get("completed", 0)
     cancelled = counts.get("cancelled", 0)
     failed = counts.get("failed", 0)
-    state = "finished" if total and done + cancelled + failed == total else \
-        ("paused" if paused else "running" if total - done - cancelled - failed > 0 else "idle")
+    state = "cancelled" if run and run.status == "cancelled" else \
+        "failed" if run and run.status == "failed" else \
+        "finished" if run and run.status == "completed" else \
+        ("queued" if run and run.status == "queued" else "paused" if paused or (run and run.status == "paused") else "running" if total - done - cancelled - failed > 0 else "idle")
     return {"state": state, "paused": paused, "counts": counts,
+            "factory_session_id": run.session_id if run else "", "run_status": run.status if run else "idle",
             "total": total, "completed": done, "cancelled": cancelled, "failed": failed}
 
 
@@ -516,6 +576,60 @@ def connector_task_progress(
     set_factory_state(db, factory_state, project_id=t.project_id, session_id=t.factory_session_id or None, commit=False)
     db.commit()
     return {"ok": True, "factory_state": factory_state}
+
+
+def _queue_factory_video_stage(db: Session, task: ConnectorTask, project: Project, scene: Scene) -> None:
+    """Attach the video stage to the same FULL AUTO session after its image arrives."""
+    connection = db.query(FlowConnection).order_by(FlowConnection.id.desc()).first()
+    if not (
+        task.stage == "image"
+        and connection
+        and connection.factory_session_id == task.factory_session_id
+        and connection.factory_mode
+        and connection.include_video
+    ):
+        return
+    if scene.id not in planned_video_scene_ids(db, project):
+        return
+    existing = db.query(ConnectorTask).filter(
+        ConnectorTask.factory_session_id == task.factory_session_id,
+        ConnectorTask.scene_id == task.scene_id,
+        ConnectorTask.stage == "video",
+        ConnectorTask.status.in_(["pending", "assigned", "in_progress", "retrying", "completed"]),
+    ).first()
+    if existing:
+        return
+    connection.factory_stage = "video"
+    connection.factory_state = "generate_video"
+    run = db.query(FlowFactoryRun).filter(FlowFactoryRun.session_id == task.factory_session_id).first()
+    if run:
+        run.stage = "video"
+    video_model = "Veo 3.1 Lite"
+    try:
+        channel_cfg = {}
+        if project.channel_id:
+            channel = db.query(Channel).filter(Channel.id == project.channel_id).first()
+            if channel and channel.config_json:
+                channel_cfg = json.loads(channel.config_json) if isinstance(channel.config_json, str) else dict(channel.config_json)
+        project_cfg = json.loads(project.config_json) if isinstance(project.config_json, str) and project.config_json else {}
+        project_media = project_cfg.get("media") if isinstance(project_cfg.get("media"), dict) else {}
+        video_model = str(project_media.get("video_model") or channel_cfg.get("video_model") or video_model)
+    except (TypeError, ValueError):
+        pass
+    db.add(ConnectorTask(
+        task_id=str(uuid.uuid4()),
+        project_id=task.project_id,
+        scene_id=task.scene_id,
+        scene_order=task.scene_order,
+        status="pending",
+        stage="video",
+        attempts=0,
+        prompt=scene.transition_description or task.prompt,
+        media_type="video",
+        aspect=task.aspect,
+        model=video_model,
+        factory_session_id=task.factory_session_id,
+    ))
 
 
 @router.post("/tasks/{task_id}/complete")
@@ -600,40 +714,12 @@ def connector_task_complete(
     t.result_json = json.dumps({"source": "flow", "stage": t.stage or media_type, "verified": info, "attempts": t.attempts}, ensure_ascii=False)
     t.updated_at = datetime.utcnow()
 
-    # Factory Mode nối ảnh → video theo cùng scene và session, tuần tự để prompt video có ảnh tham chiếu thật.
-    connection = db.query(FlowConnection).order_by(FlowConnection.id.desc()).first()
-    if media_type == "image" and t.stage == "image" and connection and connection.factory_session_id == t.factory_session_id and connection.factory_mode and connection.include_video:
-        connection.factory_stage = "video"
-        connection.factory_state = "ready"
-        video_model = "Veo 3.1 Lite"
-        try:
-            channel_cfg = {}
-            if project.channel_id:
-                channel = db.query(Channel).filter(Channel.id == project.channel_id).first()
-                if channel and channel.config_json:
-                    channel_cfg = json.loads(channel.config_json) if isinstance(channel.config_json, str) else dict(channel.config_json)
-            project_cfg = json.loads(project.config_json) if isinstance(project.config_json, str) and project.config_json else {}
-            project_media = project_cfg.get("media") if isinstance(project_cfg.get("media"), dict) else {}
-            video_model = str(project_media.get("video_model") or channel_cfg.get("video_model") or video_model)
-        except (TypeError, ValueError):
-            pass
-        db.add(ConnectorTask(
-            task_id=str(uuid.uuid4()),
-            project_id=t.project_id,
-            scene_id=t.scene_id,
-            scene_order=t.scene_order,
-            status="pending",
-            stage="video",
-            attempts=0,
-            prompt=t.prompt,
-            media_type="video",
-            aspect=t.aspect,
-            model=video_model,
-            factory_session_id=t.factory_session_id,
-        ))
+    if media_type == "image":
+        _queue_factory_video_stage(db, t, project, scene)
     db.commit()
-    _sync_pipeline_state(db, t.project_id)
-    refresh_task_state(db, t.project_id)
+    sync_project_media_assets(db, t.project_id)
+    _sync_pipeline_state(db, t.project_id, t.factory_session_id or None)
+    refresh_task_state(db, t.project_id, session_id=t.factory_session_id or None)
     return {
         "ok": True,
         "scene_id": t.scene_id,
@@ -672,8 +758,8 @@ def connector_task_fail(
             scene.error_message = t.error
             scene.status = "media_failed"
     db.commit()
-    _sync_pipeline_state(db, t.project_id)
-    refresh_task_state(db, t.project_id)
+    _sync_pipeline_state(db, t.project_id, t.factory_session_id or None)
+    refresh_task_state(db, t.project_id, session_id=t.factory_session_id or None)
     return {"ok": True, "task_id": task_id, "attempts": t.attempts}
 
 
@@ -779,9 +865,12 @@ async def connector_task_ingest(
         t.file_path = dest
         t.result_json = json.dumps({"source": "flow", "verified": info, "attempts": t.attempts}, ensure_ascii=False)
         t.updated_at = datetime.utcnow()
+        if media_type == "image":
+            _queue_factory_video_stage(db, t, project, scene)
         db.commit()
-        _sync_pipeline_state(db, t.project_id)
-        refresh_task_state(db, t.project_id)
+        sync_project_media_assets(db, t.project_id)
+        _sync_pipeline_state(db, t.project_id, t.factory_session_id or None)
+        refresh_task_state(db, t.project_id, session_id=t.factory_session_id or None)
         return {
             "ok": True,
             "scene_id": t.scene_id,

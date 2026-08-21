@@ -20,7 +20,7 @@ import type {
 } from "@/types"
 
 import type { MediaAssetRead } from "@/services/pages-api"
-import { flowApi, mediaAssetsApi } from "@/services/pages-api"
+import { mediaAssetsApi } from "@/services/pages-api"
 
 import { ASPECT_RATIOS, LANGUAGES, SCENE_EFFECTS, STATUS_LABELS, VIDEO_TYPES } from "@/types"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
@@ -37,6 +37,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/utils/cn"
 import { ChannelConfigDialog } from "@/components/channel-config-dialog"
 import { ProjectHeader, StageNavigation, StatusBadge } from "@/components/design-system"
+import { VideoEditor } from "@/components/video-editor"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -704,7 +705,7 @@ function Storyboard({ project }: { project: Project }) {
   const [splittingScene, setSplittingScene] = useState<number | null>(null)
   const [regeneratingMedia, setRegeneratingMedia] = useState<number | null>(null)
   const [factoryStarting, setFactoryStarting] = useState(false)
-  const [flowConnection, setFlowConnection] = useState<{ factory_state?: string; status?: string; last_error?: string } | null>(null)
+  const [flowConnection, setFlowConnection] = useState<{ factory_state?: string; factory_project_id?: number | null; status?: string; last_error?: string } | null>(null)
 
   // Flow Connector task queue state
 
@@ -712,6 +713,8 @@ function Storyboard({ project }: { project: Project }) {
     state: string
     paused: boolean
     counts: Record<string, number>
+    run_status: string
+    factory_session_id: string
     total: number
     completed: number
   } | null>(null)
@@ -810,6 +813,8 @@ function Storyboard({ project }: { project: Project }) {
         toast({ title: "Không khởi động được Chrome Flow", description: browser.message, variant: "destructive" })
       } else if (res.requires_login) {
         toast({ title: "Đang mở Google Flow", description: browser.message || "Hệ thống đang tự kết nối và mở phiên làm việc..." })
+      } else if (res.factory_state === "queued") {
+        toast({ title: "Đã xếp hàng Factory", description: `Dự án này ở vị trí ${res.queue_position}. Flow sẽ tự chạy khi dự án trước hoàn tất.` })
       } else {
         toast({ title: "Factory Mode đã chạy", description: `Đã xếp ${res.created} task và tự kết nối Flow Connector.` })
       }
@@ -911,57 +916,36 @@ function Storyboard({ project }: { project: Project }) {
               taskState.state === "finished" && "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/15",
               taskState.state === "paused" && "bg-amber-500/15 text-amber-300 hover:bg-amber-500/15",
               taskState.state === "running" && "bg-amber-500/15 text-amber-300 hover:bg-amber-500/15",
+              taskState.state === "queued" && "bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/15",
             )}>
-              {taskState.state === "running" ? <Clock className="h-3 w-3 animate-pulse" /> : taskState.state === "paused" ? <Pause className="h-3 w-3" /> : taskState.state === "finished" ? <Check className="h-3 w-3" /> : <ListChecks className="h-3 w-3" />}
-              <span>{taskState.state === "running" ? "Đang chạy" : taskState.state === "paused" ? "Tạm dừng" : taskState.state === "finished" ? "Hoàn tất" : taskState.state}</span>
+              {taskState.state === "running" ? <Clock className="h-3 w-3 animate-pulse" /> : taskState.state === "queued" ? <ListChecks className="h-3 w-3" /> : taskState.state === "paused" ? <Pause className="h-3 w-3" /> : taskState.state === "finished" ? <Check className="h-3 w-3" /> : <ListChecks className="h-3 w-3" />}
+              <span>{taskState.state === "running" ? "Đang chạy" : taskState.state === "queued" ? "Đang xếp hàng" : taskState.state === "paused" ? "Tạm dừng" : taskState.state === "finished" ? "Hoàn tất" : taskState.state}</span>
             </Badge>
-            <span className="text-sm text-slate-400">{taskState.completed}/{taskState.total} cảnh đã có media</span>
+            <span className="text-sm text-slate-400">{taskState.completed}/{taskState.total} tác vụ media đã hoàn tất</span>
             {(taskState.counts.failed ?? 0) > 0 && (
               <Badge variant="destructive">{(taskState.counts.failed ?? 0)} cảnh lỗi (tự thử lại)</Badge>
             )}
             <Badge variant={workerOnline ? "success" : "secondary"}>
               <Zap className="mr-1 h-3 w-3" /> Extension {workerOnline ? "đang kết nối" : "đang khởi tạo"}
             </Badge>
-            <Badge variant={flowConnection?.factory_state === "failed" ? "destructive" : flowConnection?.factory_state === "completed" ? "success" : "secondary"}>
-              Flow: {({ waiting_login: "Waiting Login", ready: "Ready", processing: "Processing", generate_image: "Generate Image", generate_video: "Generate Video", completed: "Completed", failed: "Failed" } as Record<string, string>)[flowConnection?.factory_state || "waiting_login"] || flowConnection?.factory_state || "Waiting Login"}
+            <Badge variant={taskState.run_status === "failed" ? "destructive" : taskState.run_status === "completed" ? "success" : "secondary"}>
+              Flow: {flowConnection?.factory_project_id === project.id
+                ? (({ waiting_login: "Waiting Login", ready: "Ready", processing: "Processing", generate_image: "Generate Image", generate_video: "Generate Video", completed: "Completed", failed: "Failed" } as Record<string, string>)[flowConnection?.factory_state || "waiting_login"] || flowConnection?.factory_state)
+                : ({ queued: "Queued", completed: "Completed", failed: "Failed", paused: "Paused" } as Record<string, string>)[taskState.run_status] || taskState.run_status}
             </Badge>
 
             <div className="ml-auto flex items-center gap-2">
-              {taskState.state === "running" && (
-                <Button size="sm" variant="outline" className="border-amber-500/40 text-amber-300 hover:bg-amber-500/10" onClick={async () => {
-                  try {
-                    await api.mediaTasksPause(project.id)
-                    toast({ title: "Đã tạm dừng hàng đợi tạo media", description: "Extension sẽ dừng nhận task mới. Task đang chạy sẽ hoàn thành." })
-                  } catch (e) {
-                    toast({ title: "Tạm dừng thất bại", description: String(e), variant: "destructive" })
-                  }
-                }}>
-                  <Pause className="mr-1 h-3.5 w-3.5" /> Tạm dừng
-                </Button>
-              )}
-              {taskState.state === "paused" && (
-                <Button size="sm" className="gap-1.5 bg-gradient-to-r from-[#d9940a] to-[#faaa02] text-white" onClick={async () => {
-                  try {
-                    await api.mediaTasksResume(project.id)
-                    toast({ title: "Đã tiếp tục hàng đợi tạo media", description: "Extension sẽ nhận lại các cảnh chưa có media." })
-                  } catch (e) {
-                    toast({ title: "Tiếp tục thất bại", description: String(e), variant: "destructive" })
-                  }
-                }}>
-                  <Play className="h-3.5 w-3.5" /> Tiếp tục
-                </Button>
-              )}
-              {(taskState.state === "running" || taskState.state === "paused") && (
+              {(taskState.state === "running" || taskState.state === "queued" || taskState.state === "paused") && (
                 <Button size="sm" variant="outline" className="border-red-500/40 text-red-300 hover:bg-red-500/10" onClick={async () => {
-                  if (!confirm("Hủy toàn bộ task media chưa hoàn thành? Cảnh đã có media không bị ảnh hưởng.")) return
+                  if (!confirm("Dừng phiên Factory của dự án này? Cảnh đã có media không bị ảnh hưởng.")) return
                   try {
                     await api.mediaTasksCancel(project.id)
-                    toast({ title: "Đã hủy task chưa hoàn thành", description: "Cảnh đã hoàn thành vẫn giữ media." })
+                    toast({ title: "Đã dừng Factory", description: "Chỉ phiên của dự án này bị dừng; cảnh đã hoàn thành vẫn được giữ." })
                   } catch (e) {
-                    toast({ title: "Hủy thất bại", description: String(e), variant: "destructive" })
+                    toast({ title: "Dừng Factory thất bại", description: String(e), variant: "destructive" })
                   }
                 }}>
-                  <Square className="mr-1 h-3.5 w-3.5" /> Hủy task chưa xong
+                  <Square className="mr-1 h-3.5 w-3.5" /> Dừng Factory
                 </Button>
               )}
             </div>
@@ -1380,6 +1364,7 @@ function SubtitleConfigPanel({ project }: { project: Project }) {
 // ---------------------------------------------------------------------------
 function EditorCharacters({ project }: { project: Project }) {
   const [chars, setChars] = useState<Character[]>([])
+  const [sceneCount, setSceneCount] = useState(0)
   const [loading, setLoading] = useState(false)
   const [name, setName] = useState("")
   const [desc, setDesc] = useState("")
@@ -1387,8 +1372,12 @@ function EditorCharacters({ project }: { project: Project }) {
   useEffect(() => { load() }, [])
   async function load() {
     try {
-      const list = await api.listCharacters(project.id)
+      const [list, scenes] = await Promise.all([
+        api.listCharacters(project.id),
+        api.listScenes(project.id),
+      ])
       setChars(list)
+      setSceneCount(scenes.length)
     } catch { /* ignore */ }
   }
   const add = async () => {
@@ -1427,8 +1416,17 @@ function EditorCharacters({ project }: { project: Project }) {
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {chars.length === 0 && (
-          <div className="vas-card flex flex-col items-center gap-2 p-6 text-sm text-slate-500">
-            Chưa có nhân vật nào trong dự án.
+          <div className="vas-card col-span-full flex items-start gap-3 border-emerald-500/20 p-5">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-400">✓</div>
+            <div>
+              <div className="font-medium text-slate-200">Không cần nhân vật cố định cho kịch bản này</div>
+              <p className="mt-1 text-sm text-slate-500">
+                {sceneCount > 0
+                  ? `${sceneCount} phân cảnh đang dùng chủ thể và bối cảnh riêng theo nội dung. Không tạo nhân vật giả chỉ để lấp đầy bước này.`
+                  : "Sau khi chia cảnh, hệ thống sẽ dùng nhân vật cố định ở đây nếu nội dung thật sự cần tính nhất quán."}
+              </p>
+              <p className="mt-2 text-xs text-slate-600">Chỉ thêm nhân vật khi một người cụ thể xuất hiện lặp lại giữa nhiều cảnh.</p>
+            </div>
           </div>
         )}
         {chars.map((c) => (
@@ -1482,9 +1480,14 @@ function EditorMedia({ project }: { project: Project }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-slate-500">
-          Media của dự án được Flow Connector tải về và FFprobe xác minh (codec, độ phân giải, thời lượng). Không có ảnh giả.
-        </p>
+        <div>
+          <p className="text-xs text-slate-500">Media thật của project, đồng bộ trực tiếp từ phân cảnh, TTS và bản render.</p>
+          <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-400">
+            <Badge variant="outline">{assets.filter((asset) => asset.kind === "media").length} ảnh/video</Badge>
+            <Badge variant="outline">{assets.filter((asset) => asset.kind === "voice").length} voice</Badge>
+            <Badge variant="outline">{assets.filter((asset) => asset.verify_state === "verified").length}/{assets.length} đã xác minh</Badge>
+          </div>
+        </div>
         <Button variant="outline" size="sm" onClick={load}><RefreshCw className="h-3.5 w-3.5" /> Làm mới</Button>
       </div>
       <div className="vas-card overflow-hidden">
@@ -1506,7 +1509,13 @@ function EditorMedia({ project }: { project: Project }) {
             )}
             {assets.map((a) => (
               <tr key={a.id} className="border-b border-white/5 last:border-0">
-                <td className="max-w-52 truncate px-3 py-2">{a.file_path.split("/").pop() ?? a.file_path}</td>
+                <td className="max-w-64 px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    {a.kind === "media" && /\.(png|jpe?g|webp)$/i.test(a.file_path) && <img src={mediaUrl(a.file_path)} className="h-10 w-16 rounded object-cover" />}
+                    {a.kind === "media" && /\.(mp4|webm|mov)$/i.test(a.file_path) && <video src={mediaUrl(a.file_path)} muted className="h-10 w-16 rounded object-cover" />}
+                    <span className="truncate">{a.file_path.split(/[\\/]/).pop() ?? a.file_path}</span>
+                  </div>
+                </td>
                 <td className="px-3 py-2 text-slate-400">{a.kind || "—"}</td>
                 <td className="px-3 py-2 text-slate-400">{a.provider || "—"}</td>
                 <td className="px-3 py-2 text-slate-400">{a.codec || "—"}{a.resolution ? ` · ${a.resolution}` : ""}</td>
@@ -1649,8 +1658,6 @@ function TimelineEditor({ project, onRender }: { project: Project; onRender: () 
   if (loading) return <div className="vas-card p-6"><Progress value={45} className="w-52 animate-pulse" /></div>
   if (!timeline) return null
 
-  const visualPreview = timeline.clips.find((clip) => clip.id === selectedId && Boolean(clip.source_path))
-    ?? timeline.clips.find((clip) => clip.track === "visual" && Boolean(clip.source_path))
   const duration = Math.max(timeline.duration, 1)
 
   return (
@@ -1714,7 +1721,11 @@ function TimelineEditor({ project, onRender }: { project: Project; onRender: () 
           <div className="flex items-center justify-between"><h4 className="font-semibold">Clip đang chọn</h4><Badge variant="secondary">{selected?.track ?? "—"}</Badge></div>
           {selected ? (
             <>
-              {selected.source_path && (selected.track === "visual" || selected.track === "overlay") && <video src={mediaUrl(selected.source_path)} controls className="max-h-40 w-full rounded border border-white/10 bg-black" />}
+              {selected.source_path && (selected.track === "visual" || selected.track === "overlay") && (
+                /\.(png|jpe?g|webp)$/i.test(selected.source_path)
+                  ? <img src={mediaUrl(selected.source_path)} className="max-h-40 w-full rounded border border-white/10 bg-black object-contain" />
+                  : <video src={mediaUrl(selected.source_path)} controls className="max-h-40 w-full rounded border border-white/10 bg-black" />
+              )}
               <div className="grid grid-cols-2 gap-2">
                 <div><Label className="text-xs">Bắt đầu</Label><Input type="number" step={0.1} value={selected.clip_start} disabled={selected.locked} onChange={(e) => { const start = Math.max(0, Number(e.target.value)); patchClip(selected.id, { clip_start: start, clip_end: Math.max(start + 0.1, selected.clip_end) }) }} /></div>
                 <div><Label className="text-xs">Kết thúc</Label><Input type="number" step={0.1} value={selected.clip_end} disabled={selected.locked} onChange={(e) => { const end = Math.max(selected.clip_start + 0.1, Number(e.target.value)); patchClip(selected.id, { clip_end: end, out_point: Math.max(selected.in_point, selected.out_point + (end - selected.clip_end)) }) }} /></div>
@@ -1722,6 +1733,30 @@ function TimelineEditor({ project, onRender }: { project: Project; onRender: () 
                 <div><Label className="text-xs">Out point</Label><Input type="number" step={0.1} value={selected.out_point} disabled={selected.locked} onChange={(e) => patchClip(selected.id, { out_point: Math.max(selected.in_point, Number(e.target.value)) })} /></div>
               </div>
               <div><Label className="text-xs">Âm lượng: {(selected.volume * 100).toFixed(0)}%</Label><Slider value={[selected.volume]} min={0} max={2} step={0.05} disabled={selected.locked} onValueChange={(value) => patchClip(selected.id, { volume: value[0] })} /></div>
+              {selected.track === "visual" && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Chuyển động hình ảnh</Label>
+                  <Select
+                    value={selected.transform?.effect || "zoom_in"}
+                    disabled={selected.locked}
+                    onValueChange={(effect) => patchClip(selected.id, {
+                      transform: { ...(selected.transform || {}), effect },
+                    })}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="zoom_in">Zoom vào nhẹ</SelectItem>
+                      <SelectItem value="zoom_out">Zoom ra nhẹ</SelectItem>
+                      <SelectItem value="pan_left">Trượt máy sang trái</SelectItem>
+                      <SelectItem value="pan_right">Trượt máy sang phải</SelectItem>
+                      <SelectItem value="none">Giữ khung hình</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[10px] leading-relaxed text-slate-500">
+                    Ảnh dùng chuyển động Ken Burns; video giữ chuyển động gốc. Kiểu nối sang cảnh kế tiếp được chọn tự động cho phù hợp.
+                  </p>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-2">
                 <Button size="sm" variant="outline" disabled={selected.locked} onClick={() => shiftSelected(-0.25)}><ChevronLeft className="h-4 w-4" />Lùi 0.25s</Button>
                 <Button size="sm" variant="outline" disabled={selected.locked} onClick={() => shiftSelected(0.25)}>Tiến 0.25s<ChevronRight className="h-4 w-4" /></Button>
@@ -1738,16 +1773,17 @@ function TimelineEditor({ project, onRender }: { project: Project; onRender: () 
 }
 
 // ---------------------------------------------------------------------------
-// Xuất bản / Render
+// Xuất bản / Render cuối
 // ---------------------------------------------------------------------------
 function RenderPanel({ project }: { project: Project }) {
 
-  const { job } = useEditorStore()
+  const { job, subtitleConfig } = useEditorStore()
   const [crf, setCrf] = useState(21)
   const [fps, setFps] = useState(30)
   const [preset, setPreset] = useState("medium")
   const [enableSubs, setEnableSubs] = useState(true)
   const [musicVol, setMusicVol] = useState(0.25)
+  const [transitionDuration, setTransitionDuration] = useState(0.35)
   const [rendering, setRendering] = useState(false)
 
   const canRender = !job || job.status === "completed" || job.status === "failed" || job.status === "cancelled"
@@ -1760,6 +1796,8 @@ function RenderPanel({ project }: { project: Project }) {
     try {
       const res = await api.renderStart(project.id, {
         crf, fps, preset, enable_subtitles: enableSubs, music_volume: musicVol,
+        transition_duration: transitionDuration,
+        subtitle_config: subtitleConfig,
       })
       if (res.ok && res.job_id) {
         toast({ title: "Đã bắt đầu pipeline render", description: "Theo dõi tiến trình bên dưới" })
@@ -1796,7 +1834,7 @@ function RenderPanel({ project }: { project: Project }) {
     return (
     <div id="render-panel" className="space-y-6">
       <div className="vas-card p-5">
-        <h3 className="mb-4 text-base font-semibold text-slate-100">Cấu hình render</h3>
+        <h3 className="mb-4 text-base font-semibold text-slate-100">Cấu hình xuất video cuối</h3>
 
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
@@ -1826,6 +1864,11 @@ function RenderPanel({ project }: { project: Project }) {
               <Label>Âm lượng nhạc nền: {(musicVol * 100).toFixed(0)}%</Label>
               <Slider value={[musicVol]} min={0} max={1} step={0.05} onValueChange={(v) => setMusicVol(v[0])} />
             </div>
+            <div className="space-y-1.5">
+              <Label>Chuyển cảnh theo nhịp: {transitionDuration.toFixed(2)} giây</Label>
+              <Slider value={[transitionDuration]} min={0} max={1.2} step={0.05} onValueChange={(v) => setTransitionDuration(v[0])} />
+              <p className="text-[10px] text-slate-500">Chỉ hòa hình; giọng và phụ đề giữ nguyên thời lượng.</p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <Switch checked={enableSubs} onCheckedChange={setEnableSubs} id="enable-subs" />
@@ -1842,7 +1885,7 @@ function RenderPanel({ project }: { project: Project }) {
               className="bg-gradient-to-r from-amber-500 to-amber-300 hover:from-amber-400 hover:to-amber-200"
             >
               <Play className="h-4 w-4" />
-              {inProgress ? "Đang xử lý..." : "Bắt đầu render"}
+              {inProgress ? "Đang xử lý..." : "Xuất video"}
             </Button>
             {(inProgress) && (
               <Button variant="destructive" onClick={cancel}>
@@ -1859,7 +1902,7 @@ function RenderPanel({ project }: { project: Project }) {
             {job?.status === "completed" && (
               <Button variant="outline" onClick={retry}>
                 <RotateCcw className="h-4 w-4" />
-                Render lại
+                Xuất lại sau chỉnh sửa
               </Button>
             )}
           </div>
@@ -1945,31 +1988,11 @@ export default function ProjectEditorPage() {
   const { project, setProject, setScenes, setJob } = useEditorStore()
   const { backendOnline } = useAppStore()
   const [loading, setLoading] = useState(true)
-    const [activeTab, setActiveTab] = useState("idea")
+  const [activeTab, setActiveTab] = useState("idea")
   const userSelectedTab = useRef(false)
-  const flowOpenedTabs = useRef(new Set<string>())
-  const openFlowForStage = async (tab: string) => {
-    if (!projectId || !project || !["storyboard", "characters"].includes(tab)) return
-    const key = `${projectId}:${tab}`
-    if (flowOpenedTabs.current.has(key)) return
-    flowOpenedTabs.current.add(key)
-    try {
-      const connection = await flowApi.get().catch(() => null)
-      const factorySessionId = connection?.factory_project_id === projectId && connection.factory_session_id
-        ? connection.factory_session_id
-        : `profile-${projectId}`
-      const result = await startFlowBrowser(projectId, factorySessionId)
-      if (!result.ok) throw new Error(result.message)
-      toast({ title: "Đã mở Chrome Profile riêng cho Google Flow", description: tab === "storyboard" ? "Phân cảnh Visual đã sẵn sàng để tự tạo hình ảnh/video theo prompt." : "Nhân vật đã sẵn sàng để Flow dùng ảnh tham chiếu tự động." })
-    } catch (error) {
-      flowOpenedTabs.current.delete(key)
-      toast({ title: "Không mở được Chrome Flow", description: String(error), variant: "destructive" })
-    }
-  }
   const selectTab = (tab: string) => {
     userSelectedTab.current = true
     setActiveTab(tab)
-    if (tab === "storyboard" || tab === "characters") void openFlowForStage(tab)
   }
   const [channels, setChannels] = useState<Array<{ id: number; name: string }>>([])
 
@@ -2085,10 +2108,14 @@ export default function ProjectEditorPage() {
         api.pipelineStatus(projectId).catch(() => null),
         api.listScenes(projectId),
       ])
-      if (state?.status === "failed") throw new Error(state.last_log || "Pipeline chuẩn bị thất bại")
       if (scenes.length > 0 && scenes.every((scene) => Boolean(scene.visual_prompt))) {
         scenesReady = true
         break
+      }
+      // A previous connector run may have failed at media generation while the
+      // script/storyboard is still completely valid for a fresh Factory run.
+      if (state?.status === "failed" && state.error_step !== "Ảnh/Video") {
+        throw new Error(state.last_log || "Pipeline chuẩn bị thất bại")
       }
       await new Promise((resolve) => setTimeout(resolve, 1000))
     }
@@ -2105,10 +2132,12 @@ export default function ProjectEditorPage() {
     while (Date.now() < mediaDeadline) {
       const scenes = await api.listScenes(projectId)
       const state = await api.pipelineStatus(projectId).catch(() => null)
-      if (state?.status === "failed") throw new Error(state.last_log || "Pipeline TTS/media thất bại")
       if (scenes.length > 0 && scenes.every((scene) => Boolean(scene.audio_path))) {
         voiceReady = true
         break
+      }
+      if (state?.status === "failed" && state.error_step !== "Ảnh/Video") {
+        throw new Error(state.last_log || "Pipeline TTS thất bại")
       }
       await new Promise((resolve) => setTimeout(resolve, 1000))
     }
@@ -2215,13 +2244,12 @@ export default function ProjectEditorPage() {
           <EditorMedia project={project} />
         </TabsContent>
 
-        <TabsContent value="subtitles" className="mt-4">
-          <SubtitleConfigPanel project={project} />
+        <TabsContent value="publish" className="mt-4">
+          <VideoEditor project={project} onExport={() => setActiveTab("subtitles")} />
         </TabsContent>
 
-                <TabsContent value="publish" className="mt-4">
-          <TimelineEditor project={project} onRender={() => document.getElementById("render-panel")?.scrollIntoView({ behavior: "smooth" })} />
-          <div className="mt-6"><RenderPanel project={project} /></div>
+        <TabsContent value="subtitles" className="mt-4">
+          <RenderPanel project={project} />
         </TabsContent>
 
         </div>

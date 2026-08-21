@@ -38,6 +38,7 @@ from backend.models import (
     ConnectorTask,
 
     FlowConnection,
+    FlowFactoryRun,
     Idea,
     Job,
     JobStep,
@@ -55,7 +56,11 @@ from backend.models import (
     VoiceAsset,
 )
 from backend.services.ai.provider import generate_text
-from backend.services.flow_factory import connection_payload, get_or_create_connection, new_factory_session_id, set_factory_state
+from backend.services.flow_factory import activate_next_factory_run, connection_payload, get_or_create_connection, new_factory_session_id, set_factory_state
+from backend.services.media_planner import IMAGE_ONLY_MODES, planned_video_scene_ids, project_media_policy
+from backend.services.media import get_audio_duration
+from backend.services.project_assets import sync_project_media_assets
+from backend.services.project_config import effective_project_config
 
 router = APIRouter()
 
@@ -117,7 +122,7 @@ class MediaAssetRead(BaseModel):
     verify_state: str
     active: bool
     reference_count: int
-    created_at: Optional[str]
+    created_at: Optional[datetime]
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -267,7 +272,7 @@ class CharacterGlobalRead(BaseModel):
     face_lock: int = 95
     outfit_lock: int = 90
     seed: str = ""
-    created_at: Optional[str]
+    created_at: Optional[datetime]
     refs: list[dict] = []
 
     model_config = ConfigDict(from_attributes=True)
@@ -411,19 +416,16 @@ def generate_ideas(payload: IdeaGenerateRequest = Body(...),
     if not proj:
         raise HTTPException(404, "Không tìm thấy dự án")
     script = db.query(Script).filter(Script.project_id == project_id).first()
-    channel_cfg = __import__("json").loads(proj.config_json or "{}") if hasattr(proj, "config_json") and getattr(proj, "config_json", None) else {}
-    if isinstance(proj.config_json, str):
-        try:
-            channel_cfg = __import__("json").loads(proj.config_json or "{}")
-        except Exception:
-            channel_cfg = {}
+    channel_cfg = effective_project_config(db, proj)
     topic = payload.topic or proj.topic or channel_cfg.get("niche", "")
     batch = (db.query(func.max(Idea.batch)).filter(Idea.project_id == project_id).scalar() or 0) + 1
     prompt = (
         f"Bạn là biên tập viên nội dung video. Dựa trên chủ đề '{topic}', "
-        f"kiểu video '{channel_cfg.get('video_kind', 'Documentary Explainer')}', "
+        f"kiểu video '{channel_cfg.get('video_style') or channel_cfg.get('video_kind', 'Documentary Explainer')}', "
         f"ngách '{channel_cfg.get('niche', '')}', đối tượng '{channel_cfg.get('target_audience') or channel_cfg.get('audience', '18-35 tuổi')}', "
         f"phân loại '{channel_cfg.get('content_rating', 'general')}', kiểu thumbnail '{channel_cfg.get('thumbnail_style', 'auto')}', "
+        f"mô tả kênh '{channel_cfg.get('description', '')}', định hướng '{channel_cfg.get('direction', '')}', "
+        f"phong cách viết '{channel_cfg.get('script_style', '')}', kiểu chuỗi '{channel_cfg.get('series_type', 'anthology')}', "
         f"và hook style '{channel_cfg.get('hook_style') or channel_cfg.get('hook', '')}', hãy đề xuất 3 ý tưởng video "
         f"khác nhau về góc nhìn và hook. Trả JSON: {{ideas: [{{title, hook, angle, outline: [5 mục], duration_estimate, thumbnail_concept, thumbnail_prompt}}]}}. "
         "Trả bằng tiếng Việt."
@@ -523,6 +525,10 @@ def list_media_assets(project_id: Optional[int] = None,
                       kind: Optional[str] = None,
                       search: Optional[str] = None,
                       db: Session = Depends(get_db)):
+    # Repair historical projects and keep the library aligned with files that
+    # Flow/TTS/render have attached directly to Scene/Project records.
+    if project_id is not None:
+        sync_project_media_assets(db, project_id)
     q = db.query(MediaAsset).filter(MediaAsset.active == True)  # noqa: E712
     if project_id is not None:
         q = q.filter(MediaAsset.project_id == project_id)
@@ -820,59 +826,125 @@ def _timeline_dict(t: Timeline, clips: list[TimelineClip]) -> dict:
     }
 
 
-def _ensure_project_timeline(project_id: int, db: Session) -> Timeline:
-    t = db.query(Timeline).filter(
-        Timeline.project_id == project_id,
-        Timeline.autosave == True,  # noqa: E712
-    ).order_by(Timeline.version.desc()).first()
-    if t:
-        return t
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(404, "Không tìm thấy dự án")
-    scenes = db.query(Scene).filter(Scene.project_id == project_id).order_by(Scene.order_index).all()
+def _active_asset_for_path(db: Session, project_id: int, file_path: str) -> MediaAsset | None:
+    """Resolve a project asset with Windows-safe, case-insensitive path matching."""
+    normalized = os.path.normcase(os.path.realpath(file_path or ""))
+    if not normalized:
+        return None
+    return db.query(MediaAsset).filter(
+        MediaAsset.project_id == project_id,
+        func.lower(MediaAsset.file_path) == normalized.lower(),
+        MediaAsset.active == True,  # noqa: E712
+    ).first()
+
+
+def _rebuild_generated_timeline(t: Timeline, project: Project, db: Session) -> None:
+    """Recreate version-1 timeline from current project sources.
+
+    Version 1 is the generated draft.  A user save increments the version, so
+    this repair never overwrites an edited timeline.
+    """
+    scenes = db.query(Scene).filter(Scene.project_id == project.id).order_by(Scene.order_index).all()
+    db.query(TimelineClip).filter(TimelineClip.timeline_id == t.id).delete(synchronize_session=False)
     duration = 0.0
-    t = Timeline(project_id=project_id, version=1, autosave=True, settings_json=json.dumps({
-        "aspect_ratio": project.aspect_ratio or "16:9",
-        "fps": 30,
-        "background_color": "#000000",
-    }))
-    db.add(t)
-    db.flush()
     for index, scene in enumerate(scenes):
         start = duration
-        scene_duration = max(float(scene.duration or 0.0), 0.1)
+        scene_duration = float(scene.duration or 0.0)
+        if scene_duration <= 0 and scene.audio_path and os.path.isfile(scene.audio_path):
+            scene_duration = get_audio_duration(scene.audio_path)
+            if scene_duration > 0:
+                scene.duration = scene_duration
+        if scene_duration <= 0 and float(scene.end_time or 0.0) > float(scene.start_time or 0.0):
+            scene_duration = float(scene.end_time) - float(scene.start_time)
+        scene_duration = max(scene_duration, 0.1)
         end = start + scene_duration
-        source = scene.video_path or scene.image_path or scene.media_path or ""
+        if scene.media_type == "video" and scene.video_path:
+            source = scene.video_path
+        elif scene.image_path:
+            source = scene.image_path
+        elif scene.media_path:
+            source = scene.media_path
+        elif scene.video_path:
+            source = scene.video_path
+        else:
+            source = ""
+        group = f"scene-{scene.id}"
         if source:
+            asset = _active_asset_for_path(db, project.id, source)
             db.add(TimelineClip(
                 timeline_id=t.id,
                 track="visual",
+                asset_id=asset.id if asset else None,
                 source_path=source,
                 scene_id=scene.id,
                 clip_start=start,
                 clip_end=end,
                 in_point=0.0,
                 out_point=scene_duration,
+                group_id=group,
                 order_index=index,
                 transform_json=json.dumps({"effect": scene.effect or "zoom_in"}),
             ))
         if scene.audio_path:
+            asset = _active_asset_for_path(db, project.id, scene.audio_path)
             db.add(TimelineClip(
                 timeline_id=t.id,
                 track="voice",
+                asset_id=asset.id if asset else None,
                 source_path=scene.audio_path,
                 scene_id=scene.id,
                 clip_start=start,
                 clip_end=end,
                 in_point=0.0,
                 out_point=scene_duration,
+                group_id=group,
                 order_index=index,
+            ))
+        if scene.subtitle_text:
+            db.add(TimelineClip(
+                timeline_id=t.id,
+                track="subtitle",
+                source_path="",
+                scene_id=scene.id,
+                clip_start=start,
+                clip_end=end,
+                in_point=0.0,
+                out_point=scene_duration,
+                group_id=group,
+                locked=True,
+                order_index=index,
+                transform_json=json.dumps({"text": scene.subtitle_text}, ensure_ascii=False),
             ))
         duration = end
     t.duration = duration
+    t.settings_json = json.dumps({
+        "aspect_ratio": project.aspect_ratio or "16:9",
+        "fps": 30,
+        "background_color": "#000000",
+        "generated_from_project": True,
+    })
     db.commit()
-    db.refresh(t)
+
+
+def _ensure_project_timeline(project_id: int, db: Session) -> Timeline:
+    t = db.query(Timeline).filter(
+        Timeline.project_id == project_id,
+        Timeline.autosave == True,  # noqa: E712
+    ).order_by(Timeline.version.desc()).first()
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(404, "Không tìm thấy dự án")
+    if not t:
+        t = Timeline(project_id=project_id, version=1, autosave=True, settings_json="{}")
+        db.add(t)
+        db.flush()
+    # Flow/TTS may finish after the editor first created an empty draft. Keep
+    # only the untouched generated draft synchronized; version >= 2 is owned
+    # by the editor and is never rebuilt automatically.
+    if int(t.version or 1) == 1:
+        sync_project_media_assets(db, project_id)
+        _rebuild_generated_timeline(t, project, db)
+        db.refresh(t)
     return t
 
 
@@ -1225,41 +1297,36 @@ def start_factory_flow(payload: FactoryStartRequest, db: Session = Depends(get_d
     if not scenes:
         raise HTTPException(409, "Project chưa có scene. Hãy duyệt kịch bản và chạy phân cảnh trước.")
 
-    # Channel config is stored separately from project wizard config. Merge both
-    # with project/media values taking precedence, so the saved channel settings
-    # actually control Factory behavior without losing per-project overrides.
-    channel_cfg: dict = {}
-    if project.channel_id:
-        channel = db.query(Channel).filter(Channel.id == project.channel_id).first()
-        if channel and channel.config_json:
-            try:
-                channel_cfg = json.loads(channel.config_json) if isinstance(channel.config_json, str) else dict(channel.config_json)
-            except (TypeError, ValueError):
-                channel_cfg = {}
-    project_cfg: dict = {}
-    if project.config_json:
-        try:
-            project_cfg = json.loads(project.config_json) if isinstance(project.config_json, str) else dict(project.config_json)
-        except (TypeError, ValueError):
-            project_cfg = {}
-    project_channel_cfg = project_cfg.get("channel") if isinstance(project_cfg.get("channel"), dict) else {}
-    project_media_cfg = project_cfg.get("media") if isinstance(project_cfg.get("media"), dict) else {}
-    effective_cfg = {**channel_cfg, **project_channel_cfg, **project_media_cfg}
-    image_mode = str(effective_cfg.get("image_mode") or effective_cfg.get("mix_mode") or "mixed").lower()
-    include_video = bool(payload.include_video) and image_mode not in {"image", "images", "static", "static_image"}
+    image_mode, _video_ratio, effective_cfg = project_media_policy(db, project)
+    video_scene_ids = planned_video_scene_ids(db, project, scenes)
+    include_video = bool(payload.include_video) and image_mode not in IMAGE_ONLY_MODES and bool(video_scene_ids)
     video_model = str(effective_cfg.get("video_model") or "Veo 3.1 Lite")
 
     connection = get_or_create_connection(db)
-    session_id = connection.factory_session_id if (
-        connection.factory_project_id == payload.project_id
-        and connection.factory_state not in {"completed", "failed"}
-        and connection.factory_session_id
-    ) else new_factory_session_id()
-    connection.factory_project_id = payload.project_id
-    connection.factory_session_id = session_id
-    connection.factory_mode = bool(payload.factory_mode)
-    connection.include_video = include_video
-    connection.factory_stage = "image"
+    run = db.query(FlowFactoryRun).filter(
+        FlowFactoryRun.project_id == payload.project_id,
+        FlowFactoryRun.status.in_(["queued", "running"]),
+    ).order_by(FlowFactoryRun.created_at.desc()).first()
+    if run:
+        session_id = run.session_id
+    else:
+        # Revo starts a fresh pipeline job and retires unfinished work from an
+        # older attempt of the same project. Completed scene assets are kept.
+        db.query(ConnectorTask).filter(
+            ConnectorTask.project_id == payload.project_id,
+            ConnectorTask.status.in_(["pending", "assigned", "in_progress", "retrying"]),
+        ).update({"status": "cancelled"}, synchronize_session=False)
+        session_id = new_factory_session_id()
+        run = FlowFactoryRun(
+            project_id=payload.project_id,
+            session_id=session_id,
+            status="queued",
+            factory_mode=bool(payload.factory_mode),
+            include_video=include_video,
+            stage="image",
+        )
+        db.add(run)
+        db.flush()
 
     created = 0
     skipped = 0
@@ -1275,18 +1342,19 @@ def start_factory_flow(payload: FactoryStartRequest, db: Session = Depends(get_d
         video_file = scene.video_path or (scene.media_path if scene.media_type == "video" else "")
         image_ready = bool(image_file and os.path.isfile(image_file) and os.path.getsize(image_file) > 0)
         video_ready = bool(video_file and os.path.isfile(video_file) and os.path.getsize(video_file) > 0)
-        if video_ready or (image_ready and not payload.include_video):
+        wants_video = include_video and scene.id in video_scene_ids
+        if (video_ready and wants_video) or (image_ready and not wants_video):
             skipped += 1
             continue
-        stage = "video" if image_ready and payload.include_video else "image"
+        stage = "video" if image_ready and wants_video else "image"
         existing = db.query(ConnectorTask).filter(
             ConnectorTask.project_id == payload.project_id,
+            ConnectorTask.factory_session_id == session_id,
             ConnectorTask.scene_id == scene.id,
             ConnectorTask.stage == stage,
             ConnectorTask.status.in_(["pending", "assigned", "in_progress", "retrying"]),
         ).first()
         if existing:
-            existing.factory_session_id = session_id
             skipped += 1
             continue
         db.add(ConnectorTask(
@@ -1304,21 +1372,54 @@ def start_factory_flow(payload: FactoryStartRequest, db: Session = Depends(get_d
             factory_session_id=session_id,
         ))
         scene.status = "media_pending"
+        scene.error_message = None
         created += 1
         if stage == "video":
-            connection.factory_stage = "video"
+            run.stage = "video"
 
     if missing_prompts and created == 0 and skipped == 0:
-        connection.factory_state = "failed"
-        connection.last_error = "Không có visual prompt hợp lệ cho các cảnh."
-        connection.last_state_at = datetime.utcnow()
+        run.status = "failed"
+        run.error = "Không có visual prompt hợp lệ cho các cảnh."
+        run.finished_at = datetime.utcnow()
+        if connection.factory_session_id == session_id:
+            connection.factory_project_id = None
+            connection.factory_session_id = ""
+            activate_next_factory_run(db, commit=False)
         db.commit()
-        raise HTTPException(409, connection.last_error)
+        raise HTTPException(409, run.error)
 
     heartbeat_fresh = bool(connection.heartbeat_at and (datetime.utcnow() - connection.heartbeat_at).total_seconds() < 300)
-    connection.factory_state = "ready" if (connection.status == "paired" or bool(connection.google_account) or heartbeat_fresh) else "waiting_login"
-    connection.last_error = ""
-    connection.last_state_at = datetime.utcnow()
+    active_run = db.query(FlowFactoryRun).filter(FlowFactoryRun.status == "running").order_by(FlowFactoryRun.started_at.asc()).first()
+    if not active_run:
+        run.status = "running"
+        run.started_at = run.started_at or datetime.utcnow()
+        active_run = run
+    if active_run.session_id == session_id:
+        connection.factory_project_id = payload.project_id
+        connection.factory_session_id = session_id
+        connection.factory_mode = bool(run.factory_mode)
+        connection.include_video = bool(run.include_video)
+        connection.factory_stage = run.stage or "image"
+        connection.factory_state = "ready" if (connection.status == "paired" or bool(connection.google_account) or heartbeat_fresh) else "waiting_login"
+        connection.last_error = ""
+        connection.last_state_at = datetime.utcnow()
+        response_state = connection.factory_state
+    else:
+        response_state = "queued"
+    db.flush()
+    active_task_count = db.query(ConnectorTask).filter(
+        ConnectorTask.factory_session_id == session_id,
+        ConnectorTask.status.in_(["pending", "assigned", "in_progress", "retrying"]),
+    ).count()
+    if active_task_count == 0:
+        run.status = "completed"
+        run.finished_at = datetime.utcnow()
+        run.updated_at = datetime.utcnow()
+        response_state = "completed"
+        if connection.factory_session_id == session_id:
+            connection.factory_project_id = None
+            connection.factory_session_id = ""
+            activate_next_factory_run(db, commit=False)
     if created:
         project.status = "preparing_media"
         project.current_step = "Media"
@@ -1327,15 +1428,29 @@ def start_factory_flow(payload: FactoryStartRequest, db: Session = Depends(get_d
         project.status = "media_ready"
         project.current_step = "Media đã xác minh"
         project.progress = max(project.progress or 0, 70)
+    pipeline_state = db.query(PipelineState).filter(PipelineState.project_id == payload.project_id).first()
+    if pipeline_state:
+        steps = json.loads(pipeline_state.step_data_json or "{}")
+        steps["Ảnh/Video"] = "success" if response_state == "completed" else "pending" if response_state == "queued" else "0%"
+        pipeline_state.step_data_json = json.dumps(steps, ensure_ascii=False)
+        pipeline_state.status = "media_ready" if response_state == "completed" else "processing"
+        pipeline_state.error_step = ""
+        pipeline_state.last_log = "Đã xếp hàng Flow Factory cho dự án." if response_state == "queued" else "Flow Factory đang khởi động."
     db.commit()
+    queue_position = db.query(FlowFactoryRun).filter(
+        FlowFactoryRun.status == "queued",
+        FlowFactoryRun.created_at <= run.created_at,
+    ).count() if response_state == "queued" else 0
     return {
         "ok": True,
         "project_id": payload.project_id,
         "factory_session_id": session_id,
-        "factory_state": connection.factory_state,
-        "requires_login": connection.factory_state == "waiting_login" and not bool(connection.google_account),
+        "factory_state": response_state,
+        "requires_login": response_state == "waiting_login" and not bool(connection.google_account),
+        "queue_position": queue_position,
         "include_video": include_video,
-        "factory_stage": connection.factory_stage,
+        "planned_video_scenes": len(video_scene_ids) if include_video else 0,
+        "factory_stage": run.stage,
         "created": created,
         "skipped": skipped,
         "missing_prompts": missing_prompts,
@@ -1364,10 +1479,19 @@ def update_factory_flow_state(
     connection.heartbeat_at = datetime.utcnow()
     logged_in = bool(payload.get("logged_in"))
     ready = bool(payload.get("ready"))
-    if logged_in:
+    reported_error = str(payload.get("error") or "").strip()
+    requested_state = str(payload.get("factory_state") or "").strip()
+    allowed_states = {"waiting_login", "ready", "processing", "generate_image", "generate_video", "completed", "failed"}
+    if reported_error:
+        connection.status = "paired" if logged_in else connection.status
+        connection.factory_state = "failed"
+        connection.last_error = reported_error[:2000]
+    elif logged_in:
         connection.status = "paired"
         connection.paired_at = connection.paired_at or datetime.utcnow()
-        if connection.factory_state not in {"processing", "generate_image", "generate_video", "completed", "failed"}:
+        if requested_state in allowed_states:
+            connection.factory_state = requested_state
+        elif connection.factory_state not in {"processing", "generate_image", "generate_video", "completed", "failed"}:
             connection.factory_state = "ready"
         connection.last_error = ""
     else:

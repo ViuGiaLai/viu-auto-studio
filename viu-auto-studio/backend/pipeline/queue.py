@@ -25,7 +25,7 @@ from typing import Dict, Optional
 
 from backend.core.database import SessionLocal
 from backend.core.config import PROJECTS_DIR, CRF, PRESET
-from backend.models import AppSetting, Channel, ConnectorTask, Project, RenderJob, Scene, Script, PipelineState, Timeline, TimelineClip
+from backend.models import AppSetting, ConnectorTask, Project, RenderJob, Scene, Script, PipelineState, Timeline, TimelineClip
 
 from backend.render.ffmpeg_engine import FFmpegEngine, RenderError, check_ffmpeg
 from backend.schemas import RenderConfig, TTSConfigRequest
@@ -34,6 +34,7 @@ from backend.services.subtitles import generate_subtitles
 from backend.services.tts import get_tts_config, synthesize as tts_synthesize
 
 from backend.services.script_service import split_into_sentences
+from backend.services.project_config import effective_project_config
 
 log = logging.getLogger("viu.pipeline")
 
@@ -49,6 +50,12 @@ ENGINE_PROFILES = {
     "high": {"crf": 18, "preset": "slow"},
 }
 
+SUBTITLE_STYLE_PRESETS = {
+    "clean": {"font_size": 44, "primary_color": "#FFFFFF", "border_color": "#000000", "border_width": 2, "position": "bottom", "max_chars_per_line": 52},
+    "bold": {"font_size": 56, "primary_color": "#FFFFFF", "border_color": "#000000", "border_width": 4, "position": "center", "max_chars_per_line": 38, "granularity": "phrase"},
+    "cinematic": {"font_size": 42, "primary_color": "#FFFFFF", "border_color": "#000000", "border_width": 1, "position": "bottom", "max_chars_per_line": 48},
+}
+
 
 def _apply_engine_profile(db, render_config: dict) -> dict:
     row = db.query(AppSetting).filter(AppSetting.key == "engine_mode").first()
@@ -57,26 +64,20 @@ def _apply_engine_profile(db, render_config: dict) -> dict:
     return {**defaults, **(render_config or {})}
 
 
+def _render_config_for_project(db, project: Project, render_config: dict) -> dict:
+    resolved = _apply_engine_profile(db, render_config)
+    if "subtitle_config" not in (render_config or {}):
+        style = str(effective_project_config(db, project).get("subtitle_style") or "default")
+        preset = SUBTITLE_STYLE_PRESETS.get(style)
+        if preset:
+            resolved["subtitle_config"] = preset
+    return resolved
+
+
 def _tts_config_for_project(db, project: Project) -> dict:
     """Resolve global TTS settings plus channel/project voice overrides."""
     config = get_tts_config(db)
-    channel_cfg: dict = {}
-    if project.channel_id:
-        channel = db.query(Channel).filter(Channel.id == project.channel_id).first()
-        if channel and channel.config_json:
-            try:
-                channel_cfg = json.loads(channel.config_json) if isinstance(channel.config_json, str) else dict(channel.config_json)
-            except (TypeError, ValueError):
-                channel_cfg = {}
-    project_cfg: dict = {}
-    if project.config_json:
-        try:
-            project_cfg = json.loads(project.config_json) if isinstance(project.config_json, str) else dict(project.config_json)
-        except (TypeError, ValueError):
-            project_cfg = {}
-    project_channel_cfg = project_cfg.get("channel") if isinstance(project_cfg.get("channel"), dict) else {}
-    project_voice = project_cfg.get("voice") if isinstance(project_cfg.get("voice"), dict) else {}
-    merged = {**channel_cfg, **project_channel_cfg, **project_voice}
+    merged = effective_project_config(db, project)
     provider = merged.get("tts_provider_override") or merged.get("tts_provider") or merged.get("provider")
     voice = merged.get("voice_override") or merged.get("voice")
     if provider:
@@ -154,7 +155,8 @@ class PipelineManager:
                                    "Mỗi thời điểm chỉ một video được xử lý.",
                     }
 
-                render_config = _apply_engine_profile(db, render_config)
+                render_config = _render_config_for_project(db, project, render_config)
+                tts_config = _tts_config_for_project(db, project)
                 job = self.job_for_project(db, project_id)
                 project_dir = Path(project.project_directory) if project.project_directory else (Path(PROJECTS_DIR) / f"project_{project_id}")
                 project_dir.mkdir(parents=True, exist_ok=True)
@@ -247,7 +249,11 @@ class PipelineManager:
                         Path(job.output_path).unlink()
                     except OSError:
                         pass
-                render_config = _apply_engine_profile(db, render_config)
+                project = db.query(Project).filter(Project.id == job.project_id).first()
+                if not project:
+                    return {"ok": False, "message": "Project không tồn tại"}
+                render_config = _render_config_for_project(db, project, render_config)
+                tts_config = _tts_config_for_project(db, project)
                 # Start from the step after the last completed one
 
                 if job.current_step in ("voice_ready",):
@@ -322,7 +328,7 @@ class PipelineManager:
     # ==================================================================
     # Studio v2: Auto Production Pipeline
     # ==================================================================
-    def start_auto_production(self, project_id: int) -> dict:
+    def start_auto_production(self, project_id: int, *, prepare_only: bool = False) -> dict:
         """Start the fully automated Studio v2 pipeline exactly once per project."""
         with self._lock:
             existing = self._auto_threads.get(project_id)
@@ -344,7 +350,7 @@ class PipelineManager:
 
                 thread = threading.Thread(
                     target=self._run_auto_production,
-                    args=(project_id,),
+                    args=(project_id, prepare_only),
                     daemon=True,
                     name=f"auto-production-{project_id}",
                 )
@@ -354,7 +360,7 @@ class PipelineManager:
             finally:
                 db.close()
 
-    def _run_auto_production(self, project_id: int) -> None:
+    def _run_auto_production(self, project_id: int, prepare_only: bool = False) -> None:
         """Run the real preparation stages and enqueue media work for Flow.
 
         This stage never simulates progress or marks a project failed just because
@@ -417,6 +423,17 @@ class PipelineManager:
                 state.error_step = "Ảnh/Video"
                 state.last_log = "Cần chạy Phân tích phân cảnh AI để tạo visual prompt trước khi gửi task sang Flow."
                 update_step("Ảnh/Video", "waiting_for_review")
+                db.commit()
+                return
+
+            if prepare_only:
+                # Revo-compatible hand-off: scene prompts and voice are ready;
+                # the project editor now creates the sole session-bound Factory
+                # run. Never enqueue anonymous connector tasks here.
+                state.status = "waiting_for_review"
+                state.error_step = ""
+                state.last_log = "Phân cảnh và giọng đã sẵn sàng; đang chuyển sang Flow Factory của dự án."
+                update_step("Ảnh/Video", "pending")
                 db.commit()
                 return
 
@@ -498,7 +515,15 @@ class PipelineManager:
         db.commit()
 
     def _fail(self, db, job_id: int, message: str) -> None:
-        self._set_status(db, job_id, "failed", 0, "failed")
+        job = db.query(RenderJob).filter(RenderJob.id == job_id).first()
+        # Preserve the executable stage so Retry resumes exactly where the
+        # failure happened (voice/media/subtitles/render), without repeating
+        # already verified Flow media or completed voice work.
+        resume_step = job.status if job and job.status in {
+            "generating_voice", "preparing_media", "media_ready",
+            "generating_subtitles", "rendering",
+        } else "failed"
+        self._set_status(db, job_id, "failed", 0, resume_step)
         job = db.query(RenderJob).filter(RenderJob.id == job_id).first()
         if job is not None:
             job.error_message = message
@@ -524,6 +549,10 @@ class PipelineManager:
         log_path = project_dir / "render.log"
         engine = FFmpegEngine(log_path=str(log_path))
         start_status = job.status if job else "generating_voice"
+        # Rendering can resume directly at media_ready/generating_subtitles.
+        # Canvas dimensions therefore belong to the whole job, not only to the
+        # optional prepare-media step that a Flow-completed project skips.
+        width, height = (1080, 1920) if (project and project.aspect_ratio == "9:16") else (1920, 1080)
 
         # ------------------------------------------------------------------
         # Step 1: voice
@@ -577,7 +606,6 @@ class PipelineManager:
                 .order_by(Scene.order_index).all()
             )
             project = db.query(Project).filter(Project.id == project_id).first()
-            width, height = (1080, 1920) if (project and project.aspect_ratio == "9:16") else (1920, 1080)
 
             total = len(scenes)
             for idx, scene in enumerate(scenes):
@@ -751,11 +779,28 @@ class PipelineManager:
             Timeline.autosave == True,  # noqa: E712
         ).order_by(Timeline.version.desc()).first()
         render_items: list[dict] = []
-        if timeline:
+        timeline_music_path = ""
+        timeline_music_volume = render_cfg.music_volume
+        # Version 1 is only the generated editor draft. Render directly from
+        # freshly measured scene/voice durations so an earlier timeline read
+        # cannot freeze stale timings. Version >= 2 is an explicit user edit
+        # and therefore becomes authoritative.
+        if timeline and int(timeline.version or 1) >= 2:
             visual_clips = db.query(TimelineClip).filter(
                 TimelineClip.timeline_id == timeline.id,
                 TimelineClip.track == "visual",
             ).order_by(TimelineClip.clip_start, TimelineClip.order_index).all()
+            voice_clips = db.query(TimelineClip).filter(
+                TimelineClip.timeline_id == timeline.id,
+                TimelineClip.track == "voice",
+            ).order_by(TimelineClip.clip_start, TimelineClip.order_index).all()
+            music_clip = db.query(TimelineClip).filter(
+                TimelineClip.timeline_id == timeline.id,
+                TimelineClip.track == "music",
+            ).order_by(TimelineClip.clip_start, TimelineClip.order_index).first()
+            if music_clip and music_clip.source_path and Path(music_clip.source_path).exists():
+                timeline_music_path = music_clip.source_path
+                timeline_music_volume = float(music_clip.volume if music_clip.volume is not None else render_cfg.music_volume)
             for clip in visual_clips:
                 scene = db.query(Scene).filter(Scene.id == clip.scene_id).first() if clip.scene_id else None
                 source = clip.source_path or (scene.video_path or scene.image_path or scene.media_path if scene else "")
@@ -766,13 +811,22 @@ class PipelineManager:
                     transform = json.loads(clip.transform_json or "{}")
                 except (TypeError, ValueError):
                     transform = {}
+                voice_clip = next((voice for voice in voice_clips if (
+                    (clip.scene_id and voice.scene_id == clip.scene_id)
+                    or (clip.group_id and voice.group_id == clip.group_id)
+                )), None)
                 render_items.append({
                     "scene": scene,
                     "source": source,
                     "media_type": ("video" if source.lower().endswith((".mp4", ".mov", ".webm", ".mkv")) else (scene.media_type if scene else "image")),
-                    "audio": scene.audio_path if scene else "",
+                    "audio": (voice_clip.source_path if voice_clip and voice_clip.source_path else (scene.audio_path if scene else "")),
+                    "audio_volume": float(voice_clip.volume if voice_clip and voice_clip.volume is not None else 1.0),
                     "duration": max(0.1, float(clip.clip_end or 0.0) - float(clip.clip_start or 0.0)),
                     "effect": str(transform.get("effect") or (scene.effect if scene else "zoom_in")),
+                    "transition": str(transform.get("transition") or "auto"),
+                    "scale": float(transform.get("scale") or 1.0),
+                    "x": float(transform.get("x") or 0.0),
+                    "y": float(transform.get("y") or 0.0),
                 })
         if not render_items:
             render_items = [{
@@ -780,18 +834,22 @@ class PipelineManager:
                 "source": scene.media_path,
                 "media_type": scene.media_type or "image",
                 "audio": scene.audio_path,
+                "audio_volume": 1.0,
                 "duration": scene.duration,
                 "effect": scene.effect or "zoom_in",
+                "transition": "auto",
+                "scale": 1.0,
+                "x": 0.0,
+                "y": 0.0,
             } for scene in scenes]
 
         clip_paths = []
         rendered_scenes = []
+        transition_types: list[str] = []
         for index, item in enumerate(render_items):
             if self._check_stop(db, job_id, stop):
                 return
             scene = item["scene"]
-            scene_order = scene.order_index if scene else index
-            scene_ass = str(log_path.parent / f"scene_{scene_order:03d}" / "subtitles.ass")
             clip_path = str(log_path.parent / f"timeline_{index:03d}.mp4")
             try:
                 engine.build_scene_clip(
@@ -804,9 +862,24 @@ class PipelineManager:
                     height=height,
                     fps=render_cfg.fps,
                     effect=item["effect"],
-                    subtitle_ass=scene_ass if render_cfg.enable_subtitles and scene else None,
+                    # Burn subtitles once on the final composite. Burning here
+                    # and again globally produced doubled text.
+                    subtitle_ass=None,
+                    transform_scale=item.get("scale", 1.0),
+                    transform_x=item.get("x", 0.0),
+                    transform_y=item.get("y", 0.0),
+                    audio_volume=item.get("audio_volume", 1.0),
                 )
                 clip_paths.append(clip_path)
+                automatic_transition = {
+                    "pan_left": "smoothleft",
+                    "pan_right": "smoothright",
+                    "zoom_out": "dissolve",
+                }.get(item["effect"], "fade")
+                requested_transition = item.get("transition", "auto")
+                transition_types.append(requested_transition if requested_transition in {
+                    "fade", "dissolve", "smoothleft", "smoothright",
+                } else automatic_transition)
                 if scene:
                     rendered_scenes.append(scene)
             except RenderError as exc:
@@ -836,8 +909,8 @@ class PipelineManager:
             engine.concat_scenes(
                 clip_paths=clip_paths,
                 audio_path="",
-                music_path=render_cfg.background_music_path,
-                music_volume=render_cfg.music_volume,
+                music_path=timeline_music_path or render_cfg.background_music_path,
+                music_volume=timeline_music_volume,
                 logo_path=render_cfg.logo_path,
                 logo_position=render_cfg.logo_position,
                 intro_path=render_cfg.intro_path,
@@ -850,6 +923,7 @@ class PipelineManager:
                 preset=render_cfg.preset,
                 output_path=output_path,
                 transition=render_cfg.transition_duration,
+                transition_types=transition_types[:-1],
             )
         except RenderError as exc:
             self._fail(db, job_id, f"Render tổng hợp thất bại: {exc}")

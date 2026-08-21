@@ -222,12 +222,16 @@ class SceneUpdate(BaseModel):
     style_prompt: Optional[str] = None
     transition_description: Optional[str] = None
     media_path: Optional[str] = None
+    image_path: Optional[str] = None
+    video_path: Optional[str] = None
     media_type: Optional[str] = None
     audio_path: Optional[str] = None
     subtitle_text: Optional[str] = None
     duration: Optional[float] = None
     effect: Optional[str] = None
     order_index: Optional[int] = None
+    status: Optional[str] = None
+    error_message: Optional[str] = None
 
 
 class SceneRead(BaseModel):
@@ -573,6 +577,7 @@ class IdeaCreateRequest(BaseModel):
 class IdeaApproveRequest(BaseModel):
     project_id: int
     custom_script: Optional[str] = None
+    prepare_only: bool = False
 
 
 class ProjectCreateV2(BaseModel):

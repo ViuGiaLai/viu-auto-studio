@@ -33,6 +33,11 @@ SYSTEM_INSTRUCTION = (
     "- Tách cảnh mới khi: chuyển nhân vật, chuyển hành động, chuyển địa điểm, "
     "chuyển thời gian, hoặc chuyển ý chính.\n"
     "- Một câu dài chứa nhiều sự kiện khác nhau có thể cần nhiều cảnh hình.\n"
+    "- Nhịp dựng mục tiêu: hook 2-5 giây; cảnh nội dung thường 6-12 giây. "
+    "Không cố tạo số cảnh bằng số câu và không đổi hình chỉ vì phụ đề sang câu mới.\n"
+    "- Ưu tiên B-roll/chuyển động khi nội dung có hành động, biến đổi, quy trình, "
+    "không gian hoặc cảm xúc tăng cao; cảnh giải thích tĩnh có thể giữ ảnh với "
+    "Ken Burns/parallax.\n"
     "- visual_prompt phải mô tả đúng nội dung TOÀN cảnh (không lấy máy móc "
     "một dòng phụ đề làm prompt), viết bằng tiếng Anh, đủ chi tiết: nhân vật, "
     "hành động, địa điểm, ánh sáng, góc máy, phong cách.\n"
@@ -152,10 +157,52 @@ def _heuristic_semantic_scenes(
     if not raw_items:
         return {"scenes": [], "note": "Kịch bản rỗng"}
 
+    # Turn subtitle/sentence units into editorial story beats. A hook may own a
+    # short opening shot; related following sentences share one visual. Very
+    # long sentences are split at semantic clause boundaries first.
+    clauses: list[str] = []
+    for item in raw_items:
+        words = item.split()
+        if len(words) <= 34:
+            clauses.append(item)
+            continue
+        pieces = [part.strip() for part in re.split(r"(?<=[;:,.])\s+", item) if part.strip()]
+        clauses.extend(pieces if len(pieces) > 1 else [item])
+
+    visual_beats: list[str] = []
+    buffer: list[str] = []
+    word_count = 0
+    for index, clause in enumerate(clauses):
+        count = len(clause.split())
+        is_hook = index == 0 and count <= 16 and ("?" in clause or "!" in clause or count <= 10)
+        if is_hook:
+            visual_beats.append(clause)
+            continue
+        if buffer and word_count + count > 34:
+            visual_beats.append(" ".join(buffer))
+            buffer, word_count = [], 0
+        buffer.append(clause)
+        word_count += count
+        if word_count >= 20:
+            visual_beats.append(" ".join(buffer))
+            buffer, word_count = [], 0
+    if buffer:
+        tail = " ".join(buffer)
+        if visual_beats and len(tail.split()) < 10 and len((visual_beats[-1] + " " + tail).split()) <= 42:
+            visual_beats[-1] = visual_beats[-1] + " " + tail
+        else:
+            visual_beats.append(tail)
+
     scenes = []
     default_style = style_memory.strip() or "Cinematic, photorealistic, 8k resolution, detailed lighting"
 
-    for i, narration in enumerate(raw_items):
+    camera_moves = (
+        "Slow cinematic push-in, subtle parallax depth",
+        "Smooth lateral camera tracking from left to right",
+        "Gentle pull-back revealing the wider context",
+        "Controlled rack focus followed by a slow pan",
+    )
+    for i, narration in enumerate(visual_beats):
         clean_text = narration.strip()
         prompt = f"Cinematic detailed illustration portraying: {clean_text}. Photorealistic, realistic lighting, 8k resolution, high quality"
         if default_style and default_style not in prompt:
@@ -165,14 +212,14 @@ def _heuristic_semantic_scenes(
             "narration": clean_text,
             "visual_prompt": prompt,
             "style_prompt": default_style,
-            "transition_description": "Smooth cinematic camera panning with steady focus",
-            "reason": f"Phân cảnh tự động #{i+1}",
+            "transition_description": camera_moves[i % len(camera_moves)],
+            "reason": f"Nhịp hình #{i+1}: gộp lời đọc cùng ý/chủ thể thay vì tách theo phụ đề",
         })
 
     return {
         "scenes": scenes,
         "common_style": default_style,
-        "note": "Phân cảnh quy tắc ngữ nghĩa tự động",
+        "note": f"Đã biên tập {len(raw_items)} đơn vị lời đọc thành {len(visual_beats)} nhịp hình",
     }
 
 
@@ -194,9 +241,10 @@ def analyze_semantic_scenes(
     if existing_narrations:
         ctx_lines = "\n".join(f"- Cảnh {i+1}: {n}" for i, n in enumerate(existing_narrations))
         user_ctx = (
-            "\nNgười dùng đã chia kịch bản thành các đoạn lời đọc sau. Hãy TÔN TRỌNG "
-            "các ranh giới này, chỉ tách thêm khi một đoạn chứa nhiều sự kiện khác "
-            "nhau rõ ràng:\n" + ctx_lines
+            "\nDưới đây là các ĐƠN VỊ LỜI ĐỌC/phụ đề hiện có, không phải ranh giới "
+            "cảnh bắt buộc. Hãy tự do GỘP nhiều đơn vị thành một nhịp hình khi cùng "
+            "ý/chủ thể/bối cảnh, hoặc tách một đơn vị dài khi có nhiều sự kiện. Tuyệt "
+            "đối không tạo một hình cho mỗi dòng chỉ vì danh sách có sẵn:\n" + ctx_lines
         )
     if style_memory.strip():
         user_ctx += (

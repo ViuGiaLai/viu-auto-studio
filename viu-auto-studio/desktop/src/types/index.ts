@@ -169,6 +169,9 @@ export interface TimelineTransform {
   y?: number
   opacity?: number
   effect?: string
+  transition?: string
+  text?: string
+  align?: "left" | "center" | "right"
 }
 
 export interface TimelineClip {

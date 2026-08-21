@@ -1,391 +1,200 @@
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { api, resolveApiBaseUrl } from "@/services/api"
-import {
-  Link2, RefreshCw, Copy, CheckCircle2, XCircle, Eye, ExternalLink, Loader2,
-} from "lucide-react"
+import { CheckCircle2, ExternalLink, Loader2, RefreshCw, Save } from "lucide-react"
 import { flowApi, globalApi, type FlowConnectionRead, type FlowTaskRead } from "@/services/pages-api"
-
 import { toast } from "@/hooks/use-toast"
-import { Button } from "@/components/design-system"
-import { Input } from "@/components/design-system"
+import { Button, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/design-system"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/design-system"
 
-function useRuntimeApiBase() {
-  const [base, setBase] = useState("")
-  useEffect(() => {
-    let active = true
-    ;(async () => {
-      try {
-        const b = await resolveApiBaseUrl()
-        if (active) setBase(b)
-      } catch {
-        /* không xác định */
-      }
-    })()
-    return () => {
-      active = false
-    }
-  }, [])
-  return base
+const MODES = [
+  { id: "scriptToImage", icon: "📝 → ✏️ → 🖼", title: "SCRIPT → PROMPT → IMAGE", desc: "AI tạo prompt và ảnh từ kịch bản / tối đa 1 giờ" },
+  { id: "textToImage", icon: "✏️ → 🖼", title: "PROMPT → IMAGE", desc: "Tạo ảnh song song từ các prompt bằng Flow" },
+  { id: "textToVideo", icon: "✏️ → 🎬", title: "PROMPT → VIDEO", desc: "Tạo video trực tiếp từ prompt" },
+  { id: "imageToVideo", icon: "🖼 → 🎬", title: "IMAGE → VIDEO", desc: "Tạo video từ ảnh của bạn" },
+  { id: "factory", icon: "📝 → ✏️ → 🖼 → ✏️ → 🎬", title: "FACTORY MODE", desc: "SCRIPT → IMAGE PROMPTS → IMAGES → VIDEO PROMPTS → VIDEOS / ONE-CLICK AUTOMATION" },
+] as const
+
+const STYLE_NAMES = [
+  "Asian Live Photo", "Western Live Photo", "Southeast Asian Live Photo", "Black Live Photo",
+  "Asian Romantic 2D", "Western Romantic 2D", "Asian 3D Disney", "Western 3D Disney",
+  "Korean Traditional 2D", "Korean Traditional 3D", "Korean Historical Drama", "Japanese Anime",
+  "Japanese Traditional", "Chinese Traditional", "Western", "Southeast Asian Traditional",
+  "Indian Traditional", "Latin American Traditional", "Arabian Traditional", "Asian Watercolor",
+  "Western Watercolor", "Colored Ink Wash", "Asian Cyberpunk", "Western Cyberpunk",
+  "Asian Fantasy", "Western Fantasy", "Stick Man", "Stick Woman", "Chibi", "Pixel Art",
+  "Minecraft", "Rough 3D", "Retro Cartoon", "Horror", "Skeleton", "X-Ray Body",
+]
+
+const STYLE_ASSETS = import.meta.glob("/src/assets/flow-styles/*.jpg", {
+  eager: true,
+  query: "?url",
+  import: "default",
+}) as Record<string, string>
+
+const styleImage = (index: number) => {
+  const number = String(index + 1).padStart(2, "0")
+  return STYLE_ASSETS[`/src/assets/flow-styles/style_${number}.jpg`] || ""
+}
+
+type FactorySettings = {
+  flow_mode: string
+  flow_gemini_api_key: string
+  flow_nationality: string
+  flow_base_folder: string
+  flow_auto_download_image_prompts: boolean
+  flow_auto_download_video_prompts: boolean
+  flow_ratio: string
+  flow_image_model: string
+  flow_output_count: number
+  flow_video_model: string
+  flow_video_resolution: string
+  flow_prompt_delay: number
+  flow_default_video_prompt: string
+  flow_style_id: string
+  flow_special_directions: string
+  flow_split_mode: string
+  flow_prompt_count: number
+}
+
+const DEFAULTS: FactorySettings = {
+  flow_mode: "factory",
+  flow_gemini_api_key: "",
+  flow_nationality: "korean",
+  flow_base_folder: "FlowFactory",
+  flow_auto_download_image_prompts: true,
+  flow_auto_download_video_prompts: true,
+  flow_ratio: "16:9",
+  flow_image_model: "Nano Banana 2",
+  flow_output_count: 1,
+  flow_video_model: "Veo 3.1 Lite",
+  flow_video_resolution: "1K",
+  flow_prompt_delay: 4,
+  flow_default_video_prompt: "Dynamic action, Active camera angle",
+  flow_style_id: "1",
+  flow_special_directions: "",
+  flow_split_mode: "giseungjeongyeol",
+  flow_prompt_count: 4,
 }
 
 export default function FlowPage() {
   const navigate = useNavigate()
-  const runtimeBase = useRuntimeApiBase()
   const [conn, setConn] = useState<FlowConnectionRead | null>(null)
-  const [recentTasks, setRecentTasks] = useState<FlowTaskRead[]>([])
+  const [tasks, setTasks] = useState<FlowTaskRead[]>([])
+  const [settings, setSettings] = useState<FactorySettings>(DEFAULTS)
+  const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
 
-  
-  const [mode, setMode] = useState("image")
-  const [ratio, setRatio] = useState("16:9")
-  const [imageModel, setImageModel] = useState("Nano Banana 2")
-  const [videoModel, setVideoModel] = useState("Veo 3.1")
-  const [concurrency, setConcurrency] = useState("2")
-  const [outputCount, setOutputCount] = useState("1")
-  const [savingDefaults, setSavingDefaults] = useState(false)
-  const [attachRef, setAttachRef] = useState(true)
-  const [autoDownload, setAutoDownload] = useState(true)
-  const [verifyOutput, setVerifyOutput] = useState(true)
-  const [testLoading, setTestLoading] = useState(false)
+  const set = <K extends keyof FactorySettings>(key: K, value: FactorySettings[K]) =>
+    setSettings((current) => ({ ...current, [key]: value }))
 
   const load = async () => {
+    setLoading(true)
     try {
-      setLoading(true)
-      const [c, global, tasks] = await Promise.all([
+      const [connection, recent, global] = await Promise.all([
         flowApi.get(),
+        flowApi.recentTasks(10).catch(() => []),
         globalApi.getSettings(),
-        flowApi.recentTasks().catch(() => [] as FlowTaskRead[]),
       ])
-      setConn(c)
-      setRecentTasks(tasks)
-
-      
-      const saved = global.settings || {}
-      setMode(String(saved.flow_mode || "image"))
-      setRatio(String(saved.flow_ratio || "16:9"))
-      setImageModel(String(saved.flow_image_model || "Nano Banana 2"))
-      setVideoModel(String(saved.flow_video_model || "Veo 3.1"))
-      setConcurrency(String(saved.flow_concurrency || "2"))
-      setOutputCount(String(saved.flow_output_count || "1"))
-      setAttachRef(saved.flow_attach_ref !== false)
-      setAutoDownload(saved.flow_auto_download !== false)
-      setVerifyOutput(saved.flow_verify_output !== false)
-    } catch (e) {
-      toast({ title: "Lỗi", description: String(e), variant: "destructive" })
+      setConn(connection)
+      setTasks(recent)
+      const stored = global.settings || {}
+      setSettings({ ...DEFAULTS, ...Object.fromEntries(Object.keys(DEFAULTS).map((key) => [key, stored[key] ?? DEFAULTS[key as keyof FactorySettings]])) } as FactorySettings)
+    } catch (error) {
+      toast({ title: "Không tải được Flow Factory", description: String(error), variant: "destructive" })
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => {
-    load()
-  }, [])
+  useEffect(() => { void load() }, [])
 
-  const copyText = (t: string) => {
-    navigator.clipboard?.writeText(t).then(() => toast({ title: "Đã sao chép" }))
-  }
-
-  const masked = (s: string) => (s.length > 8 ? s.slice(0, 4) + "••••" + s.slice(-4) : "••••")
-
-
-  const saveFlowDefaults = async () => {
-    setSavingDefaults(true)
+  const saveSettings = async () => {
+    setSaving(true)
     try {
       const current = await globalApi.getSettings()
-      await globalApi.updateSettings({ ...current.settings, flow_mode: mode, flow_ratio: ratio, flow_image_model: imageModel, flow_video_model: videoModel, flow_concurrency: Number(concurrency), flow_output_count: Number(outputCount), flow_attach_ref: attachRef, flow_auto_download: autoDownload, flow_verify_output: verifyOutput })
-      toast({ title: "Đã lưu cấu hình Flow" })
-    } catch (error) { toast({ title: "Không lưu được cấu hình Flow", description: String(error), variant: "destructive" }) }
-    finally { setSavingDefaults(false) }
-  }
-
-  const runE2ETest = async () => {
-    if (!conn || conn.status !== "paired") {
-      toast({ title: "Chưa ghép nối Extension — hãy ghép trước", variant: "destructive" })
-      return
-    }
-    setTestLoading(true)
-    try {
-      const projects = await api.listProjects()
-      let selected: { id: number } | null = null
-      for (const project of projects) {
-        const scenes = await api.listScenes(project.id)
-        const needsMedia = (scene: typeof scenes[number]) => mode === "video"
-          ? !(scene.video_path || scene.media_path)
-          : !(scene.image_path || scene.media_path)
-        if (scenes.some((scene) => Boolean(scene.visual_prompt) && needsMedia(scene))) { selected = project; break }
-      }
-      if (!selected) throw new Error("Không có cảnh thật đang thiếu media. Hãy tạo phân cảnh có visual prompt trước.")
-      const result = await api.createMediaTasks(selected.id, { media_type: mode, aspect: ratio, model: mode === "video" ? videoModel : imageModel })
-      if (!result.created) throw new Error("Không tạo được task Flow mới cho dự án đã chọn.")
-      toast({ title: `Đã tạo ${result.created} task Flow thật cho dự án #${selected.id}` })
-      navigate("/queue")
-    } catch (e) {
-      toast({ title: "Lỗi", description: String(e), variant: "destructive" })
+      const next: Record<string, unknown> = { ...current.settings, ...settings }
+      // Project name and script always come from the selected Viu project.
+      // Remove the legacy global override so one project cannot leak into another.
+      delete next.flow_project_name
+      await globalApi.updateSettings(next)
+      toast({ title: "Đã lưu toàn bộ Flow Factory 1.1.8" })
+    } catch (error) {
+      toast({ title: "Không lưu được settings", description: String(error), variant: "destructive" })
     } finally {
-      setTestLoading(false)
+      setSaving(false)
     }
   }
 
   const paired = conn?.status === "paired"
-
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
+    <div className="space-y-6 p-6 text-slate-100">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-bold text-slate-100">
-          Flow Connector — Điều khiển Google Flow tự động qua Chrome Extension
-        </h1>
-        <div className="ml-auto flex items-center gap-2">
-          <Badge className={paired ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" : "bg-amber-500/15 text-amber-400 border-amber-500/30"}>
-            {paired ? (
-              <>
-                <Link2 className="mr-1.5 h-3 w-3" /> Extension v1.1.8 ✓ Đã kết nối
-              </>
-            ) : (
-              <>
-                <XCircle className="mr-1.5 h-3 w-3" /> Chưa ghép nối
-              </>
-            )}
-          </Badge>
-          <Badge className={paired ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" : "bg-white/5 text-slate-400 border-white/10"}>
-            {paired ? "FastAPI ✓ Đã ghép cặp" : "FastAPI ○ Chờ ghép"}
-          </Badge>
-          <Badge variant="outline" className="text-slate-400 border-white/10">
-            Heartbeat {paired && conn?.heartbeat_at ? "● Vừa rồi" : "● Không có"}
-          </Badge>
+        <div>
+          <h1 className="text-2xl font-bold">Flow Connector — Flow Factory 1.1.8</h1>
+          <p className="mt-1 text-sm text-slate-400">Điều khiển Google Flow hoàn toàn trong Viu · không thao tác extension thủ công</p>
         </div>
+        <Badge className={`ml-auto ${paired ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-300" : "border-amber-500/30 bg-amber-500/15 text-amber-300"}`}>
+          {paired ? "Extension 1.1.8 ✓ Đã kết nối" : "Đang chờ Flow runtime"}
+        </Badge>
+        <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}><RefreshCw className="h-4 w-4" /> Làm mới</Button>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Trái: trạng thái kết nối */}
-        <div className="space-y-4">
-          <div className="rounded-xl border border-white/5 bg-[#141d22] p-5 space-y-4">
-            <h2 className="text-sm font-semibold text-slate-200">Trạng thái kết nối</h2>
-            <div className="space-y-3 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400">Tài khoản Google</span>
-                <span className="text-slate-200">{conn?.google_account || "Chưa đăng nhập"}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400">Hồ sơ trình duyệt</span>
-                <span className="text-slate-200">{conn?.profile_name || "—"}</span>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-400">Backend URL (runtime)</span>
-                <span className="flex items-center gap-1 text-xs text-slate-200">
-                  <Eye className="h-3 w-3" /> {runtimeBase ? masked(runtimeBase) : "—"}
-                  {runtimeBase && (
-                    <Copy className="h-3 w-3 cursor-pointer text-slate-500 hover:text-slate-200" onClick={() => copyText(runtimeBase)} />
-                  )}
-                </span>
-              </div>
-                            <div className="flex items-center justify-between">
-                <span className="text-slate-400">Flow runtime</span>
-                <span className="text-right text-xs text-slate-200">Chrome profile riêng + Extension bundled</span>
-              </div>
+      <section className="rounded-2xl border border-cyan-400/20 bg-[#111b21] p-5 text-center">
+        <div className="text-2xl">{MODES[4].icon}</div><div className="mt-2 font-black">FACTORY MODE 1.1.8 · RUNTIME DÙNG CHUNG</div>
+        <p className="mt-2 text-sm text-slate-400">Tên dự án, kịch bản, storyboard và hàng đợi chỉ được tạo trong từng dự án Viu. Trang này không tạo dự án Flow riêng.</p>
+      </section>
 
-                            <div className="flex items-center justify-between">
-                <span className="text-slate-400">Factory state</span>
-                <Badge variant="outline" className={conn?.factory_state === "failed" ? "border-red-500/30 text-red-400" : "border-blue-500/30 text-blue-300"}>
-                  {conn?.factory_state || "waiting_login"}
-                </Badge>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400">Môi trường</span>
-                <span className="text-slate-200">Production</span>
-              </div>
+      <div className="grid gap-6 xl:grid-cols-[1.25fr_1fr]">
+        <div className="space-y-6">
+          <section className="rounded-2xl border border-white/10 bg-[#111b21] p-5">
+            <h2 className="mb-4 font-semibold">IMAGE STYLE · STYLE GALLERY</h2>
+            <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+              {STYLE_NAMES.map((name, index) => {
+                const id = String(index + 1)
+                return <button key={id} onClick={() => set("flow_style_id", id)} className={`overflow-hidden rounded-lg border text-left ${settings.flow_style_id === id ? "border-amber-400 ring-2 ring-amber-400/30" : "border-white/10"}`}><img src={styleImage(index)} alt={name} className="aspect-square w-full object-cover" /><span className="block p-2 text-[10px] leading-tight">{String(index + 1).padStart(2, "0")}. {name}</span></button>
+              })}
             </div>
-                        <p className="pt-2 text-xs leading-relaxed text-slate-500">
-              Không cần cài Extension, copy prompt hoặc mở Labs thủ công. Hãy chạy Factory Mode trong Project Editor; Chrome sẽ tự mở/reuse và tiếp tục sau khi đăng nhập một lần.
-            </p>
-
-          </div>
-
-                    <div className="rounded-xl border border-blue-500/20 bg-[#141d22] p-5 space-y-2">
-            <h2 className="text-sm font-semibold text-slate-200">Factory connection</h2>
-            <p className="text-xs leading-relaxed text-slate-400">
-              Session được khởi tạo an toàn trong Electron với bootstrap token theo từng phiên. Extension chỉ nhận task của Factory project đang chạy và heartbeat tự động báo login/readiness về backend.
-            </p>
-          </div>
-
+            <div className="mt-4 rounded-lg border border-dashed border-white/20 p-4 text-center text-sm text-slate-400">CUSTOM STYLE IMAGES (0/6) · <button className="text-cyan-300">+ ADD STYLE</button></div>
+          </section>
         </div>
 
-        {/* Giữa: cấu hình mặc định */}
-        <div className="space-y-4">
-          <div className="rounded-xl border border-white/5 bg-[#141d22] p-5 space-y-4">
-            <h2 className="text-sm font-semibold text-slate-200">Cấu hình mặc định cho Flow</h2>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="mb-1.5 block text-xs text-slate-400">Chế độ</Label>
-                <Select value={mode} onValueChange={setMode}>
-                  <SelectTrigger className="bg-[#0c1318] border-white/10"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="image">Image</SelectItem>
-                    <SelectItem value="video">Video</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="mb-1.5 block text-xs text-slate-400">Tỷ lệ khung hình</Label>
-                <Select value={ratio} onValueChange={setRatio}>
-                  <SelectTrigger className="bg-[#0c1318] border-white/10"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="16:9">16:9</SelectItem>
-                    <SelectItem value="9:16">9:16</SelectItem>
-                    
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="mb-1.5 block text-xs text-slate-400">Model ảnh</Label>
-                <Select value={imageModel} onValueChange={setImageModel}>
-                  <SelectTrigger className="bg-[#0c1318] border-white/10"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Nano Banana 2">Nano Banana 2</SelectItem>
-                    <SelectItem value="Nano Banana">Nano Banana</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="mb-1.5 block text-xs text-slate-400">Model video</Label>
-                <Select value={videoModel} onValueChange={setVideoModel}>
-                  <SelectTrigger className="bg-[#0c1318] border-white/10"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Veo 3.1">Veo 3.1</SelectItem>
-                    <SelectItem value="Veo 3">Veo 3</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="mb-1.5 block text-xs text-slate-400">Số lượng đầu ra / cảnh</Label>
-                <Select value={outputCount} onValueChange={setOutputCount}>
-                  <SelectTrigger className="bg-[#0c1318] border-white/10"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">1</SelectItem>
-                    <SelectItem value="2">2</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="mb-1.5 block text-xs text-slate-400">Độ đồng thời</Label>
-                <Select value={concurrency} onValueChange={setConcurrency}>
-                  <SelectTrigger className="bg-[#0c1318] border-white/10"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">1</SelectItem>
-                    <SelectItem value="2">2</SelectItem>
-                    <SelectItem value="4">4</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="space-y-2.5 pt-1">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-400">Gắn ảnh tham chiếu nhân vật</span>
-                <Switch checked={attachRef} onCheckedChange={setAttachRef} />
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-400">Tự động tải file về</span>
-                <Switch checked={autoDownload} onCheckedChange={setAutoDownload} />
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-400">Xác minh đầu ra (FFprobe)</span>
-                <Switch checked={verifyOutput} onCheckedChange={setVerifyOutput} />
-              </div>
-            </div>
-            <Button className="w-full bg-[#FAAA02] text-[#11161A] hover:bg-[#FFB81F]" disabled={savingDefaults} onClick={saveFlowDefaults}>{savingDefaults ? "Đang lưu…" : "Lưu cấu hình Flow"}</Button>
-            <div className="rounded-lg border border-white/10 bg-[#0c1318] p-3">
-              <h3 className="mb-2 text-xs font-semibold text-slate-300">Chuỗi tự động hóa (end-to-end) · 11 bước</h3>
-              <ol className="space-y-1 text-[11px] text-slate-400">
-                {["Mở Flow", "Chọn project", "Chế độ & model", "Tỷ lệ", "Đính kèm tham chiếu", "Nhập prompt", "Generate", "Theo dõi tiến trình", "Tải video", "Upload FastAPI", "FFprobe xác minh"].map((s, i) => (
-                  <li key={i} className="flex items-center gap-2">
-                    <CheckCircle2 className="h-3 w-3 text-emerald-400" /> {i + 1}. {s}
-                  </li>
-                ))}
-              </ol>
-            </div>
-          </div>
-        </div>
+        <div className="space-y-6">
+          <section className="rounded-2xl border border-white/10 bg-[#111b21] p-5 space-y-4">
+            <h2 className="font-semibold">⚙️ SETTINGS</h2>
+            <div><Label>Gemini API Key</Label><Input type="password" className="mt-1 bg-[#0b1318]" value={settings.flow_gemini_api_key} onChange={(event) => set("flow_gemini_api_key", event.target.value)} placeholder="AIza..." /></div>
+            <div><Label>SPECIAL DIRECTIONS (Optional)</Label><textarea className="mt-1 min-h-20 w-full rounded-lg border border-white/10 bg-[#0b1318] p-3 text-sm" value={settings.flow_special_directions} onChange={(event) => set("flow_special_directions", event.target.value)} /></div>
+            <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/5 p-3 text-xs text-emerald-200">SCRIPT SPLIT và NUMBER OF PROMPTS được khóa tự động theo storyboard của từng dự án, giống pipeline Revo.</div>
+            <div><Label>CHARACTER NATIONALITY</Label><Select value={settings.flow_nationality} onValueChange={(value) => set("flow_nationality", value)}><SelectTrigger className="mt-1 bg-[#0b1318]"><SelectValue /></SelectTrigger><SelectContent>{[["korean","Korean"],["japanese","Japanese"],["chinese","Chinese"],["southeast_asian","Southeast Asian"],["western","Western"],["indian","Indian"],["latin","Latin American"],["arab","Arab"],["black","Black"]].map(([value,label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
+            <div><Label>BASE FOLDER NAME (Inside Downloads)</Label><Input className="mt-1 bg-[#0b1318]" value={settings.flow_base_folder} onChange={(event) => set("flow_base_folder", event.target.value)} /></div>
+            <Toggle label="AUTO-DOWNLOAD IMAGE PROMPTS" value={settings.flow_auto_download_image_prompts} onChange={(value) => set("flow_auto_download_image_prompts", value)} />
+            <Toggle label="AUTO-DOWNLOAD VIDEO PROMPTS" value={settings.flow_auto_download_video_prompts} onChange={(value) => set("flow_auto_download_video_prompts", value)} />
+            <FieldSelect label="ASPECT RATIO" value={settings.flow_ratio} values={["16:9", "9:16"]} onChange={(value) => set("flow_ratio", value)} />
+            <FieldSelect label="IMAGE MODEL" value={settings.flow_image_model} values={["Nano Banana Pro", "Nano Banana 2"]} onChange={(value) => set("flow_image_model", value)} />
+            <FieldSelect label="IMAGES PER PROMPT" value={String(settings.flow_output_count)} values={["1", "2"]} onChange={(value) => set("flow_output_count", Number(value))} />
+            <FieldSelect label="VIDEO MODEL" value={settings.flow_video_model} values={["Veo 3.1 Lite", "Veo 3.1 Fast", "Veo 3.1 Quality"]} onChange={(value) => set("flow_video_model", value)} />
+            <FieldSelect label="VIDEO RESOLUTION" value={settings.flow_video_resolution} values={["1K", "2K", "4K"]} onChange={(value) => set("flow_video_resolution", value)} />
+            <div><Label>DELAY BETWEEN PROMPTS (sec)</Label><Input type="number" min={0} max={120} className="mt-1 bg-[#0b1318]" value={settings.flow_prompt_delay} onChange={(event) => set("flow_prompt_delay", Number(event.target.value))} /></div>
+            <div><Label>DEFAULT VIDEO PROMPT</Label><textarea className="mt-1 min-h-24 w-full rounded-lg border border-white/10 bg-[#0b1318] p-3 text-sm" value={settings.flow_default_video_prompt} onChange={(event) => set("flow_default_video_prompt", event.target.value)} /></div>
+            <Button className="w-full bg-[#FAAA02] text-[#11161A] hover:bg-[#FFB81F]" onClick={saveSettings} disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} LƯU SETTINGS</Button>
+            <p className="text-xs text-slate-500">Download path: Downloads/{settings.flow_base_folder}/</p>
+          </section>
 
-        {/* Phải: tác vụ gần đây + E2E test */}
-        <div className="space-y-4">
-          <div className="rounded-xl border border-white/5 bg-[#141d22] p-5 space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-slate-200">Tác vụ Flow gần đây</h2>
-              <div className="flex items-center gap-2">
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400" title="Tải lại task" onClick={() => void load()}>
-                  <RefreshCw className="h-3.5 w-3.5" />
-                </Button>
-                <Button variant="outline" size="sm" className="h-7 border-white/10 text-xs text-slate-300" onClick={() => navigate("/queue")}>
-                  Xem hàng đợi <ExternalLink className="ml-1 h-3 w-3" />
-                </Button>
-              </div>
-            </div>
-            {recentTasks.length === 0 ? (
-              <p className="rounded-lg border border-white/10 bg-[#0c1318] p-4 text-xs text-slate-500">
-                Chưa có ConnectorTask. Hãy chạy Auto Production hoặc kiểm tra end-to-end để tạo task thật.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {recentTasks.map((task) => (
-                  <div key={task.task_id} className="rounded-lg border border-white/10 bg-[#0c1318] p-3 text-xs">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-slate-300">{task.task_id.slice(0, 10)}…</span>
-                      <Badge variant="outline" className="border-white/10 text-slate-300">{task.status}</Badge>
-                    </div>
-                    <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
-                      <span>Project #{task.project_id} · Cảnh #{(task.scene_order ?? 0) + 1}</span>
-                      <span>{task.progress ?? 0}%</span>
-                    </div>
-                    {task.progress_message && <p className="mt-1 truncate text-[11px] text-slate-500">{task.progress_message}</p>}
-                    {task.error && <p className="mt-1 truncate text-[11px] text-rose-300" title={task.error}>{task.error}</p>}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="rounded-lg border border-white/10 bg-[#0c1318] p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-slate-200">Kiểm tra end-to-end</span>
-                <Badge variant="outline" className={paired ? "border-emerald-500/30 text-emerald-400" : "border-amber-500/30 text-amber-400"}>
-                  {paired ? "Sẵn sàng" : "Chưa ghép"}
-                </Badge>
-              </div>
-              <p className="mt-1.5 text-[11px] text-slate-500">
-                                Tạo một queue test thật để kiểm tra task assignment, DOM automation và xác minh media. Factory runtime sẽ tự xử lý khi Chrome/Extension online; không cần pairing thủ công.
-
-              </p>
-              <Button
-                size="sm"
-                className="mt-3 w-full bg-gradient-to-r from-[#d9940a] to-[#faaa02] text-white hover:opacity-90"
-                onClick={runE2ETest}
-                disabled={testLoading || !paired}
-              >
-                {testLoading && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-                Run test end-to-end
-              </Button>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-white/5 bg-[#141d22] p-5 space-y-2">
-            <h2 className="text-sm font-semibold text-slate-200">Ghi chú</h2>
-            <ul className="space-y-1.5 text-[11px] text-slate-400">
-              <li>• Extension thực hiện hoàn toàn DOM automation trên labs.google/fx — app không điều khiển Flow từ backend.</li>
-              <li>• File media tải về được Extension gửi kèm file/path về FastAPI, FFprobe xác minh rồi gắn đúng scene_id.</li>
-              <li>• Scene lỗi được retry riêng, không chạy lại scene đã hoàn thành (idempotency).</li>
-                            <li>• Heartbeat tự động báo trạng thái đăng nhập/readiness; Chrome profile riêng được reuse sau lần đăng nhập đầu tiên.</li>
-
-            </ul>
-          </div>
+          <section className="rounded-2xl border border-white/10 bg-[#111b21] p-5">
+            <div className="flex items-center justify-between"><h2 className="font-semibold">Tác vụ gần đây</h2><Button size="sm" variant="outline" onClick={() => navigate("/queue")}>Hàng đợi <ExternalLink className="h-3 w-3" /></Button></div>
+            <div className="mt-3 space-y-2">{tasks.length ? tasks.map((task) => <div key={task.task_id} className="rounded-lg border border-white/10 bg-[#0b1318] p-3 text-xs"><div className="flex justify-between"><span>Cảnh {(task.scene_order ?? 0) + 1}</span><Badge variant="outline">{task.status}</Badge></div><div className="mt-2 flex items-center gap-2 text-slate-500"><CheckCircle2 className="h-3 w-3" /> {task.progress ?? 0}% · {task.progress_message || task.phase}</div></div>) : <p className="text-xs text-slate-500">Chưa có tác vụ.</p>}</div>
+          </section>
         </div>
       </div>
     </div>
   )
+}
+
+function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (value: boolean) => void }) {
+  return <div className="flex items-center justify-between rounded-lg border border-white/10 bg-[#0b1318] p-3"><span className="text-xs text-slate-300">{label}</span><Switch checked={value} onCheckedChange={onChange} /></div>
+}
+
+function FieldSelect({ label, value, values, onChange }: { label: string; value: string; values: string[]; onChange: (value: string) => void }) {
+  return <div><Label>{label}</Label><Select value={value} onValueChange={onChange}><SelectTrigger className="mt-1 bg-[#0b1318]"><SelectValue /></SelectTrigger><SelectContent>{values.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>
 }

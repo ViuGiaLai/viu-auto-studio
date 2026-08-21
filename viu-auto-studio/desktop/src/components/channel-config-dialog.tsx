@@ -71,7 +71,7 @@ const DEFAULT_CONFIG: Config = {
   image_generator: "google_flow",
   image_mode: "mix",
   static_image_seconds: 5,
-  video_model: "omni_flash",
+  video_model: "Veo 3.1 Lite",
   review_mode: "script_first",
   suggested_time: "07:00",
   language: "vi",
@@ -129,6 +129,10 @@ export function ChannelConfigDialog({
             loaded = {}
           }
         }
+        if (["omni_flash", "veo", ""].includes(String(loaded.video_model || ""))) loaded.video_model = "Veo 3.1 Lite"
+        if (loaded.image_mode === "mixed") loaded.image_mode = "mix"
+        if (loaded.image_mode === "images") loaded.image_mode = "image_only"
+        if (loaded.image_mode === "video") loaded.image_mode = "video_only"
         setStyles(st)
         setConfig({ ...DEFAULT_CONFIG, ...loaded })
         setDirty(false)
@@ -197,10 +201,6 @@ export function ChannelConfigDialog({
       toast({ title: "Thời gian ảnh tĩnh không hợp lệ", description: "Chọn giá trị từ 1 đến 20 giây.", variant: "destructive" })
       return
     }
-    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(config.suggested_time || ""))) {
-      toast({ title: "Giờ đề xuất không hợp lệ", description: "Dùng định dạng HH:MM.", variant: "destructive" })
-      return
-    }
     setSaving(true)
     try {
       let nextConfig: Config = { ...config, static_image_seconds: staticSeconds }
@@ -220,7 +220,15 @@ export function ChannelConfigDialog({
         }
         await api.updateProjectConfig(projectId, { ...projectConfig, channel: nextConfig })
       }
-      await api.updateProject(projectId, { language: String(nextConfig.language || "vi") })
+      const currentProject = await api.getProject(projectId)
+      const targetDuration = currentProject.video_type === "short"
+        ? (String(nextConfig.short_video_duration || "").startsWith("30") ? 45 : 105)
+        : String(nextConfig.long_video_duration || "").startsWith("3") ? 240
+          : String(nextConfig.long_video_duration || "").startsWith("10") ? 900 : 450
+      await api.updateProject(projectId, {
+        language: String(nextConfig.language || "vi"),
+        target_duration: targetDuration,
+      })
       setConfig({ ...DEFAULT_CONFIG, ...nextConfig })
       setDirty(false)
       setSavedAt(Date.now())
@@ -272,9 +280,7 @@ export function ChannelConfigDialog({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="ai">🤖 AI tạo hình (Flow/Meta)</SelectItem>
-                      <SelectItem value="stock">📦 Kho ảnh/video có sẵn</SelectItem>
-                      <SelectItem value="mixed">🔀 Kết hợp</SelectItem>
+                      <SelectItem value="ai">🤖 Google Flow tự động</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -565,7 +571,6 @@ export function ChannelConfigDialog({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="google_flow">Google Flow (Veo/Imagen)</SelectItem>
-                      <SelectItem value="meta">Meta AI</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -583,25 +588,15 @@ export function ChannelConfigDialog({
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-slate-400">Thời gian ảnh tĩnh (giây)</Label>
-                  <Input
-                    className="border-white/10 bg-[#0c1419] text-slate-200 placeholder:text-slate-500"
-                    type="number"
-                    min={1}
-                    max={20}
-                    value={String(config.static_image_seconds ?? 5)}
-                    onChange={(e) => set("static_image_seconds", Number(e.target.value) || 5)}
-                  />
-                </div>
-                <div className="space-y-1.5">
                   <Label className="text-xs font-medium text-slate-400">Model video</Label>
                   <Select value={String(config.video_model)} onValueChange={(v) => set("video_model", v)}>
                     <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="omni_flash">Omni Flash (mặc định)</SelectItem>
-                      <SelectItem value="veo">Veo</SelectItem>
+                      <SelectItem value="Veo 3.1 Lite">Veo 3.1 Lite · 10 credits</SelectItem>
+                      <SelectItem value="Veo 3.1 Fast">Veo 3.1 Fast · 20 credits</SelectItem>
+                      <SelectItem value="Veo 3.1 Quality">Veo 3.1 Quality · 100 credits</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -619,31 +614,10 @@ export function ChannelConfigDialog({
 
             <hr className="border-white/10" />
 
-            {/* ⏰ Tự động & Lịch */}
+            {/* Ngôn ngữ project */}
             <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5 shadow-lg shadow-black/10">
-              <h3 className="mb-4 flex items-center gap-2 text-base font-semibold tracking-tight text-slate-100">⏰ Tự động & Lịch</h3>
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-slate-400">Chế độ duyệt</Label>
-                  <Select value={String(config.review_mode)} onValueChange={(v) => set("review_mode", v)}>
-                    <SelectTrigger className="w-full border-white/10 bg-[#0c1419] text-sm text-slate-200">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="script_first">📄 Duyệt kịch bản trước (Mặc định)</SelectItem>
-                      <SelectItem value="auto">🤖 Tự động hoàn toàn</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-slate-400">Giờ đề xuất</Label>
-                  <Input
-                    className="border-white/10 bg-[#0c1419] text-slate-200 placeholder:text-slate-500"
-                    type="time"
-                    value={String(config.suggested_time || "07:00")}
-                    onChange={(e) => set("suggested_time", e.target.value)}
-                  />
-                </div>
+              <h3 className="mb-4 flex items-center gap-2 text-base font-semibold tracking-tight text-slate-100">🌐 Ngôn ngữ sản xuất</h3>
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium text-slate-400">Ngôn ngữ sản xuất</Label>
                   <Select value={String(config.language)} onValueChange={(v) => set("language", v)}>
@@ -658,7 +632,7 @@ export function ChannelConfigDialog({
                 </div>
               </div>
               <p className="mt-4 rounded-xl border border-cyan-400/15 bg-cyan-400/[0.06] px-4 py-3 text-xs leading-5 text-slate-300">
-                💡 {config.review_mode === "auto" ? "Tự động hoàn toàn: sau khi chạy Factory, hệ thống tiếp tục phân cảnh, lồng tiếng và sinh media mà không dừng chờ duyệt." : "Duyệt kịch bản trước: Factory dừng sau bước kịch bản để bạn đọc/sửa trước khi lồng tiếng và sinh media."}
+                Nút “Duyệt kịch bản & chạy tiếp” luôn chạy toàn bộ TTS → Flow → dựng phim. Không còn tùy chọn chỉ hiển thị nhưng không điều khiển pipeline.
               </p>
             </section>
           </div>

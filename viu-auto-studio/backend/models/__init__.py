@@ -440,3 +440,25 @@ class SkillRun(Base):  # noqa: ANN001
     error_message = Column(Text, default="")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class FlowFactoryRun(Base):  # noqa: ANN001
+    """One project-bound Flow pipeline run, equivalent to Revo's pipeline job.
+
+    The browser connection is global because one Chrome/Flow worker is serialized,
+    while runs and their task history remain isolated per project/session.
+    """
+    __tablename__ = "flow_factory_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, nullable=False, index=True)
+    session_id = Column(String(64), unique=True, nullable=False, index=True)
+    status = Column(String(32), default="queued")  # queued | running | completed | failed | cancelled
+    factory_mode = Column(Boolean, default=True)
+    include_video = Column(Boolean, default=True)
+    stage = Column(String(16), default="image")
+    error = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

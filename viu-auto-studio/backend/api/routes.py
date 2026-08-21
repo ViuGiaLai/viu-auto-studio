@@ -22,7 +22,12 @@ from sqlalchemy.orm import Session
 
 from backend.core.config import PROJECTS_DIR, DATA_DIR
 from backend.core.database import get_db
-from backend.models import AppSetting, Channel, Project, RenderJob, Scene, Script, Character, PipelineState
+from backend.models import (
+    AppSetting, AuditLog, Channel, Character, CharacterRef, ConnectorTask,
+    FlowConnection, FlowFactoryRun, Idea, Job, JobStep, MediaAsset,
+    PipelineState, Project, ProjectSetting, PublishMeta, RenderJob, Scene,
+    Script, SkillRun, SubtitleCue, Timeline, TimelineClip, VoiceAsset,
+)
 from backend.pipeline.queue import pipeline
 from backend.schemas import (
     ChannelCreate, ChannelRead, ChannelUpdate,
@@ -360,7 +365,19 @@ def test_telegram(payload: TelegramTestRequest, db: Session = Depends(get_db)):
 # ===========================================================================
 @router.get("/projects/{project_id}/characters", response_model=List[CharacterRead])
 def list_project_characters(project_id: int, db: Session = Depends(get_db)):
-    return db.query(Character).filter(Character.project_id == project_id).all()
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(404, "Project not found")
+    project_chars = db.query(Character).filter(Character.project_id == project_id).all()
+    if not project.channel_id:
+        return project_chars
+    from backend.services.project_config import effective_project_config
+    config = effective_project_config(db, project)
+    if str(config.get("character_sync") or "channel") != "channel":
+        return project_chars
+    channel_chars = db.query(Character).filter(Character.channel_id == project.channel_id).all()
+    known = {item.id for item in project_chars}
+    return project_chars + [item for item in channel_chars if item.id not in known]
 
 
 @router.get("/channels/{channel_id}/characters", response_model=List[CharacterRead])
@@ -470,7 +487,6 @@ def list_projects(
 
 @router.post("/projects", response_model=ProjectRead, status_code=201)
 def create_project(data: ProjectCreateV2 = Body(...), db: Session = Depends(get_db)):
-    project_dir = data.output_folder
     project = Project(
         channel_id=data.channel_id,
         name=data.name,
@@ -481,16 +497,24 @@ def create_project(data: ProjectCreateV2 = Body(...), db: Session = Depends(get_
         language=data.language,
         target_duration=data.target_duration,
         status="draft",
-        project_directory=project_dir,
+        project_directory="",
     )
     db.add(project)
     db.commit()
     db.refresh(project)
 
-    # Create project directory lazily after we know the id
-    path = Path(PROJECTS_DIR) / f"project_{project.id}"
+    # Revo semantics: the selected output folder is a parent. Every project
+    # owns a separate child folder, so media can never spill into Downloads or
+    # collide with another Viu project.
+    folder_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", (data.name or "").strip()).strip(" .")
+    folder_name = folder_name[:80] or f"project_{project.id}"
+    base = Path(data.output_folder).expanduser() if data.output_folder else Path(PROJECTS_DIR)
+    path = base / folder_name
+    if path.exists() and any(path.iterdir()):
+        path = base / f"{folder_name}_{project.id}"
     path.mkdir(parents=True, exist_ok=True)
     (path / "assets").mkdir(exist_ok=True)
+    (path / "scenes").mkdir(exist_ok=True)
     project.project_directory = str(path)
     db.commit()
     db.refresh(project)
@@ -525,8 +549,27 @@ def delete_project(project_id: int, db: Session = Depends(get_db)):
     # Remove project folder from disk
     if project.project_directory and Path(project.project_directory).exists():
         shutil.rmtree(project.project_directory, ignore_errors=True)
-    for table in (Scene, Script, RenderJob):
-        db.query(table).filter(table.project_id == project_id).delete()
+    # Project deletion must also retire every project-scoped queue/run row.
+    # Otherwise SQLite may reuse the project id and a new project can inherit
+    # the deleted project's Flow Factory queue.
+    timeline_ids = [row[0] for row in db.query(Timeline.id).filter(Timeline.project_id == project_id).all()]
+    character_ids = [row[0] for row in db.query(Character.id).filter(Character.project_id == project_id).all()]
+    if timeline_ids:
+        db.query(TimelineClip).filter(TimelineClip.timeline_id.in_(timeline_ids)).delete(synchronize_session=False)
+    if character_ids:
+        db.query(CharacterRef).filter(CharacterRef.character_id.in_(character_ids)).delete(synchronize_session=False)
+    for table in (
+        ConnectorTask, FlowFactoryRun, PipelineState, ProjectSetting, SkillRun,
+        PublishMeta, Timeline, JobStep, Job, MediaAsset, SubtitleCue, VoiceAsset,
+        Idea, Character, Scene, Script, RenderJob,
+    ):
+        db.query(table).filter(table.project_id == project_id).delete(synchronize_session=False)
+    connection = db.query(FlowConnection).filter(FlowConnection.factory_project_id == project_id).first()
+    if connection:
+        connection.factory_project_id = None
+        connection.factory_session_id = ""
+        connection.factory_state = "ready" if connection.status == "paired" else "waiting_login"
+        connection.last_error = ""
     db.delete(project)
     db.commit()
     return {"ok": True}
@@ -909,9 +952,10 @@ def approve_idea(payload: IdeaApproveRequest = Body(...), db: Session = Depends(
     
     db.commit()
 
-    # Start the real background preparation pipeline. It creates scenes/TTS and
-    # queues Flow tasks; it does not fabricate progress or force a failure.
-    started = pipeline.start_auto_production(payload.project_id)
+    # The project editor asks for preparation only, then starts one explicit,
+    # project-bound Factory session. Older workspace callers can retain the
+    # legacy all-in-one behavior by omitting prepare_only.
+    started = pipeline.start_auto_production(payload.project_id, prepare_only=payload.prepare_only)
     if not started.get("ok", False):
         raise HTTPException(409, started.get("message", "Không thể khởi động pipeline"))
     return {"ok": True, "pipeline": started}
@@ -981,7 +1025,7 @@ def build_scenes_from_script(
 ):
     """Convert the approved script into scene records.
 
-    - Mặc định: 1 câu = 1 cảnh (như cũ).
+    - Mặc định: biên tập thành nhịp hình theo ngữ nghĩa; không ánh xạ 1 câu = 1 ảnh.
     - Body tùy chọn {"semantic_analysis": [{narration, visual_prompt, style_prompt}, ...]}:
       AI đã phân tích ngữ nghĩa — tạo cảnh theo phân cảnh của AI (không 1-1 câu-ảnh).
     """
@@ -1010,8 +1054,20 @@ def build_scenes_from_script(
     else:
         if script is None or not script.full_script:
             raise HTTPException(400, "Chưa có kịch bản để xây dựng phân cảnh")
-        sentences = split_into_sentences(script.full_script)
-        segments = None
+        from backend.services.ai.semantic_scenes import _heuristic_semantic_scenes
+
+        fallback = _heuristic_semantic_scenes(script.full_script)
+        segments = [
+            {
+                "narration": str(s.get("narration") or ""),
+                "visual_prompt": str(s.get("visual_prompt") or ""),
+                "style_prompt": str(s.get("style_prompt") or ""),
+                "transition_description": str(s.get("transition_description") or ""),
+            }
+            for s in fallback.get("scenes", [])
+            if str(s.get("narration") or "").strip()
+        ]
+        sentences = [seg["narration"] for seg in segments]
     if not sentences:
         raise HTTPException(400, "Kịch bản rỗng")
 
@@ -1020,6 +1076,14 @@ def build_scenes_from_script(
 
     for idx, sentence in enumerate(sentences):
         scene = existing[idx] if idx < len(existing) else Scene(project_id=project_id)
+        incoming_prompt = segments[idx]["visual_prompt"] if segments is not None and idx < len(segments) else ""
+        content_changed = bool(
+            idx < len(existing)
+            and (
+                (scene.narration or "").strip() != sentence.strip()
+                or (scene.visual_prompt or "").strip() != incoming_prompt.strip()
+            )
+        )
         scene.project_id = project_id
         scene.order_index = idx
         scene.narration = sentence
@@ -1028,8 +1092,28 @@ def build_scenes_from_script(
             scene.visual_prompt = segments[idx]["visual_prompt"]
             scene.style_prompt = segments[idx]["style_prompt"]
             scene.transition_description = segments[idx]["transition_description"]
+            movement = scene.transition_description.lower()
+            if "right to left" in movement:
+                scene.effect = "pan_left"
+            elif "left to right" in movement or "right" in movement or "lateral" in movement:
+                scene.effect = "pan_right"
+            elif "left" in movement:
+                scene.effect = "pan_left"
+            elif "pull-back" in movement or "pull back" in movement or "zoom out" in movement:
+                scene.effect = "zoom_out"
+            else:
+                scene.effect = "zoom_in"
         else:
             scene.visual_prompt = f"Visual illustration for: {sentence}"
+        if content_changed:
+            # Không tái sử dụng media/voice của nội dung cũ cho một nhịp hình mới.
+            scene.media_path = ""
+            scene.image_path = ""
+            scene.video_path = ""
+            scene.audio_path = ""
+            scene.duration = 0.0
+            scene.status = "pending"
+            scene.error_message = None
         if idx >= len(existing):
             db.add(scene)
     # Remove extra scenes
@@ -1701,9 +1785,12 @@ def job_log(job_id: int, lines: int = 100):
 
 
 @router.get("/render/output/{project_id}")
-def render_output(project_id: int, kind: str = "output"):
+def render_output(project_id: int, kind: str = "output", db: Session = Depends(get_db)):
     """Serve the rendered video or preview for playback."""
-    project_dir = Path(PROJECTS_DIR) / f"project_{project_id}"
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(404, "Project không tồn tại")
+    project_dir = Path(project.project_directory) if project.project_directory else (Path(PROJECTS_DIR) / f"project_{project_id}")
     file_name = "preview.mp4" if kind == "preview" else "output.mp4"
     path = project_dir / file_name
     if not path.exists():

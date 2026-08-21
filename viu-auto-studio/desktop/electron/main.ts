@@ -5,7 +5,7 @@ import fs from "node:fs"
 import { startBackend, stopBackend } from "./backend-manager"
 import { startFlowBrowser, stopFlowBrowser, logoutFlowBrowser, isFlowGoogleLoggedIn } from "./flow-browser"
 import { openAiBrowser, getAiBrowserStatus, logoutAiBrowser, stopAllAiBrowsers, type AiProviderType } from "./ai-browser"
-import { readRuntimeConfig, getUserDataDir, dirnameOf, findFreePort } from "./runtime-config"
+import { readRuntimeConfig, getUserDataDir, dirnameOf, findFreePort, type RuntimeConfig } from "./runtime-config"
 
 // __dirname an toàn cho ESM (file: protocol) — preload + dist index.html
 const HERE = dirnameOf(import.meta.url)
@@ -475,12 +475,40 @@ ipcMain.handle("aiBrowser:logout", async (_event, input: { provider: AiProviderT
 app.commandLine.appendSwitch("use-angle", "swiftshader")
 app.commandLine.appendSwitch("use-gl", "swiftshader")
 
+async function resumeActiveFlowFactory(runtime: RuntimeConfig): Promise<void> {
+  if (process.env.VIU_CAPTURE_MODE) return
+  try {
+    const response = await fetch(`${runtime.apiBaseUrl}/api/flow-connection`)
+    if (!response.ok) return
+    const connection = await response.json() as {
+      factory_state?: string
+      factory_project_id?: number | null
+      factory_session_id?: string | null
+    }
+    // `failed` can be a transient browser/API/bootstrap or extension-reload
+    // failure while the
+    // project-bound backend run still owns pending/assigned tasks. Restarting the
+    // app-managed Chrome lets the bundled 1.1.8 worker inspect the exact session;
+    // completed/terminal runs simply expose no claimable work.
+    const resumableStates = new Set(["waiting_login", "ready", "processing", "generate_image", "generate_video", "failed"])
+    if (!connection.factory_project_id || !connection.factory_session_id || !resumableStates.has(connection.factory_state || "")) return
+    const result = await startFlowBrowser(runtime, {
+      projectId: connection.factory_project_id,
+      factorySessionId: connection.factory_session_id,
+    })
+    console.log("[Main] Factory auto-resume:", result.status, result.message)
+  } catch (error) {
+    console.warn("[Main] Factory auto-resume skipped:", error)
+  }
+}
 app.whenReady().then(async () => {
   // 1. Khởi động FastAPI backend local (dev + production).
   //    Production: dùng Python đóng gói trong resources/python nếu có.
   try {
     const started = await startBackend()
     console.log("[Main] Backend API URL:", started.apiBaseUrl)
+    const runtime = readRuntimeConfig()
+    if (runtime) void resumeActiveFlowFactory(runtime)
   } catch (err) {
     console.error("[Main] Backend failed to start:", err)
     // Tiếp tục hiển thị app — người dùng có thể bật backend ngoài (dev mode).

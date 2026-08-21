@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from backend.core.config import FFMPEG_BIN
+from backend.services.media import get_audio_duration
 
 log = logging.getLogger("viu.render")
 
@@ -150,6 +151,10 @@ class FFmpegEngine:
         fps: int = 30,
         effect: str = "zoom_in",
         subtitle_ass: Optional[str] = None,
+        transform_scale: float = 1.0,
+        transform_x: float = 0.0,
+        transform_y: float = 0.0,
+        audio_volume: float = 1.0,
     ) -> str:
         """Render one scene: image/video + Ken Burns effect + voiceover + subtitles."""
         # Guard: duration must never be None/invalid — fall back to 3s or audio length.
@@ -165,13 +170,21 @@ class FFmpegEngine:
 
         filters: List[str] = []
         inputs: List[str] = []
+        transform_scale = max(1.0, min(2.0, float(transform_scale or 1.0)))
+        transform_x = max(-1.0, min(1.0, float(transform_x or 0.0)))
+        transform_y = max(-1.0, min(1.0, float(transform_y or 0.0)))
+        audio_volume = max(0.0, min(2.0, float(audio_volume if audio_volume is not None else 1.0)))
+        scaled_width = max(width, int(round(width * transform_scale)))
+        scaled_height = max(height, int(round(height * transform_scale)))
+        crop_x = f"max(0,min(iw-ow,(iw-ow)/2+({transform_x:.4f})*(iw-ow)/2))"
+        crop_y = f"max(0,min(ih-oh,(ih-oh)/2+({transform_y:.4f})*(ih-oh)/2))"
 
         # --- Video source ---------------------------------------------------
         if media_type == "video" and Path(media_path).exists():
             inputs += ["-i", media_path]
             filters.append(
-                f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
-                f"crop={width}:{height},fps={fps},setpts=PTS-STARTPTS[vsrc]"
+                f"[0:v]scale={scaled_width}:{scaled_height}:force_original_aspect_ratio=increase,"
+                f"crop={width}:{height}:x='{crop_x}':y='{crop_y}',fps={fps},setpts=PTS-STARTPTS[vsrc]"
             )
             video_label = "[vsrc]"
         else:
@@ -185,6 +198,7 @@ class FFmpegEngine:
                 "zoom_out": "zoompan=z='max(1.15-0.0035*on,1.0)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={width}x{height}",
                 "pan_left": "zoompan=z=1.1:d=1:x='if(gte(on,1),x-1.2,0)':y=0:s={width}x{height}",
                 "pan_right": "zoompan=z=1.1:d=1:x='if(lt(on,1),0,x+1.2)':y=0:s={width}x{height}",
+                "none": "null",
             }.get(effect, "zoompan=z='min(1.0+0.0035*on,1.15)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={width}x{height}")
 
             if use_color_fallback:
@@ -197,8 +211,8 @@ class FFmpegEngine:
             else:
                 inputs += ["-loop", "1", "-i", media_path]
                 filters.append(
-                    f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
-                    f"crop={width}:{height},{zoom.format(width=width, height=height)},"
+                    f"[0:v]scale={scaled_width}:{scaled_height}:force_original_aspect_ratio=increase,"
+                    f"crop={width}:{height}:x='{crop_x}':y='{crop_y}',{zoom.format(width=width, height=height)},"
                     f"fps={fps},setpts=PTS-STARTPTS[vsrc]"
                 )
             video_label = "[vsrc]"
@@ -207,7 +221,7 @@ class FFmpegEngine:
         if audio_path and Path(audio_path).exists():
             inputs += ["-i", audio_path]
             inputs += ["-t", f"{duration:.3f}"]
-            filters.append("[1:a]apad[aout]")
+            filters.append(f"[1:a]volume={audio_volume:.4f},apad[aout]")
         else:
             # Scene has no voiceover — render with a silent track.
             # LƯU Ý: KHÔNG dùng `apad` kết hợp `anullsrc` + `-shortest` — audio
@@ -268,6 +282,7 @@ class FFmpegEngine:
         preset: str,
         output_path: str,
         transition: float = 0.5,
+        transition_types: Optional[List[str]] = None,
     ) -> str:
         """Compose all scene clips + music + logo + intro/outro into the final MP4."""
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -288,17 +303,23 @@ class FFmpegEngine:
                 merged_d = self._clip_duration(merged)
                 a_d = self._clip_duration(clip)
                 tmp = str(workdir / f"_xfade_{idx:03d}.mp4")
-                offset = max(0.0, merged_d - transition)
+                # Extend only the outgoing picture, then overlap the visuals at
+                # the original cut point. Audio is concatenated (not
+                # cross-faded), preserving narration timing and subtitle sync.
+                offset = max(0.0, merged_d)
+                requested = (transition_types or [])[idx - 1] if idx - 1 < len(transition_types or []) else "fade"
+                transition_name = requested if requested in {"fade", "dissolve", "smoothleft", "smoothright"} else "fade"
                 v_args = [
                     "-i", merged, "-i", clip,
                     "-filter_complex",
-                    f"[0:v][1:v]xfade=transition=fade:duration={transition:.3f}"
+                    f"[0:v]tpad=stop_mode=clone:stop_duration={transition:.3f}[vhold];"
+                    f"[vhold][1:v]xfade=transition={transition_name}:duration={transition:.3f}"
                     f":offset={offset:.3f}[vout];"
-                    f"[0:a][1:a]acrossfade=d={transition:.3f}[aout]",
+                    f"[0:a][1:a]concat=n=2:v=0:a=1[aout]",
                     "-map", "[vout]", "-map", "[aout]",
                     "-c:v", "libx264", "-preset", "ultrafast", "-crf", str(crf),
                     "-c:a", "aac", "-b:a", "192k",
-                    "-t", f"{offset + a_d:.3f}",
+                    "-t", f"{merged_d + a_d:.3f}",
                     "-y", tmp,
                 ]
                 try:

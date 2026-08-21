@@ -1,22 +1,22 @@
 {
-  "manifest_version": 3,
-  "name": "Viu Auto Studio Flow Connector",
-  "version": "1.0.0",
-  "description": "Nhận Flow task từ Viu Auto Studio, tạo media trên Google Flow và trả file thật về FastAPI.",
-  "permissions": ["storage", "alarms", "tabs", "downloads"],
-  "host_permissions": [
-    "https://labs.google/*",
-    "https://*.googleusercontent.com/*",
-    "http://127.0.0.1/*"
+  "action":{"default_icon":{"128":"icons/ICON128.png","16":"icons/ICON16.png","48":"icons/ICON48.png"},"default_popup":"popup/popup.html","default_title":"Auto Flow Factory"},
+  "background":{"service_worker":"background/flow-viu-factory-background-1192.js"},
+  "content_scripts":[
+    {"js":["core/page-bridge.js"],"matches":["*://labs.google/fx/*"],"run_at":"document_end","world":"MAIN"},
+    {"all_frames":false,"js":["core/flow-automation.js","core/filename.js","content-scripts/flow-content.js","content-scripts/viu-bootstrap.js"],"matches":["*://labs.google/fx/*"],"run_at":"document_end"}
   ],
-  "background": { "service_worker": "service-worker.js", "type": "module" },
-  "content_scripts": [
-    {
-      "matches": ["https://labs.google/fx/*"],
-      "js": ["content.js"],
-      "run_at": "document_idle"
-    }
-  ],
-  "options_page": "options.html",
-  "action": { "default_title": "Viu Flow Connector", "default_popup": "options.html" }
+  "default_locale":"en",
+  "description":"__MSG_appDescription__",
+  "host_permissions":["*://labs.google/*","https://generativelanguage.googleapis.com/*","https://fonts.googleapis.com/*","https://*.googleusercontent.com/*","http://127.0.0.1/*","http://localhost/*"],
+  "icons":{"128":"icons/ICON128.png","16":"icons/ICON16.png","48":"icons/ICON48.png"},
+  "key":"MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxc9g7vzY6Lupv2VR4rk1pX6OSWxiOvSlIfS/EPma0OU21jSUq2SYxKq9DwU9kxhxHstwF1GiERlKppM5H7UM8F4DX1HDKJPsZKoML+CgrPlJ15IgoEPM7s/XUtIWQpKngjHml+KKLSv03jJEM9xrQRg5EiHGBa+rvAud3BxJaUFapsy6pjub+ukgde7XmSOdSEEuqxoCuBLwFfXqz9kPoLnLq8CyNmwuiLNVAVO/VPNmmv6MeaDyDeB7T1tL2hyEKJOAJQenQOk0R+SHBKF4HUKmaCt/tIKROL7ybVXAAyqjeJWbnMmt6W19QK/z3dcVNWqQ2M+5umAVqqpGye7ecwIDAQAB",
+  "manifest_version":3,
+  "name":"__MSG_appName__",
+  "permissions":["storage","tabs","activeTab","sidePanel","downloads","scripting","unlimitedStorage","debugger","alarms"],
+  "short_name":"Flow Factory",
+  "side_panel":{"default_path":"sidepanel/sidepanel.html"},
+  "update_url":"https://clients2.google.com/service/update2/crx",
+  "version":"1.1.8.14",
+  "version_name":"1.1.8",
+  "web_accessible_resources":[{"matches":["*://labs.google/*"],"resources":["images/styles/*.jpg","images/styles/*.png"]}]
 }
