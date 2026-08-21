@@ -89,6 +89,7 @@ function createWindow(): void {
     minWidth: 1366,
     minHeight: 768,
     backgroundColor: "#0a1020",
+    icon: path.join(HERE, "icon.png"),
     // hiddenInset không hoạt động đúng trên X11 (menu/menu-bar mất hoặc màn hình đen);
     // giữ thanh tiêu đề mặc định để tương thích Linux desktop.
     show: false,

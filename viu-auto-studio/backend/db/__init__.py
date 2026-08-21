@@ -27,6 +27,7 @@ def init_db() -> None:
     _ensure_column("scenes", "transition_description", "transition_description TEXT DEFAULT ''")
     _ensure_column("scenes", "image_path", "image_path VARCHAR(512) DEFAULT ''")
     _ensure_column("scenes", "video_path", "video_path VARCHAR(512) DEFAULT ''")
+    _ensure_column("scenes", "shots_json", "shots_json TEXT DEFAULT '[]'")
     _ensure_column("connector_tasks", "stage", "stage VARCHAR(16) DEFAULT 'image'")
     _ensure_column("connector_tasks", "factory_session_id", "factory_session_id VARCHAR(64) DEFAULT ''")
     _ensure_column("flow_connections", "factory_state", "factory_state VARCHAR(32) DEFAULT 'waiting_login'")

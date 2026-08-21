@@ -107,6 +107,17 @@ class Scene(Base):  # noqa: ANN001
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    @property
+    def shots(self):
+        if not self.shots_json:
+            return []
+        try:
+            import json
+            raw = json.loads(self.shots_json)
+            return raw if isinstance(raw, list) else []
+        except Exception:
+            return []
+
 
 class RenderJob(Base):  # noqa: ANN001
     __tablename__ = "render_jobs"

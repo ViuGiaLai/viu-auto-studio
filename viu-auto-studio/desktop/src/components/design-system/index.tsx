@@ -41,8 +41,16 @@ export const STUDIO_STAGES = [
   { value: "subtitles", label: "Xuất bản" },
 ] as const
 
-function PlayLogo({ size = 32 }: { size?: number }) {
-  return <svg width={size} height={size} viewBox="0 0 40 40" fill="none" aria-hidden="true"><path d="M13 6 33 19 13 33Z" stroke="#FAAA02" strokeWidth="5" strokeLinejoin="round" /></svg>
+function PlayLogo({ size = 36 }: { size?: number }) {
+  return (
+    <img
+      src="/logo.png"
+      alt="Viu Auto Studio Logo"
+      width={size}
+      height={size}
+      className="h-9 w-9 rounded-lg object-contain drop-shadow-md shrink-0"
+    />
+  )
 }
 
 export function AppShell({ sidebar, children }: { sidebar: React.ReactNode; children: React.ReactNode }) {

@@ -172,14 +172,14 @@ export default function GuidePage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-8">
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <Wand2 className="h-5 w-5 text-amber-400" />
+      <div className="flex items-center gap-4">
+        <img src="/logo.png" alt="Viu Auto Studio" className="h-16 w-16 object-contain rounded-xl shadow-lg border border-amber-500/20 bg-black/40 p-1" />
+        <div className="space-y-1">
           <h1 className="text-2xl font-bold tracking-tight text-white">Hướng dẫn sử dụng Viu Auto Studio</h1>
+          <p className="text-sm text-slate-400">
+            10 bước từ ý tưởng đến video hoàn chỉnh — mọi tính năng đều hoạt động thật và lưu trữ an toàn trong cơ sở dữ liệu.
+          </p>
         </div>
-        <p className="text-sm text-slate-500">
-          10 bước từ ý tưởng đến video hoàn chỉnh — mọi nút bấm đều hoạt động thật và lưu vào cơ sở dữ liệu.
-        </p>
       </div>
 
       <div className="vas-card flex items-start gap-3 border-amber-500/30 bg-amber-500/5 p-4">
