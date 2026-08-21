@@ -81,7 +81,7 @@ export function getCountryBadge(lang: string, id: string) {
 export function VoiceStudioPanel() {
   const [config, setConfig] = useState<TTSConfig | null>(null)
   const [voices, setVoices] = useState<TTSVoice[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [testingConn, setTestingConn] = useState(false)
   const [previewing, setPreviewing] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
@@ -149,7 +149,7 @@ export function VoiceStudioPanel() {
         api_keys: next.api_keys,
       })
       setConfig(next)
-      toast({ title: "Cấu hình giọng đã cập nhật" })
+      // auto saved silently
     } catch (e) {
       toast({ title: "Không thể lưu", description: String(e), variant: "destructive" })
     }
@@ -174,7 +174,7 @@ export function VoiceStudioPanel() {
       if (vs.length > 0) {
         setCustomText(getSampleTextForVoice(vs[0]))
       }
-      toast({ title: `Đã chọn: ${p}`, description: `Đã nạp ${vs.length} giọng.` })
+      // provider switched silently
     } catch (e) {
       toast({ title: "Lỗi chuyển nhà cung cấp", description: String(e), variant: "destructive" })
     } finally {
@@ -192,7 +192,7 @@ export function VoiceStudioPanel() {
       if (targetVoice) {
         setCustomText(getSampleTextForVoice(targetVoice))
       }
-      toast({ title: voiceId ? `Đã chọn: ${targetVoice?.name || voiceId}` : "Đã bỏ chọn giọng" })
+      // voice selected silently
     } catch (e) {
       toast({ title: "Lỗi chọn giọng", description: String(e), variant: "destructive" })
     } finally {
@@ -301,7 +301,7 @@ export function VoiceStudioPanel() {
       })
       if (res.ok && res.audio_path) {
         setPreviewUrl(mediaUrl(res.audio_path))
-        toast({ title: "Đã tạo giọng đọc mẫu", description: `Đang phát giọng: ${selectedVoiceObj?.name || config.voice}` })
+        // audio plays automatically
       } else {
         toast({ title: "Nghe thử thất bại", description: res.message, variant: "destructive" })
       }
@@ -363,12 +363,11 @@ export function VoiceStudioPanel() {
         <div className="sm:col-span-4 space-y-1.5">
           <div className="flex items-center justify-between">
             <Label className="text-xs font-medium text-slate-400">Nhà cung cấp mặc định</Label>
-            {switchingProvider && <Loader2 className="h-3 w-3 animate-spin text-amber-400" />}
           </div>
           <Select
             value={config?.provider || "edge"}
             onValueChange={handleProviderChange}
-            disabled={switchingProvider}
+            
           >
             <SelectTrigger className="w-full bg-black/30 border-white/10 text-xs">
               <SelectValue placeholder="Chọn nhà cung cấp" />
@@ -471,7 +470,7 @@ export function VoiceStudioPanel() {
                 disabled={savingKey}
                 onClick={() => handleSaveApiKey("elevenlabs", elevenLabsKey || config?.api_keys?.elevenlabs || "")}
               >
-                {savingKey ? <Loader2 className="h-3 w-3 animate-spin mr-1 text-amber-400" /> : null}
+                
                 {savingKey ? "Đang lưu & tải..." : "Lưu key & tải giọng"}
               </Button>
             </div>
@@ -546,7 +545,7 @@ export function VoiceStudioPanel() {
                 disabled={savingKey}
                 onClick={() => handleSaveApiKey("gemini_tts", geminiTTSKey || "")}
               >
-                {savingKey ? <Loader2 className="h-3 w-3 animate-spin mr-1 text-amber-400" /> : null}
+                
                 {savingKey ? "Đang lưu..." : "Lưu key & tải giọng"}
               </Button>
             </div>
@@ -576,7 +575,7 @@ export function VoiceStudioPanel() {
                 disabled={savingKey}
                 onClick={() => handleSaveApiKey("vbee", vbeeKey || config?.api_keys?.vbee || "")}
               >
-                {savingKey ? <Loader2 className="h-3 w-3 animate-spin mr-1 text-amber-400" /> : null}
+                
                 {savingKey ? "Đang lưu..." : "Lưu key & tải giọng"}
               </Button>
             </div>
@@ -632,7 +631,7 @@ export function VoiceStudioPanel() {
                 disabled={savingKey}
                 onClick={() => handleSaveApiKey(config.provider, config.provider === "google_cloud_tts" ? googleCloudKey : azureKey)}
               >
-                {savingKey ? <Loader2 className="h-3 w-3 animate-spin mr-1 text-amber-400" /> : null}
+                
                 {savingKey ? "Đang lưu..." : "Lưu key & tải giọng"}
               </Button>
             </div>
@@ -717,7 +716,7 @@ export function VoiceStudioPanel() {
                         disabled={isCurrentSelecting}
                         onClick={() => handleSelectVoice("")}
                       >
-                        {isCurrentSelecting ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                        
                         Xoá
                       </Button>
                     ) : (
@@ -728,8 +727,8 @@ export function VoiceStudioPanel() {
                         disabled={isCurrentSelecting}
                         onClick={() => handleSelectVoice(v.id)}
                       >
-                        {isCurrentSelecting ? <Loader2 className="h-3 w-3 animate-spin mr-1 text-amber-400" /> : null}
-                        {isCurrentSelecting ? "Đang chọn..." : "Chọn giọng này"}
+                        
+                        "Chọn giọng này"
                       </Button>
                     )}
                   </div>

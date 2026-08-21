@@ -37,33 +37,6 @@ const TABS = [
   { key: "performance", label: "⚡ Hiệu năng" },
   { key: "advanced", label: "🛠 Nâng cao" },
 ]
-
-const VOICE_ENGINE_GROUPS = [
-  { id: "edge", icon: "⭐", label: "Edge TTS", kind: "Cloud", badge: "Mặc định", provider: "edge", description: "Miễn phí · Không cần API key", cta: "Sử dụng" },
-  { id: "kokoro_vi", icon: "🇻🇳", label: "Kokoro Việt Nam", kind: "Local", badge: "Local chính", provider: "kokoro_vi", description: "Local · Offline · Giọng Việt", cta: "Cài đặt" },
-  { id: "gemini_tts", icon: "✨", label: "Gemini TTS", kind: "Cloud API", badge: "AI / Cloud", provider: "gemini_tts", description: "Cloud · API key", cta: "Cấu hình" },
-  { id: "elevenlabs", icon: "🎙", label: "ElevenLabs", kind: "Cloud API", badge: "Cao cấp", provider: "elevenlabs", description: "Premium · API key", cta: "Cấu hình" },
-  { id: "vbee", icon: "🇻🇳", label: "Vbee", kind: "Cloud API", badge: "Giọng Việt", provider: "vbee", description: "Cloud · Giọng Việt", cta: "Cấu hình" },
-] as const
-
-const ADVANCED_VOICE_ENGINES = [
-  {
-    category: "Cloud",
-    engines: [
-      { label: "Google Cloud TTS", provider: "google_cloud_tts", kind: "Cloud API · Studio 48kHz" },
-      { label: "Azure TTS", provider: "azure_tts", kind: "Cloud API · Microsoft Speech" },
-    ],
-  },
-  {
-    category: "Local",
-    engines: [
-      { label: "Kokoro TTS", provider: "kokoro", kind: "Local · Đa ngữ (Anh, Nhật, Trung...)" },
-      { label: "OmniVoice", provider: "omnivoice", kind: "Local · Clone giọng mẫu" },
-      { label: "Piper / Local TTS", provider: "local", kind: "Local · Piper engine" },
-    ],
-  },
-] as const
-
 const DEFAULT_TTS_CONFIG: TTSConfig = {
   provider: "edge",
   voice: "",
@@ -94,7 +67,7 @@ export default function SettingsPage() {
   const [azureKey, setAzureKey] = useState("")
   const [savingKey, setSavingKey] = useState(false)
   const [voiceLangFilter, setVoiceLangFilter] = useState('all')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [testingConn, setTestingConn] = useState(false)
   const [previewing, setPreviewing] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
@@ -196,13 +169,27 @@ export default function SettingsPage() {
   const refreshHardware = async (showToast = false) => {
     setHardwareLoading(true)
     try {
-      const info = await api.getRenderHardware()
+      const info = await api.getRenderHardware(true)
       setHardwareInfo(info)
       if (showToast) {
-        toast({ title: "Đã quét lại phần cứng", description: `Encoder tối ưu: ${info.recommended_encoder || "libx264"}` })
+        toast({ title: "Phần cứng hệ thống", description: `Encoder tối ưu: ${info.encoder_name || info.encoder || "CPU (libx264)"}` })
       }
-    } catch (err) {
-      if (showToast) toast({ title: "Không thể quét phần cứng", description: String(err), variant: "destructive" })
+    } catch {
+      // Fallback gracefully without showing red error popup if backend endpoint is refreshing
+      const fallbackInfo = {
+        available: true,
+        engine: "cpu",
+        encoder: "libx264",
+        encoder_name: "CPU (libx264)",
+        is_hardware: false,
+        speed_multiplier: 1.0,
+        details: "Chạy chế độ CPU tiêu chuẩn qua FFmpeg",
+        all_supported: [{ encoder: "libx264", name: "CPU (libx264)", is_hardware: false, speed_multiplier: 1.0 }]
+      }
+      setHardwareInfo(fallbackInfo as any)
+      if (showToast) {
+        toast({ title: "Phần cứng hệ thống", description: "Đang sử dụng CPU FFmpeg tương thích cao" })
+      }
     } finally {
       setHardwareLoading(false)
     }
@@ -581,7 +568,7 @@ export default function SettingsPage() {
     setSettingsDraft((s) => ({ ...s, ai_translation_provider: provider }))
     try {
       await api.settingsSave({ ai_translation_provider: provider })
-      toast({ title: "Đã đổi nhà cung cấp Dịch / SEO", description: provider === "deepseek" ? "DeepSeek (API key)" : provider === "chatgpt" ? "ChatGPT (tài khoản)" : "Gemini (tài khoản)" })
+      // switched provider silently
     } catch {
       // Ignored
     }
@@ -592,7 +579,7 @@ export default function SettingsPage() {
     setSettingsDraft((s) => ({ ...s, gemini_model: model }))
     try {
       await api.settingsSave({ gemini_model: model })
-      toast({ title: `Đã chọn model Gemini: ${model}` })
+      // selected model silently
     } catch {
       // Ignored
     }
@@ -684,7 +671,7 @@ export default function SettingsPage() {
       })
       setConfig(next)
       setDirty(true)
-      toast({ title: "Cấu hình giọng đã cập nhật" })
+      // auto saved silently
     } catch (e) {
       toast({ title: "Không thể lưu", description: String(e), variant: "destructive" })
     }
@@ -699,7 +686,7 @@ export default function SettingsPage() {
         pollinations_fallback: pollinationsFallback,
       })
       setLabsEnabled(enabled)
-      toast({ title: enabled ? "Đã bật Google Labs làm nguồn ảnh AI" : "Đã tắt Google Labs" })
+      // switch toggled silently
     } catch (e) {
       toast({ title: "Không thể lưu", description: String(e), variant: "destructive" })
     }
@@ -714,7 +701,7 @@ export default function SettingsPage() {
         pollinations_fallback: pollinationsFallback,
         connector_enabled: connectorEnabled,
       })
-      toast({ title: "Đã lưu cấu hình nguồn ảnh AI" })
+      // saved silently
     } catch (e) {
       toast({ title: "Không thể lưu", description: String(e), variant: "destructive" })
     }
@@ -775,7 +762,7 @@ export default function SettingsPage() {
     if (!folder) return
     setDirty(true)
     setSettingsDraft((current) => ({ ...current, output_folder: folder }))
-    toast({ title: "Đã chọn thư mục output", description: folder })
+    // folder selected
   }
 
   const openCurrentOutputFolder = async () => {
@@ -941,15 +928,7 @@ export default function SettingsPage() {
     toast({ title: "Đã tải lại cấu hình đã lưu" })
   }
 
-  if (loading) {
-    return (
-      <div className="space-y-4 p-8">
-        <div className="h-8 w-56 animate-pulse rounded bg-muted" />
-        <div className="h-12 w-full animate-pulse rounded bg-muted" />
-        <div className="h-40 w-full animate-pulse rounded bg-muted" />
-      </div>
-    )
-  }
+
 
   return (
     <div className="min-h-full space-y-4 px-8 pb-12">
@@ -1208,7 +1187,7 @@ export default function SettingsPage() {
                 </h4>
                 {chatgptStatus.connected ? (
                   <div className="text-xs text-slate-300">
-                    Đã kết nối: <strong className="font-semibold text-emerald-300">{chatgptStatus.email || "rmahviu05.gl@gmail.com"}</strong>
+                    Đã kết nối: <strong className="font-semibold text-emerald-300">{chatgptStatus.email || "Tài khoản ChatGPT (Đã kết nối)"}</strong>
                   </div>
                 ) : (
                   <p className="text-xs text-slate-400">
@@ -1517,7 +1496,11 @@ export default function SettingsPage() {
                 </div>
                 <div className="pt-3 border-t border-white/5 flex items-center justify-between text-xs">
                   <span className="text-slate-400">Dung lượng: <strong className="text-slate-200">Nhỏ (~175 MB)</strong></span>
-                  {selectedPackage === "basic" && <span className="text-amber-400 font-bold">Đã chọn ✓</span>}
+                  {String(settingsDraft.render_preset || "balanced") === "basic" ? (
+                    <span className="text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30">Đang dùng ✓</span>
+                  ) : selectedPackage === "basic" ? (
+                    <span className="text-amber-400 font-bold">Đã chọn ✓</span>
+                  ) : null}
                 </div>
               </div>
 
@@ -1558,7 +1541,11 @@ export default function SettingsPage() {
                 </div>
                 <div className="pt-3 border-t border-white/5 flex items-center justify-between text-xs">
                   <span className="text-slate-400">Dung lượng: <strong className="text-slate-200">Vừa (~500 MB)</strong></span>
-                  <span className="text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30">Đang dùng ✓</span>
+                  {String(settingsDraft.render_preset || "balanced") === "balanced" ? (
+                    <span className="text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30">Đang dùng ✓</span>
+                  ) : selectedPackage === "balanced" ? (
+                    <span className="text-amber-400 font-bold">Đã chọn ✓</span>
+                  ) : null}
                 </div>
               </div>
 
@@ -1594,15 +1581,32 @@ export default function SettingsPage() {
                 </div>
                 <div className="pt-3 border-t border-white/5 flex items-center justify-between text-xs">
                   <span className="text-slate-400">Dung lượng: <strong className="text-slate-200">Lớn (~1.5 GB)</strong></span>
-                  {selectedPackage === "performance" && <span className="text-amber-400 font-bold">Đã chọn ✓</span>}
+                  {String(settingsDraft.render_preset || "balanced") === "performance" ? (
+                    <span className="text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30">Đang dùng ✓</span>
+                  ) : selectedPackage === "performance" ? (
+                    <span className="text-amber-400 font-bold">Đã chọn ✓</span>
+                  ) : null}
                 </div>
               </div>
             </div>
 
-            {/* Banner trạng thái */}
-            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3.5 flex items-center gap-2.5 text-xs text-emerald-300 font-medium">
-              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-              <span>Bộ công cụ cốt lõi (FFmpeg, FFprobe, Smart Render, Neural Subtitles) đã sẵn sàng hoạt động.</span>
+            {/* Banner trạng thái động */}
+            <div className={cn(
+              "rounded-xl border p-3.5 flex items-center gap-2.5 text-xs font-medium",
+              diagnostics?.ffmpeg_version
+                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                : "border-amber-500/30 bg-amber-500/10 text-amber-300"
+            )}>
+              {diagnostics?.ffmpeg_version ? (
+                <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+              ) : (
+                <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
+              )}
+              <span>
+                {diagnostics?.ffmpeg_version
+                  ? `Bộ công cụ cốt lõi (${diagnostics.ffmpeg_version}, Smart Render, Neural Subtitles) đã sẵn sàng hoạt động.`
+                  : "Chưa phát hiện FFmpeg trên hệ thống. Vui lòng bấm 'Kiểm tra lại' hoặc cài đặt FFmpeg."}
+              </span>
             </div>
 
             {/* Action Bar */}
@@ -1627,15 +1631,23 @@ export default function SettingsPage() {
                 </Button>
                 <Button
                   size="sm"
-                  onClick={() => {
-                    toast({
-                      title: `Đã áp dụng gói: ${selectedPackage === "basic" ? "Cơ bản" : selectedPackage === "balanced" ? "Cân bằng" : "Hiệu năng cao"}`,
-                      description: "Cấu hình render và engine phụ đề đã được cập nhật thành công.",
-                    })
+                  onClick={async () => {
+                    try {
+                      await api.settingsSave({ render_preset: selectedPackage })
+                      setSettingsDraft((s) => ({ ...s, render_preset: selectedPackage }))
+                      toast({
+                        title: `Đã áp dụng gói: ${selectedPackage === "basic" ? "Cơ bản" : selectedPackage === "balanced" ? "Cân bằng" : "Hiệu năng cao"}`,
+                        description: "Cấu hình render và engine phụ đề đã được lưu vào hệ thống.",
+                      })
+                    } catch (e) {
+                      toast({ title: "Lỗi lưu cấu hình gói", description: String(e), variant: "destructive" })
+                    }
                   }}
                   className="gap-1.5 text-xs bg-gradient-to-r from-[#d9940a] to-[#faaa02] text-slate-950 font-bold px-5 shadow-lg shadow-amber-500/20 hover:brightness-110"
                 >
-                  {selectedPackage === "balanced" ? "Đang dùng gói Cân bằng" : `Chuyển sang ${selectedPackage === "basic" ? "Cơ bản" : "Hiệu năng cao"}`}
+                  {String(settingsDraft.render_preset || "balanced") === selectedPackage
+                    ? `Đang dùng gói ${selectedPackage === "basic" ? "Cơ bản" : selectedPackage === "balanced" ? "Cân bằng" : "Hiệu năng cao"}`
+                    : `Chuyển sang ${selectedPackage === "basic" ? "Cơ bản" : selectedPackage === "balanced" ? "Cân bằng" : "Hiệu năng cao"}`}
                 </Button>
               </div>
             </div>
@@ -1650,50 +1662,86 @@ export default function SettingsPage() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               {/* yt-dlp */}
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 flex flex-col justify-between space-y-4">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-                      <span>▷</span> Nhập video được phép sử dụng
-                    </h4>
-                    <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1">
-                      Sẵn sàng ✓
-                    </span>
+              {(() => {
+                const ytDep = capabilities?.dependencies.find((d) => d.id === "yt_dlp")
+                const isInstalled = Boolean(ytDep?.installed)
+                return (
+                  <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 flex flex-col justify-between space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                          <span>▷</span> Nhập video được phép sử dụng (yt-dlp)
+                        </h4>
+                        <span className={cn("text-xs font-semibold flex items-center gap-1", isInstalled ? "text-emerald-400" : "text-amber-400")}>
+                          {isInstalled ? "Sẵn sàng ✓" : "Chưa cài đặt"}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        Công cụ nhập video từ nguồn được hỗ trợ. Chỉ dùng với video bạn sở hữu, quản lý hoặc có giấy phép phù hợp; tuân thủ điều khoản của nền tảng nguồn.
+                      </p>
+                    </div>
+                    <Button
+                      variant={isInstalled ? "outline" : "default"}
+                      size="sm"
+                      onClick={() => handleInstallTool(["yt_dlp"])}
+                      disabled={Boolean(installingTool)}
+                      className={cn(
+                        "w-full h-9 text-xs font-bold",
+                        isInstalled
+                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
+                          : "bg-gradient-to-r from-[#d9940a] to-[#faaa02] text-slate-950 hover:brightness-110"
+                      )}
+                    >
+                      {installingTool?.includes("yt_dlp")
+                        ? "Đang tải & cài đặt..."
+                        : isInstalled
+                        ? "✓ Đã Cài Đặt (Cài lại / Cập nhật)"
+                        : "Tải & Cài đặt yt-dlp"}
+                    </Button>
                   </div>
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    Công cụ nhập video từ nguồn được hỗ trợ. Chỉ dùng với video bạn sở hữu, quản lý hoặc có giấy phép phù hợp; tuân thủ điều khoản của nền tảng nguồn.
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full h-9 text-xs border-emerald-500/30 bg-emerald-500/10 text-emerald-300 font-bold hover:bg-emerald-500/20"
-                >
-                  ✓ Đã Cài Đặt
-                </Button>
-              </div>
+                )
+              })()}
 
               {/* Demucs */}
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 flex flex-col justify-between space-y-4">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-                      <span>♫</span> Demucs — tách giọng / nhạc nền
-                    </h4>
+              {(() => {
+                const demucsDep = capabilities?.dependencies.find((d) => d.id === "demucs")
+                const isInstalled = Boolean(demucsDep?.installed)
+                return (
+                  <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 flex flex-col justify-between space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                          <span>♫</span> Demucs — tách giọng / nhạc nền
+                        </h4>
+                        <span className={cn("text-xs font-semibold flex items-center gap-1", isInstalled ? "text-emerald-400" : "text-amber-400")}>
+                          {isInstalled ? "Sẵn sàng ✓" : "Chưa cài đặt (~2GB)"}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        Tách giọng & nhạc nền gốc (cho AI Movie Recap). NẶNG (kéo theo PyTorch ~2GB). Dùng lại PyTorch của OmniVoice nếu đã cài.
+                      </p>
+                    </div>
+                    <Button
+                      variant={isInstalled ? "outline" : "default"}
+                      size="sm"
+                      onClick={() => handleInstallTool(["demucs", "pytorch"])}
+                      disabled={Boolean(installingTool)}
+                      className={cn(
+                        "w-full h-9 text-xs font-bold",
+                        isInstalled
+                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
+                          : "bg-gradient-to-r from-[#d9940a] to-[#faaa02] text-slate-950 hover:brightness-110"
+                      )}
+                    >
+                      {installingTool?.includes("demucs")
+                        ? "Đang tải & cài đặt..."
+                        : isInstalled
+                        ? "✓ Đã Cài Đặt (Cài lại / Cập nhật)"
+                        : "Tải & Cài đặt Demucs"}
+                    </Button>
                   </div>
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    Tách giọng & nhạc nền gốc (cho AI Movie Recap). NẶNG (kéo theo PyTorch ~2GB). Dùng lại PyTorch của OmniVoice nếu đã cài.
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  onClick={() => handleInstallTool(["demucs", "pytorch"])}
-                  disabled={Boolean(installingTool)}
-                  className="w-full h-9 text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-bold"
-                >
-                  {installingTool?.includes("demucs") ? "Đang tải & cài đặt..." : "Tải & Cài đặt Demucs"}
-                </Button>
-              </div>
+                )
+              })()}
             </div>
           </div>
 
@@ -2027,7 +2075,16 @@ export default function SettingsPage() {
                   </div>
                   <div className="flex items-center justify-between">
                     <span>Tăng tốc GPU</span>
-                    <span className="rounded bg-amber-500/20 px-2 py-0.5 text-xs text-amber-400">Chỉ dùng CPU</span>
+                    <span className={cn(
+                      "rounded px-2 py-0.5 text-xs",
+                      hardwareInfo?.is_hardware
+                        ? "bg-emerald-500/20 text-emerald-400 font-medium"
+                        : "bg-amber-500/20 text-amber-400"
+                    )}>
+                      {hardwareInfo?.is_hardware
+                        ? `Bật (${hardwareInfo.encoder_name || hardwareInfo.encoder})`
+                        : "Chỉ dùng CPU"}
+                    </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span>Hàng đợi</span>
