@@ -627,6 +627,15 @@ ipcMain.handle("open:external", (_e, url: string) => {
 ipcMain.handle("shell:open-path", async (_e, target: string) => {
   const targetPath = String(target || "").trim()
   if (!targetPath) return { ok: false, message: "Đường dẫn trống" }
+  try {
+    if (fs.existsSync(targetPath)) {
+      const stat = fs.statSync(targetPath)
+      if (stat.isFile()) {
+        shell.showItemInFolder(targetPath)
+        return { ok: true, message: "" }
+      }
+    }
+  } catch {}
   const error = await shell.openPath(targetPath)
   return { ok: !error, message: error || "" }
 })

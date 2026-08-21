@@ -2517,7 +2517,16 @@ function RenderPanel({ project }: { project: Project }) {
                 </div>
               )}
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={async () => { try { const result = await api.openProjectFolder(project.id); const opened = await openLocalPath(result.path); if (!opened.ok) throw new Error(opened.message) } catch (error) { toast({ title: "Không mở được thư mục đầu ra", description: String(error), variant: "destructive" }) } }}>
+                <Button variant="outline" size="sm" onClick={async () => {
+                  try {
+                    const result = await api.openProjectFolder(project.id)
+                    const target = result.output_path || job.output_path || result.path
+                    const opened = await openLocalPath(target)
+                    if (!opened.ok) throw new Error(opened.message)
+                  } catch (error) {
+                    toast({ title: "Không mở được thư mục đầu ra", description: String(error), variant: "destructive" })
+                  }
+                }}>
                   <FolderOpen className="h-4 w-4" />
                   Mở thư mục đầu ra
                 </Button>

@@ -575,7 +575,24 @@ def update_project(project_id: int, payload: ProjectUpdate, db: Session = Depend
     if project is None:
         raise HTTPException(404, "Project không tồn tại")
     for field, value in payload.model_dump(exclude_unset=True).items():
-        setattr(project, field, value)
+        if field == "project_directory" and value:
+            # Package into a dedicated project folder inside selected directory
+            base_path = Path(value).expanduser()
+            clean_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", (project.name or "").strip()).strip(" .")
+            folder_name = clean_name[:60] or f"project_{project.id}"
+
+            # If the selected path doesn't already end with the project subfolder name, create one
+            if not base_path.name.startswith(folder_name) and not base_path.name.endswith(f"_{project.id}"):
+                target_dir = base_path / f"{folder_name}_{project.id}"
+            else:
+                target_dir = base_path
+
+            target_dir.mkdir(parents=True, exist_ok=True)
+            (target_dir / "assets").mkdir(exist_ok=True)
+            (target_dir / "scenes").mkdir(exist_ok=True)
+            setattr(project, field, str(target_dir.resolve()))
+        else:
+            setattr(project, field, value)
     db.commit()
     db.refresh(project)
     return project
@@ -676,7 +693,37 @@ def open_project_folder(project_id: int, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
     if project is None:
         raise HTTPException(404, "Project không tồn tại")
-    return {"path": project.project_directory or str(PROJECTS_DIR / f"project_{project_id}")}
+
+    if not project.project_directory or not Path(project.project_directory).exists():
+        clean_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", (project.name or "").strip()).strip(" .")
+        folder_name = clean_name[:60] or f"project_{project.id}"
+        pdir = Path(PROJECTS_DIR) / f"{folder_name}_{project.id}"
+        pdir.mkdir(parents=True, exist_ok=True)
+        (pdir / "assets").mkdir(exist_ok=True)
+        (pdir / "scenes").mkdir(exist_ok=True)
+        project.project_directory = str(pdir.resolve())
+        db.commit()
+    else:
+        pdir = Path(project.project_directory)
+        pdir.mkdir(parents=True, exist_ok=True)
+        (pdir / "assets").mkdir(exist_ok=True)
+        (pdir / "scenes").mkdir(exist_ok=True)
+
+    output_file = pdir / "output.mp4"
+    if not output_file.exists():
+        job = (
+            db.query(RenderJob)
+            .filter(RenderJob.project_id == project_id, RenderJob.status == "completed")
+            .order_by(RenderJob.id.desc())
+            .first()
+        )
+        if job and job.output_path and Path(job.output_path).exists():
+            output_file = Path(job.output_path)
+
+    return {
+        "path": project.project_directory,
+        "output_path": str(output_file) if output_file.exists() else "",
+    }
 
 
 # ===========================================================================
