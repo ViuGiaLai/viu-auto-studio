@@ -83,6 +83,7 @@ export interface StudioSettings {
   normalize_audio?: boolean
   subtitle_style?: "highlight" | "basic" | "karaoke"
   subtitle_output_format?: "embed" | "srt" | "ass"
+  render_preset?: "basic" | "balanced" | "performance"
 }
 
 export interface TTSVoice {

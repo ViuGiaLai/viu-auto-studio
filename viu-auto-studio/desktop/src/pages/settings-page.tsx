@@ -6,7 +6,7 @@ import {
   Settings as SettingsIcon, Play, RefreshCw, AlertTriangle, CheckCircle2,
   KeyRound, Image, Zap, ExternalLink, FolderOpen, Folder, Send, ShieldCheck,
   Globe, Bot, Sparkles, MessageSquare, Eye, EyeOff, LogOut, Chrome, Check,
-  Moon, Sun, ArrowRight, Mic, Wrench
+  Moon, Sun, ArrowRight, Mic, Wrench, Sliders
 } from "lucide-react"
 import { api, openExternalUrl, selectDirectory, openAiBrowser, getAiBrowserStatus, logoutAiBrowser, mediaUrl, startFlowBrowser, logoutFlowBrowser, flowGoogleStatus } from "@/services/api"
 
@@ -48,6 +48,14 @@ const DEFAULT_TTS_CONFIG: TTSConfig = {
 }
 
 const EDGE_PROVIDER_FALLBACK = [{ id: "edge", name: "Edge TTS", available: true }]
+
+type RenderHardwareInfo = Awaited<ReturnType<typeof api.getRenderHardware>> & {
+  capabilities?: { nvenc: boolean; qsv: boolean; amf: boolean; vaapi: boolean }
+  recommended_encoder?: string
+  recommended_preset?: string
+  optimal_threads?: number
+  cpu_count?: number
+}
 
 export default function SettingsPage() {
   const navigate = useNavigate()
@@ -135,13 +143,7 @@ export default function SettingsPage() {
   const [ttsStorageStats, setTtsStorageStats] = useState<Awaited<ReturnType<typeof api.ttsStorage>> | null>(null)
 
   // Smart Render Engine Hardware State
-  const [hardwareInfo, setHardwareInfo] = useState<{
-    capabilities?: { nvenc: boolean; qsv: boolean; amf: boolean; vaapi: boolean }
-    recommended_encoder?: string
-    recommended_preset?: string
-    optimal_threads?: number
-    cpu_count?: number
-  } | null>(null)
+  const [hardwareInfo, setHardwareInfo] = useState<RenderHardwareInfo | null>(null)
   const [hardwareLoading, setHardwareLoading] = useState(false)
   // Preset package selection & tool installer
   const [selectedPackage, setSelectedPackage] = useState<"basic" | "balanced" | "performance">("balanced")
@@ -1436,7 +1438,474 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="voice">
-          <VoiceStudioPanel />
+          <div className="vas-card space-y-5 p-6">
+            {/* Header: Chuyển văn bản thành giọng nói */}
+            <div className="flex items-center gap-2.5 text-base font-semibold text-slate-100">
+              <Mic className="h-5 w-5 text-amber-400" />
+              <span>Chuyển văn bản thành giọng nói</span>
+            </div>
+
+            {/* Top Row: 4 Controls Side by Side */}
+            <div className="grid gap-4 sm:grid-cols-12 items-end">
+              {/* 1. Nhà cung cấp mặc định */}
+              <div className="sm:col-span-4 space-y-1.5">
+                <Label className="text-xs font-medium text-slate-400">Nhà cung cấp mặc định</Label>
+                <Select
+                  value={config?.provider || "edge"}
+                  onValueChange={async (p) => {
+                    if (!config) return
+                    try {
+                      const vs = await api.ttsListVoices(p)
+                      setVoices(vs)
+                      const defaultVoice = vs.length > 0 ? vs[0].id : ""
+                      const keyForProvider = config.api_keys?.[p] || ""
+                      setElevenLabsKey(keyForProvider)
+                      setGeminiTTSKey(keyForProvider)
+                      setVbeeKey(keyForProvider)
+                      await saveTTS({ provider: p, voice: defaultVoice })
+                    } catch {
+                      void saveTTS({ provider: p, voice: "" })
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-full bg-black/30 border-white/10 text-xs">
+                    <SelectValue placeholder="Chọn nhà cung cấp" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="edge">Edge TTS (miễn phí, cloud)</SelectItem>
+                    <SelectItem value="elevenlabs">ElevenLabs (cao cấp, AI)</SelectItem>
+                    <SelectItem value="kokoro_vi">Kokoro Việt Nam (local offline)</SelectItem>
+                    <SelectItem value="gemini_tts">Gemini TTS (Google AI Studio)</SelectItem>
+                    <SelectItem value="vbee">Vbee (giọng Việt đa vùng miền)</SelectItem>
+                    <SelectItem value="google_cloud_tts">Google Cloud TTS</SelectItem>
+                    <SelectItem value="azure_tts">Azure TTS</SelectItem>
+                    <SelectItem value="omnivoice">OmniVoice (Voice Clone)</SelectItem>
+                    <SelectItem value="local">Piper / Local TTS</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* 2. Giọng mặc định */}
+              <div className="sm:col-span-4 space-y-1.5">
+                <Label className="text-xs font-medium text-slate-400">Giọng mặc định</Label>
+                <Select
+                  value={config?.voice}
+                  onValueChange={(v) => void saveTTS({ voice: v })}
+                >
+                  <SelectTrigger className="w-full bg-black/30 border-white/10 text-xs">
+                    <SelectValue placeholder={voices.length === 0 ? (config?.provider === "elevenlabs" && !config?.api_keys?.elevenlabs ? "Lỗi tải giọng — kiểm tra API key" : "— Chọn giọng —") : "— Chọn giọng —"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {voices.length === 0 ? (
+                      <SelectItem value="__none__" disabled>
+                        {config?.provider === "elevenlabs" && !config?.api_keys?.elevenlabs
+                          ? "Lỗi tải giọng — kiểm tra API key"
+                          : config?.provider === "kokoro_vi"
+                          ? "⚠️ Chưa cài đặt — bấm 'Tải & Cài đặt...'"
+                          : "Chưa có danh sách giọng"}
+                      </SelectItem>
+                    ) : (
+                      voices.map((v) => (
+                        <SelectItem key={v.id} value={v.id}>
+                          {v.name}
+                          {v.language ? ` (${v.language})` : ""}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* 3. Nút Nghe thử */}
+              <div className="sm:col-span-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full h-9 gap-1.5 text-xs border-white/10 bg-black/20 hover:bg-white/5"
+                  disabled={previewing}
+                  onClick={preview}
+                >
+                  {previewing ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5 fill-current" />}
+                  {previewing ? "Đang tạo..." : "▶ Nghe thử"}
+                </Button>
+              </div>
+
+              {/* 4. Nút Test kết nối */}
+              <div className="sm:col-span-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full h-9 gap-1.5 text-xs border-white/10 bg-black/20 hover:bg-white/5"
+                  disabled={testingConn}
+                  onClick={testConnection}
+                >
+                  <RefreshCw className={cn("h-3.5 w-3.5", testingConn && "animate-spin")} />
+                  {testingConn ? "Đang test..." : "Test kết nối"}
+                </Button>
+              </div>
+            </div>
+
+            {/* Provider Configuration & Status Card */}
+            {/* 1. ELEVENLABS */}
+            {config?.provider === "elevenlabs" && (
+              <div className="rounded-xl border border-white/10 bg-black/20 p-5 space-y-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-slate-300">ElevenLabs API key</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="password"
+                      className="bg-black/40 border-white/10 text-xs font-mono"
+                      placeholder="Nhập ElevenLabs API key (xi-api-key)..."
+                      value={elevenLabsKey || config?.api_keys?.elevenlabs || ""}
+                      onChange={(e) => setElevenLabsKey(e.target.value)}
+                    />
+                    <Button
+                      size="sm"
+                      className="whitespace-nowrap bg-white/10 hover:bg-white/15 text-slate-200 text-xs border border-white/10"
+                      disabled={savingKey}
+                      onClick={() => handleSaveApiKey("elevenlabs", elevenLabsKey || config?.api_keys?.elevenlabs || "")}
+                    >
+                      {savingKey ? <RefreshCw className="h-3 w-3 animate-spin mr-1" /> : null}
+                      Lưu key & tải giọng
+                    </Button>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Lấy API key tại <a className="text-amber-400 underline hover:text-amber-300" href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noreferrer">elevenlabs.io/app/settings/api-keys</a> — Miễn phí 10.000 ký tự/tháng để tạo giọng đọc AI biểu cảm cao cấp.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-slate-300">Model</Label>
+                  <Select
+                    value={elevenLabsModel}
+                    onValueChange={(m) => setElevenLabsModel(m)}
+                  >
+                    <SelectTrigger className="w-full bg-black/40 border-white/10 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="eleven_flash_v2_5">eleven_flash_v2_5 — Nhanh, độ trễ thấp</SelectItem>
+                      <SelectItem value="eleven_multilingual_v2">eleven_multilingual_v2 — Đa ngôn ngữ, ổn định</SelectItem>
+                      <SelectItem value="eleven_turbo_v2_5">eleven_turbo_v2_5 — Chất lượng cao & tốc độ</SelectItem>
+                      <SelectItem value="eleven_v3">eleven_v3 — Biểu cảm & Audio Tags Hot Trend</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-slate-400">
+                    Chọn <strong className="text-amber-300">eleven_v3</strong> để các audio tag biểu cảm ([shouting], [whispering], [crying]...) của mode <strong>Adam Hot Trend</strong> hoạt động. Nếu tài khoản chưa được cấp quyền v3 qua API, hãy dùng <strong>eleven_multilingual_v2</strong>.
+                  </p>
+                </div>
+
+                <div className="rounded-lg bg-amber-400/[0.06] border border-amber-400/20 p-3 text-xs text-amber-200/90 leading-relaxed">
+                  💡 Danh sách giọng tự lấy từ tài khoản của bạn và các giọng HOT 🔥 từ Voice Library (trending). Chọn giọng 🔥 thì app tự thêm vào tài khoản bạn khi tổng hợp — không cần nhập voice ID. Bấm <strong>"Lưu key & tải giọng"</strong> sau khi nhập key để hiện danh sách.
+                </div>
+              </div>
+            )}
+
+            {/* 2. KOKORO VIỆT NAM */}
+            {(config?.provider === "kokoro_vi" || config?.provider === "kokoro") && (
+              <div className="rounded-xl border border-white/10 bg-black/20 p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold text-slate-100">Kokoro Việt Nam (local)</h4>
+                  <span className="flex items-center gap-1.5 text-xs text-slate-400">
+                    <span className="h-2 w-2 rounded-full bg-slate-500"></span> Chưa cài đặt
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Công cụ đọc tiếng Việt local chất lượng cao (StyleTTS2 fine-tuned), chạy hoàn toàn trên máy bạn, không cần Internet. Lần đầu cần tải thư viện AI + model (~700MB). Hỗ trợ 14 giọng đọc tiếng Việt cực kỳ tự nhiên.
+                </p>
+                <Button
+                  className="w-full bg-[#5b52e0] hover:bg-[#4d44cb] text-white font-medium text-xs py-2.5 h-auto shadow-md"
+                  onClick={() => toast({ title: "Đang tải và chuẩn bị Kokoro Việt Nam...", description: "Quá trình tải thư viện AI đang diễn ra ngầm." })}
+                >
+                  Tải & Cài đặt Kokoro Việt Nam
+                </Button>
+              </div>
+            )}
+
+            {/* 3. GEMINI TTS */}
+            {config?.provider === "gemini_tts" && (
+              <div className="rounded-xl border border-white/10 bg-black/20 p-5 space-y-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-slate-300">Gemini / Google AI Studio API key</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="password"
+                      className="bg-black/40 border-white/10 text-xs font-mono"
+                      placeholder="Nhập Google AI Studio API key (AIzaSy...)..."
+                      value={geminiTTSKey || config?.api_keys?.gemini_tts || geminiKey || ""}
+                      onChange={(e) => setGeminiTTSKey(e.target.value)}
+                    />
+                    <Button
+                      size="sm"
+                      className="whitespace-nowrap bg-white/10 hover:bg-white/15 text-slate-200 text-xs border border-white/10"
+                      disabled={savingKey}
+                      onClick={() => handleSaveApiKey("gemini_tts", geminiTTSKey || geminiKey || "")}
+                    >
+                      {savingKey ? <RefreshCw className="h-3 w-3 animate-spin mr-1" /> : null}
+                      Lưu key & tải giọng
+                    </Button>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Lấy key miễn phí tại <a className="text-amber-400 underline hover:text-amber-300" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">aistudio.google.com/apikey</a> — Hỗ trợ 8 giọng AI thế hệ mới (Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, Zephyr).
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* 4. VBEE */}
+            {config?.provider === "vbee" && (
+              <div className="rounded-xl border border-white/10 bg-black/20 p-5 space-y-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-slate-300">Vbee API Token / App ID</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="password"
+                      className="bg-black/40 border-white/10 text-xs font-mono"
+                      placeholder="Nhập Vbee API Token..."
+                      value={vbeeKey || config?.api_keys?.vbee || ""}
+                      onChange={(e) => setVbeeKey(e.target.value)}
+                    />
+                    <Button
+                      size="sm"
+                      className="whitespace-nowrap bg-white/10 hover:bg-white/15 text-slate-200 text-xs border border-white/10"
+                      disabled={savingKey}
+                      onClick={() => handleSaveApiKey("vbee", vbeeKey || config?.api_keys?.vbee || "")}
+                    >
+                      {savingKey ? <RefreshCw className="h-3 w-3 animate-spin mr-1" /> : null}
+                      Lưu key & tải giọng
+                    </Button>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Lấy API Token tại <a className="text-amber-400 underline hover:text-amber-300" href="https://vbee.vn" target="_blank" rel="noreferrer">vbee.vn</a> — Nền tảng giọng đọc AI tiếng Việt chuẩn truyền hình với đa dạng vùng miền Bắc - Trung - Nam.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* 5. EDGE TTS (MẶC ĐỊNH) */}
+            {config?.provider === "edge" && (
+              <div className="rounded-xl border border-white/10 bg-black/20 p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold text-slate-100">Edge TTS (giọng Việt & Quốc tế có sẵn)</h4>
+                  <span className="flex items-center gap-1.5 text-xs text-emerald-400">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400"></span> Sẵn sàng
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Bộ giọng đọc Microsoft Edge: Chạy trực tiếp qua Cloud, không cần API key, không cần GPU, tốc độ nhanh. Hỗ trợ Hoài My (Nữ), Nam Minh (Nam) và hơn 300+ giọng quốc tế.
+                </p>
+                <Button
+                  variant="outline"
+                  className="w-full border-white/10 bg-white/[0.02] hover:bg-white/5 text-xs py-2 h-auto"
+                  onClick={() => {
+                    api.ttsListVoices("edge").then(setVoices).catch(() => {})
+                    toast({ title: "Đã làm mới danh sách giọng Edge TTS" })
+                  }}
+                >
+                  Cài lại / Cập nhật
+                </Button>
+              </div>
+            )}
+
+            {/* 6. GOOGLE CLOUD & AZURE */}
+            {(config?.provider === "google_cloud_tts" || config?.provider === "azure_tts") && (
+              <div className="rounded-xl border border-white/10 bg-black/20 p-5 space-y-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-slate-300">
+                    {config?.provider === "google_cloud_tts" ? "Google Cloud TTS API Key" : "Azure Speech Key"}
+                  </Label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="password"
+                      className="bg-black/40 border-white/10 text-xs font-mono"
+                      placeholder="Dán API key vào đây..."
+                      value={config?.provider === "google_cloud_tts" ? googleCloudKey : azureKey}
+                      onChange={(e) => config?.provider === "google_cloud_tts" ? setGoogleCloudKey(e.target.value) : setAzureKey(e.target.value)}
+                    />
+                    <Button
+                      size="sm"
+                      className="whitespace-nowrap bg-white/10 hover:bg-white/15 text-slate-200 text-xs border border-white/10"
+                      disabled={savingKey}
+                      onClick={() => handleSaveApiKey(config.provider, config.provider === "google_cloud_tts" ? googleCloudKey : azureKey)}
+                    >
+                      {savingKey ? <RefreshCw className="h-3 w-3 animate-spin mr-1" /> : null}
+                      Lưu key & tải giọng
+                    </Button>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    {config?.provider === "google_cloud_tts" ? (
+                      <>Lấy API key tại <a className="text-amber-400 underline hover:text-amber-300" href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer">console.cloud.google.com</a> — Bật dịch vụ Cloud Text-to-Speech API.</>
+                    ) : (
+                      <>Lấy Speech Key tại <a className="text-amber-400 underline hover:text-amber-300" href="https://portal.azure.com" target="_blank" rel="noreferrer">portal.azure.com</a> — Tạo tài nguyên Azure AI Speech (miễn phí 500.000 ký tự/tháng).</>
+                    )}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Kho giọng — Danh sách giọng chi tiết */}
+            <div className="space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-medium text-slate-400 pt-2">
+                <span>Kho giọng — {voices.length} giọng tuyển chọn</span>
+                {/* Bộ lọc quốc gia gọn gàng */}
+                <div className="flex flex-wrap items-center gap-1">
+                  {[
+                    { id: "all", label: "⭐ Tất cả" },
+                    { id: "vi", label: "🇻🇳 Tiếng Việt" },
+                    { id: "en", label: "🇺🇸 Tiếng Anh" },
+                    { id: "ja", label: "🇯🇵 Tiếng Nhật" },
+                    { id: "ko", label: "🇰🇷 Tiếng Hàn" },
+                    { id: "zh", label: "🇨🇳 Tiếng Trung" },
+                    { id: "th", label: "🇹🇭 Tiếng Thái" },
+                    { id: "other", label: "🌍 Khác" },
+                  ].map((filter) => (
+                    <button
+                      key={filter.id}
+                      type="button"
+                      onClick={() => setVoiceLangFilter(filter.id)}
+                      className={cn(
+                        "rounded-md px-2 py-0.5 text-[11px] font-medium transition border",
+                        voiceLangFilter === filter.id
+                          ? "border-amber-400/40 bg-amber-400/15 text-amber-300"
+                          : "border-white/5 bg-white/[0.02] text-slate-400 hover:text-slate-200 hover:bg-white/[0.06]"
+                      )}
+                    >
+                      {filter.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-white/10 divide-y divide-white/5 bg-black/20 max-h-80 overflow-y-auto">
+                {voices.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-slate-500">
+                    {config?.provider === "elevenlabs" && !config?.api_keys?.elevenlabs
+                      ? "Chưa nhập API key ElevenLabs. Hãy dán API key và bấm 'Lưu key & tải giọng' để hiện toàn bộ giọng."
+                      : "Chưa có danh sách giọng từ nhà cung cấp này."}
+                  </div>
+                ) : (
+                  voices
+                    .filter((v) => {
+                      if (voiceLangFilter === "all") return true
+                      if (voiceLangFilter === "vi") return v.language.startsWith("vi") || v.id.startsWith("vi") || v.id.startsWith("kokoro_vi") || v.id.startsWith("hn_") || v.id.startsWith("sg_") || v.id.startsWith("hue_")
+                      if (voiceLangFilter === "en") return v.language.startsWith("en") || v.id.startsWith("en") || v.id.startsWith("kokoro_a")
+                      if (voiceLangFilter === "ja") return v.language.startsWith("ja") || v.id.startsWith("ja")
+                      if (voiceLangFilter === "ko") return v.language.startsWith("ko") || v.id.startsWith("ko")
+                      if (voiceLangFilter === "zh") return v.language.startsWith("zh") || v.id.startsWith("zh")
+                      if (voiceLangFilter === "th") return v.language.startsWith("th") || v.id.startsWith("th")
+                      if (voiceLangFilter === "other") return !["vi", "en", "ja", "ko", "zh", "th"].some((code) => v.language.startsWith(code) || v.id.startsWith(code))
+                      return true
+                    })
+                    .map((v) => {
+                    const isSelected = config?.voice === v.id
+                    return (
+                      <div
+                        key={v.id}
+                        className={cn(
+                          "flex items-center justify-between p-3.5 transition",
+                          isSelected ? "bg-amber-400/[0.06]" : "hover:bg-white/[0.02]"
+                        )}
+                      >
+                        <div className="min-w-0 pr-4">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-slate-100">{v.name}</span>
+                            {isSelected && (
+                              <span className="rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.2 text-[10px] font-bold">
+                                MẶC ĐỊNH ✓
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-0.5 text-[11px] text-slate-400">
+                            {v.description || [v.gender === "female" ? "Nữ" : v.gender === "male" ? "Nam" : null, v.language].filter(Boolean).join(" · ")}
+                          </p>
+                        </div>
+
+                        <div>
+                          {isSelected ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-xs text-slate-400 hover:text-red-400 hover:bg-transparent"
+                              onClick={() => void saveTTS({ voice: "" })}
+                            >
+                              Xoá
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs border-white/10 bg-white/[0.02] hover:bg-white/10 text-slate-200"
+                              onClick={() => void saveTTS({ voice: v.id })}
+                            >
+                              Chọn giọng này
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* Fine Tuning: Tốc độ, Cao độ, Âm lượng & Player */}
+            <div className="rounded-xl border border-white/10 bg-black/20 p-4 space-y-4">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">Tốc độ</span>
+                    <span className="text-amber-300 font-mono">{config?.speed.toFixed(2)}x</span>
+                  </div>
+                  <Slider min={0.5} max={2} step={0.05} value={[config?.speed ?? 1]} onValueChange={([v]) => void saveTTS({ speed: v })} />
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">Cao độ</span>
+                    <span className="text-amber-300 font-mono">{(config?.pitch ?? 0).toFixed(1)} st</span>
+                  </div>
+                  <Slider min={-12} max={12} step={0.5} value={[config?.pitch ?? 0]} onValueChange={([v]) => void saveTTS({ pitch: v })} />
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">Âm lượng</span>
+                    <span className="text-amber-300 font-mono">{Math.round((config?.volume ?? 1) * 100)}%</span>
+                  </div>
+                  <Slider min={0} max={1} step={0.05} value={[config?.volume ?? 1]} onValueChange={([v]) => void saveTTS({ volume: v })} />
+                </div>
+              </div>
+
+              {/* Text Input for Custom Preview */}
+              <div className="relative">
+                <Textarea
+                  value={customText}
+                  onChange={(e) => setCustomText(e.target.value)}
+                  rows={2}
+                  className="pr-24 text-xs bg-black/40 border-white/10"
+                  placeholder="Nhập câu bạn muốn nghe thử..."
+                />
+                <Button
+                  size="sm"
+                  className="absolute bottom-2 right-2 h-7 gap-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs"
+                  disabled={previewing}
+                  onClick={preview}
+                >
+                  {previewing ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3 fill-current" />}
+                  {previewing ? "Tạo..." : "Nghe thử"}
+                </Button>
+              </div>
+
+              {previewUrl && (
+                <div className="pt-2">
+                  <audio ref={audioRef} src={previewUrl} controls className="h-8 w-full rounded" autoPlay />
+                </div>
+              )}
+            </div>
+
+            {/* Footer Note */}
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Provider mặc định áp dụng cho video mới. Mỗi video có thể chọn provider/giọng riêng trong Workspace. Kokoro TTS chạy local, cần cài đặt trước khi dùng. Lưu key xong bấm "Test kết nối" để kiểm tra.
+            </p>
+          </div>
         </TabsContent>
 
         
