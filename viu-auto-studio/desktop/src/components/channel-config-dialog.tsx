@@ -1,5 +1,7 @@
 import { getCountryBadge, getSampleTextForVoice } from "@/components/voice-studio-panel"
 import { useEffect, useState } from "react"
+import { Play, RefreshCw } from "lucide-react"
+
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
   DialogFooter,
@@ -15,6 +17,7 @@ import {
 import { api, mediaUrl } from "@/services/api"
 import type { TTSVoice } from "@/types"
 import { toast } from "@/hooks/use-toast"
+import { cn } from "@/utils/cn"
 
 const STYLE_CHIPS = ["Kể chuyện tâm tình", "Sắc gọn kiểu tin tức", "Hài hước đời thường", "Tài liệu căng thẳng"]
 

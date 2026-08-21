@@ -907,37 +907,42 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="min-h-full space-y-4 p-8">
-      <div className="flex items-end justify-between">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-white">
-            <SettingsIcon className="h-6 w-6 text-amber-400" />
-            Cài đặt
-          </h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Cấu hình công cụ xử lý & API
-          </p>
+    <div className="min-h-full space-y-4 px-8 pb-12">
+      {/* Sticky Header & Tabs Bar: Cố định trên đầu khi cuộn */}
+      <div className="sticky top-0 z-20 -mx-8 px-8 pt-8 pb-3 bg-[#0a0f12]/95 backdrop-blur-md border-b border-white/5 space-y-4">
+        <div className="flex items-end justify-between">
+          <div>
+            <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-white">
+              <SettingsIcon className="h-6 w-6 text-amber-400" />
+              Cài đặt
+            </h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Cấu hình công cụ xử lý & API
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={discard} className="border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.06]">
+              Huỷ
+            </Button>
+            <Button onClick={saveSettings} className="gap-1.5 bg-gradient-to-r from-[#d9940a] to-[#faaa02] text-white shadow-lg shadow-amber-500/20 hover:brightness-110">
+              <CheckCircle2 className="h-4 w-4" />
+              Lưu cài đặt
+            </Button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={discard} className="border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.06]">
-            Huỷ
-          </Button>
-          <Button onClick={saveSettings} className="gap-1.5 bg-gradient-to-r from-[#d9940a] to-[#faaa02] text-white shadow-lg shadow-amber-500/20 hover:brightness-110">
-            <CheckCircle2 className="h-4 w-4" />
-            Lưu cài đặt
-          </Button>
-        </div>
+
+        <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setSearchParams({ tab: value }, { replace: true }) }}>
+          <TabsList className="flex w-full justify-start overflow-x-auto bg-[#141d22] border border-white/8 p-1 rounded-lg">
+            {TABS.map((t) => (
+              <TabsTrigger key={t.key} value={t.key} className="whitespace-nowrap data-[state=active]:bg-amber-500/20 data-[state=active]:text-amber-300 data-[state=active]:border-amber-500/30 rounded-md border border-transparent text-xs py-1.5 px-3">
+                {t.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
       </div>
 
-            <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setSearchParams({ tab: value }, { replace: true }) }}>
-
-        <TabsList className="flex w-full justify-start overflow-x-auto bg-[#141d22] border border-white/8 p-1 rounded-lg">
-          {TABS.map((t) => (
-            <TabsTrigger key={t.key} value={t.key} className="whitespace-nowrap data-[state=active]:bg-amber-500/20 data-[state=active]:text-amber-300 data-[state=active]:border-amber-500/30 rounded-md border border-transparent">
-              {t.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+      <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setSearchParams({ tab: value }, { replace: true }) }}>
 
         {/* Thiết lập nhanh */}
         <TabsContent value="quick">
