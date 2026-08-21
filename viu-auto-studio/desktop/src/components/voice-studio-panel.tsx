@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Mic, Play, RefreshCw, Check, Loader2, Download, AlertCircle } from "lucide-react"
+import { Mic, Play, RefreshCw, Check, Loader2, Download, Globe } from "lucide-react"
 import { api, mediaUrl } from "@/services/api"
 import { toast } from "@/hooks/use-toast"
 import type { TTSConfig, TTSVoice } from "@/types"
@@ -11,8 +11,6 @@ import { Slider } from "@/components/ui/slider"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/design-system"
 import { cn } from "@/utils/cn"
 
-const SAMPLE_TEXT_VI = "Xin chào, đây là giọng đọc mẫu của Viu Auto Studio. Hãy điều chỉnh tốc độ và âm lượng để phù hợp với video của bạn."
-
 const COUNTRY_FILTERS = [
   { id: "all", label: "⭐ Tất cả" },
   { id: "vi", label: "🇻🇳 Tiếng Việt" },
@@ -23,6 +21,44 @@ const COUNTRY_FILTERS = [
   { id: "th", label: "🇹🇭 Tiếng Thái" },
   { id: "other", label: "🌍 Khác" },
 ]
+
+export function getSampleTextForVoice(voice?: TTSVoice | null, langCode?: string): string {
+  const code = (voice?.language || voice?.id || langCode || "").toLowerCase()
+  if (code.startsWith("vi") || voice?.id?.startsWith("kokoro_vi") || voice?.id?.startsWith("hn_") || voice?.id?.startsWith("sg_") || voice?.id?.startsWith("hue_")) {
+    return "Xin chào, đây là giọng đọc mẫu của Viu Auto Studio. Hãy điều chỉnh tốc độ và âm lượng để phù hợp với video của bạn."
+  }
+  if (code.startsWith("ja") || voice?.id?.startsWith("ja")) {
+    return "こんにちは！これは Viu Auto Studio の音声サンプルです。動画に合わせてスピードや音量を調整してください。"
+  }
+  if (code.startsWith("ko") || voice?.id?.startsWith("ko")) {
+    return "안녕하세요! Viu Auto Studio의 샘플 음성입니다. 비디오에 맞게 속도와 음량을 조절해 보세요."
+  }
+  if (code.startsWith("zh") || voice?.id?.startsWith("zh")) {
+    return "你好！这是 Viu Auto Studio 的语音示例。请根据您的视频调整语速和音量。"
+  }
+  if (code.startsWith("th") || voice?.id?.startsWith("th")) {
+    return "สวัสดีครับ! นี่คือตัวอย่างเสียงจาก Viu Auto Studio ปรับความเร็วและระดับเสียงให้เหมาะกับวิดีโอของคุณได้เลย"
+  }
+  if (code.startsWith("id") || voice?.id?.startsWith("id")) {
+    return "Halo! Ini adalah contoh suara dari Viu Auto Studio. Sesuaikan kecepatan dan volume untuk video Anda."
+  }
+  if (code.startsWith("es") || voice?.id?.startsWith("es")) {
+    return "¡Hola! Esta es una muestra de voz de Viu Auto Studio. Ajusta la velocidad y el volumen para tu video."
+  }
+  if (code.startsWith("fr") || voice?.id?.startsWith("fr")) {
+    return "Bonjour ! Ceci est un exemple de voix de Viu Auto Studio. Ajustez la vitesse et le volume pour votre vidéo."
+  }
+  if (code.startsWith("de") || voice?.id?.startsWith("de")) {
+    return "Hallo! Dies ist ein Sprachbeispiel von Viu Auto Studio. Passen Sie Geschwindigkeit und Lautstärke an."
+  }
+  if (code.startsWith("pt") || voice?.id?.startsWith("pt")) {
+    return "Olá! Esta é uma amostra de voz do Viu Auto Studio. Ajuste a velocidade e o volume para o seu vídeo."
+  }
+  if (code.startsWith("en") || voice?.id?.startsWith("en") || voice?.id?.startsWith("kokoro_a")) {
+    return "Hello! This is a voice sample from Viu Auto Studio. Adjust the speed and volume to fit your video perfectly."
+  }
+  return "Hello! This is a voice sample from Viu Auto Studio. Adjust the speed and volume to fit your video."
+}
 
 export function getCountryBadge(lang: string, id: string) {
   const code = (lang || id || "").toLowerCase()
@@ -49,7 +85,7 @@ export function VoiceStudioPanel() {
   const [testingConn, setTestingConn] = useState(false)
   const [previewing, setPreviewing] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-  const [customText, setCustomText] = useState(SAMPLE_TEXT_VI)
+  const [customText, setCustomText] = useState("Xin chào, đây là giọng đọc mẫu của Viu Auto Studio. Hãy điều chỉnh tốc độ và âm lượng để phù hợp với video của bạn.")
   const [voiceLangFilter, setVoiceLangFilter] = useState("all")
 
   // Interactive Loading States
@@ -82,6 +118,11 @@ export function VoiceStudioPanel() {
 
       const vs = await api.ttsListVoices(cfg.provider)
       setVoices(vs)
+
+      const currentVoiceObj = vs.find((v) => v.id === cfg.voice) || vs[0]
+      if (currentVoiceObj) {
+        setCustomText(getSampleTextForVoice(currentVoiceObj))
+      }
     } catch (e) {
       toast({ title: "Không tải được cấu hình TTS", description: String(e), variant: "destructive" })
     } finally {
@@ -130,6 +171,9 @@ export function VoiceStudioPanel() {
 
       await save({ provider: p, voice: defaultVoice })
       setConfig((prev) => prev ? { ...prev, provider: p, voice: defaultVoice } : prev)
+      if (vs.length > 0) {
+        setCustomText(getSampleTextForVoice(vs[0]))
+      }
       toast({ title: `Đã chọn: ${p}`, description: `Đã nạp ${vs.length} giọng.` })
     } catch (e) {
       toast({ title: "Lỗi chuyển nhà cung cấp", description: String(e), variant: "destructive" })
@@ -144,11 +188,29 @@ export function VoiceStudioPanel() {
     try {
       await save({ voice: voiceId })
       setConfig((prev) => prev ? { ...prev, voice: voiceId } : prev)
-      toast({ title: voiceId ? "Đã đặt giọng mặc định" : "Đã bỏ chọn giọng" })
+      const targetVoice = voices.find((v) => v.id === voiceId)
+      if (targetVoice) {
+        setCustomText(getSampleTextForVoice(targetVoice))
+      }
+      toast({ title: voiceId ? `Đã chọn: ${targetVoice?.name || voiceId}` : "Đã bỏ chọn giọng" })
     } catch (e) {
       toast({ title: "Lỗi chọn giọng", description: String(e), variant: "destructive" })
     } finally {
       setSelectingVoiceId(null)
+    }
+  }
+
+  const handleCountryFilterChange = (filterId: string) => {
+    setVoiceLangFilter(filterId)
+    // If filter is specific country, auto-populate sample text if currently matching default
+    if (filterId !== "all" && filterId !== "other") {
+      const firstMatchingVoice = voices.find((v) => {
+        const lang = (v.language || v.id || "").toLowerCase()
+        return lang.startsWith(filterId) || v.id.startsWith(filterId)
+      })
+      if (firstMatchingVoice) {
+        setCustomText(getSampleTextForVoice(firstMatchingVoice, filterId))
+      }
     }
   }
 
@@ -211,6 +273,7 @@ export function VoiceStudioPanel() {
           api_keys: updatedKeys,
         })
         setConfig((prev) => prev ? { ...prev, voice: fetchedVoices[0].id } : prev)
+        setCustomText(getSampleTextForVoice(fetchedVoices[0]))
       }
       toast({
         title: `Đã lưu key và tải ${fetchedVoices.length} giọng`,
@@ -224,10 +287,12 @@ export function VoiceStudioPanel() {
   }
 
   const preview = async () => {
-    if (!config || !customText.trim() || previewing) return
+    const selectedVoiceObj = voices.find((v) => v.id === config?.voice) || voices[0]
+    const textToSynthesize = (customText || "").trim() || getSampleTextForVoice(selectedVoiceObj)
+    if (!config || !textToSynthesize || previewing) return
     setPreviewing(true)
     try {
-      const res = await api.ttsPreview(customText, {
+      const res = await api.ttsPreview(textToSynthesize, {
         provider: config.provider,
         voice: config.voice || undefined,
         speed: config.speed,
@@ -236,7 +301,7 @@ export function VoiceStudioPanel() {
       })
       if (res.ok && res.audio_path) {
         setPreviewUrl(mediaUrl(res.audio_path))
-        toast({ title: "Đã tạo giọng đọc mẫu" })
+        toast({ title: "Đã tạo giọng đọc mẫu", description: `Đang phát giọng: ${selectedVoiceObj?.name || config.voice}` })
       } else {
         toast({ title: "Nghe thử thất bại", description: res.message, variant: "destructive" })
       }
@@ -281,6 +346,8 @@ export function VoiceStudioPanel() {
     if (voiceLangFilter === "other") return !["vi", "en", "ja", "ko", "zh", "th"].some((code) => lang.startsWith(code) || v.id.startsWith(code))
     return true
   })
+
+  const currentSelectedVoiceObj = voices.find((v) => v.id === config?.voice)
 
   return (
     <div className="vas-card space-y-5 p-6">
@@ -590,7 +657,7 @@ export function VoiceStudioPanel() {
               <button
                 key={filter.id}
                 type="button"
-                onClick={() => setVoiceLangFilter(filter.id)}
+                onClick={() => handleCountryFilterChange(filter.id)}
                 className={cn(
                   "rounded-md px-2 py-0.5 text-[11px] font-medium transition border",
                   voiceLangFilter === filter.id
@@ -699,24 +766,38 @@ export function VoiceStudioPanel() {
           </div>
         </div>
 
-        {/* Text Input for Custom Preview */}
-        <div className="relative">
-          <Textarea
-            value={customText}
-            onChange={(e) => setCustomText(e.target.value)}
-            rows={2}
-            className="pr-24 text-xs bg-black/40 border-white/10"
-            placeholder="Nhập câu bạn muốn nghe thử..."
-          />
-          <Button
-            size="sm"
-            className="absolute bottom-2 right-2 h-7 gap-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs"
-            disabled={previewing}
-            onClick={preview}
-          >
-            {previewing ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Play className="h-3 w-3 fill-current mr-1" />}
-            {previewing ? "Đang tạo..." : "Nghe thử"}
-          </Button>
+        {/* Text Input for Custom Preview with Language Auto-Fill */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between text-[11px] text-slate-400">
+            <span>Câu văn bản nghe thử (tự đổi theo ngôn ngữ của giọng đang chọn):</span>
+            {currentSelectedVoiceObj && (
+              <button
+                type="button"
+                className="text-amber-400 hover:text-amber-300 underline"
+                onClick={() => setCustomText(getSampleTextForVoice(currentSelectedVoiceObj))}
+              >
+                Khôi phục câu mẫu bản địa
+              </button>
+            )}
+          </div>
+          <div className="relative">
+            <Textarea
+              value={customText}
+              onChange={(e) => setCustomText(e.target.value)}
+              rows={2}
+              className="pr-24 text-xs bg-black/40 border-white/10 font-sans"
+              placeholder="Nhập câu bạn muốn nghe thử..."
+            />
+            <Button
+              size="sm"
+              className="absolute bottom-2 right-2 h-7 gap-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs"
+              disabled={previewing}
+              onClick={preview}
+            >
+              {previewing ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Play className="h-3 w-3 fill-current mr-1" />}
+              {previewing ? "Đang tạo..." : "Nghe thử"}
+            </Button>
+          </div>
         </div>
 
         {previewUrl && (
