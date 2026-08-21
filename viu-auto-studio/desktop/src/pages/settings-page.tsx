@@ -93,6 +93,7 @@ export default function SettingsPage() {
   const [googleCloudKey, setGoogleCloudKey] = useState("")
   const [azureKey, setAzureKey] = useState("")
   const [savingKey, setSavingKey] = useState(false)
+  const [voiceLangFilter, setVoiceLangFilter] = useState('all')
   const [loading, setLoading] = useState(true)
   const [testingConn, setTestingConn] = useState(false)
   const [previewing, setPreviewing] = useState(false)
@@ -1983,13 +1984,39 @@ export default function SettingsPage() {
             )}
 
             {/* Kho giọng — Danh sách giọng chi tiết */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs font-medium text-slate-400 pt-2">
-                <span>Kho giọng — đã tải {voices.length} giọng</span>
-                <span className="text-slate-500">mỗi giọng ~63MB</span>
+            <div className="space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-medium text-slate-400 pt-2">
+                <span>Kho giọng — {voices.length} giọng tuyển chọn</span>
+                {/* Bộ lọc quốc gia gọn gàng */}
+                <div className="flex flex-wrap items-center gap-1">
+                  {[
+                    { id: "all", label: "⭐ Tất cả" },
+                    { id: "vi", label: "🇻🇳 Tiếng Việt" },
+                    { id: "en", label: "🇺🇸 Tiếng Anh" },
+                    { id: "ja", label: "🇯🇵 Tiếng Nhật" },
+                    { id: "ko", label: "🇰🇷 Tiếng Hàn" },
+                    { id: "zh", label: "🇨🇳 Tiếng Trung" },
+                    { id: "th", label: "🇹🇭 Tiếng Thái" },
+                    { id: "other", label: "🌍 Khác" },
+                  ].map((filter) => (
+                    <button
+                      key={filter.id}
+                      type="button"
+                      onClick={() => setVoiceLangFilter(filter.id)}
+                      className={cn(
+                        "rounded-md px-2 py-0.5 text-[11px] font-medium transition border",
+                        voiceLangFilter === filter.id
+                          ? "border-amber-400/40 bg-amber-400/15 text-amber-300"
+                          : "border-white/5 bg-white/[0.02] text-slate-400 hover:text-slate-200 hover:bg-white/[0.06]"
+                      )}
+                    >
+                      {filter.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              <div className="rounded-xl border border-white/10 divide-y divide-white/5 bg-black/20 max-h-72 overflow-y-auto">
+              <div className="rounded-xl border border-white/10 divide-y divide-white/5 bg-black/20 max-h-80 overflow-y-auto">
                 {voices.length === 0 ? (
                   <div className="p-6 text-center text-xs text-slate-500">
                     {config?.provider === "elevenlabs" && !config?.api_keys?.elevenlabs
@@ -1997,7 +2024,19 @@ export default function SettingsPage() {
                       : "Chưa có danh sách giọng từ nhà cung cấp này."}
                   </div>
                 ) : (
-                  voices.map((v) => {
+                  voices
+                    .filter((v) => {
+                      if (voiceLangFilter === "all") return true
+                      if (voiceLangFilter === "vi") return v.language.startsWith("vi") || v.id.startsWith("vi") || v.id.startsWith("kokoro_vi") || v.id.startsWith("hn_") || v.id.startsWith("sg_") || v.id.startsWith("hue_")
+                      if (voiceLangFilter === "en") return v.language.startsWith("en") || v.id.startsWith("en") || v.id.startsWith("kokoro_a")
+                      if (voiceLangFilter === "ja") return v.language.startsWith("ja") || v.id.startsWith("ja")
+                      if (voiceLangFilter === "ko") return v.language.startsWith("ko") || v.id.startsWith("ko")
+                      if (voiceLangFilter === "zh") return v.language.startsWith("zh") || v.id.startsWith("zh")
+                      if (voiceLangFilter === "th") return v.language.startsWith("th") || v.id.startsWith("th")
+                      if (voiceLangFilter === "other") return !["vi", "en", "ja", "ko", "zh", "th"].some((code) => v.language.startsWith(code) || v.id.startsWith(code))
+                      return true
+                    })
+                    .map((v) => {
                     const isSelected = config?.voice === v.id
                     return (
                       <div

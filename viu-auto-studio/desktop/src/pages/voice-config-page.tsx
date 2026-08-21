@@ -28,6 +28,7 @@ export default function VoiceConfigPage() {
   const [googleCloudKey, setGoogleCloudKey] = useState("")
   const [azureKey, setAzureKey] = useState("")
   const [savingKey, setSavingKey] = useState(false)
+  const [voiceLangFilter, setVoiceLangFilter] = useState('all')
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
   const loadAll = async () => {

@@ -1,4 +1,4 @@
-"""EdgeTTSProvider — Bộ giọng đọc Microsoft Edge tuyển chọn chất lượng cao, có mục đích sử dụng rõ ràng."""
+"""EdgeTTSProvider — Bộ giọng đọc tuyển chọn đa quốc gia (Việt Nam, Mỹ, Anh, Nhật, Hàn, Trung, Thái, Tây Ban Nha, Pháp, Đức, v.v.)."""
 
 from __future__ import annotations
 
@@ -15,11 +15,12 @@ from backend.services.tts.base import TTSProvider
 
 logger = logging.getLogger(__name__)
 
-# Danh sách giọng tuyển chọn hay nhất và hữu ích nhất cho người dùng
+# Danh sách giọng tuyển chọn cho sáng tạo video toàn cầu
 CURATED_EDGE_VOICES = [
+    # 🇻🇳 VIỆT NAM (Thị trường nội địa)
     TTSVoice(
         id="vi-VN-HoaiMyNeural",
-        name="Hoài My (Nữ, vi-VN)",
+        name="🇻🇳 Hoài My (Nữ, vi-VN)",
         language="vi-VN",
         gender="female",
         description="Nữ trẻ, trong và tươi sáng — hợp review, tin tức ngắn & quảng cáo",
@@ -31,61 +32,167 @@ CURATED_EDGE_VOICES = [
         gender="male",
         description="Nam, trầm ấm và rõ ràng — hợp review phim & tóm tắt câu chuyện",
     ),
+
+    # 🇺🇸 TIẾNG ANH MỸ (Thị trường Quốc tế / US)
     TTSVoice(
         id="en-US-JennyNeural",
-        name="Jenny (Nữ, Tiếng Anh Mỹ)",
+        name="🇺🇸 Jenny (Nữ, en-US)",
         language="en-US",
         gender="female",
         description="Nữ Mỹ, tự nhiên và trôi chảy — hợp video tiếng Anh quốc tế",
     ),
     TTSVoice(
         id="en-US-GuyNeural",
-        name="Guy (Nam, Tiếng Anh Mỹ)",
+        name="🇺🇸 Guy (Nam, en-US)",
         language="en-US",
         gender="male",
         description="Nam Mỹ, trầm và chuẩn — hợp video tài liệu, thuyết minh tiếng Anh",
     ),
     TTSVoice(
         id="en-US-AriaNeural",
-        name="Aria (Nữ, Tiếng Anh Mỹ Diễn cảm)",
+        name="🇺🇸 Aria (Nữ, en-US Diễn cảm)",
         language="en-US",
         gender="female",
-        description="Nữ Mỹ, biểu cảm cao — hợp kể chuyện, kịch bản kịch tính",
+        description="Nữ Mỹ, biểu cảm kịch tính — hợp kể chuyện, video drama & YouTube Shorts",
     ),
     TTSVoice(
+        id="en-US-ChristopherNeural",
+        name="🇺🇸 Christopher (Nam, en-US Kể chuyện)",
+        language="en-US",
+        gender="male",
+        description="Nam Mỹ, giọng kể chuyện sách nói & recap phim tiếng Anh",
+    ),
+
+    # 🇬🇧 TIẾNG ANH ANH (UK)
+    TTSVoice(
         id="en-GB-SoniaNeural",
-        name="Sonia (Nữ, Tiếng Anh Anh)",
+        name="🇬🇧 Sonia (Nữ, en-GB)",
         language="en-GB",
         gender="female",
         description="Nữ Anh, sang trọng và lịch sự — hợp video giới thiệu sản phẩm & du lịch",
     ),
     TTSVoice(
         id="en-GB-RyanNeural",
-        name="Ryan (Nam, Tiếng Anh Anh)",
+        name="🇬🇧 Ryan (Nam, en-GB)",
         language="en-GB",
         gender="male",
         description="Nam Anh, điềm đạm — hợp podcast và sách nói tiếng Anh",
     ),
+
+    # 🇯🇵 TIẾNG NHẬT (Japan / Anime / Manga)
     TTSVoice(
         id="ja-JP-NanamiNeural",
-        name="Nanami (Nữ, Tiếng Nhật)",
+        name="🇯🇵 Nanami (Nữ, ja-JP)",
         language="ja-JP",
         gender="female",
-        description="Nữ Nhật, trong trẻo và dễ thương — hợp video anime, văn hóa Nhật",
+        description="Nữ Nhật, trong trẻo và dễ thương — hợp video anime, manga & văn hóa Nhật",
     ),
+    TTSVoice(
+        id="ja-JP-KeitaNeural",
+        name="🇯🇵 Keita (Nam, ja-JP)",
+        language="ja-JP",
+        gender="male",
+        description="Nam Nhật, điềm đạm và chuẩn — hợp video tài liệu, game & review",
+    ),
+
+    # 🇰🇷 TIẾNG HÀN (Korea / K-Drama / K-Pop)
     TTSVoice(
         id="ko-KR-SunHiNeural",
-        name="Sun-Hi (Nữ, Tiếng Hàn)",
+        name="🇰🇷 Sun-Hi (Nữ, ko-KR)",
         language="ko-KR",
         gender="female",
-        description="Nữ Hàn, hiện đại và trẻ trung — hợp review phim Hàn & K-pop",
+        description="Nữ Hàn, hiện đại và trẻ trung — hợp review phim Hàn, K-pop & vlog",
     ),
     TTSVoice(
+        id="ko-KR-InJoonNeural",
+        name="🇰🇷 InJoon (Nam, ko-KR)",
+        language="ko-KR",
+        gender="male",
+        description="Nam Hàn, trầm ấm — hợp recap phim truyền hình Hàn Quốc",
+    ),
+
+    # 🇨🇳 TIẾNG TRUNG (China / Manhua / Douyin)
+    TTSVoice(
         id="zh-CN-XiaoxiaoNeural",
-        name="Xiaoxiao (Nữ, Tiếng Trung)",
+        name="🇨🇳 Xiaoxiao (Nữ, zh-CN)",
         language="zh-CN",
         gender="female",
-        description="Nữ Trung, chuẩn phổ thông — hợp tin tức và recap phim Trung",
+        description="Nữ Trung, chuẩn phổ thông — hợp tin tức, recap truyện tranh Manhua & phim Trung",
+    ),
+    TTSVoice(
+        id="zh-CN-YunxiNeural",
+        name="🇨🇳 Yunxi (Nam, zh-CN)",
+        language="zh-CN",
+        gender="male",
+        description="Nam Trung, năng động — hợp video tóm tắt phim kiếm hiệp & TikTok",
+    ),
+
+    # 🇹🇭 TIẾNG THÁI (Thailand / SEA Entertainment)
+    TTSVoice(
+        id="th-TH-PremwadeeNeural",
+        name="🇹🇭 Premwadee (Nữ, th-TH)",
+        language="th-TH",
+        gender="female",
+        description="Nữ Thái Lan, ngọt ngào — hợp video giải trí TikTok & du lịch Đông Nam Á",
+    ),
+    TTSVoice(
+        id="th-TH-NiwatNeural",
+        name="🇹🇭 Niwat (Nam, th-TH)",
+        language="th-TH",
+        gender="male",
+        description="Nam Thái Lan, rõ ràng — hợp video phóng sự & review",
+    ),
+
+    # 🇮🇩 TIẾNG INDONESIA (Indonesia)
+    TTSVoice(
+        id="id-ID-GadisNeural",
+        name="🇮🇩 Gadis (Nữ, id-ID)",
+        language="id-ID",
+        gender="female",
+        description="Nữ Indonesia, tự nhiên — hợp thị trường TikTok Indonesia lớn thứ 2 ĐNA",
+    ),
+
+    # 🇪🇸 TIẾNG TÂY BAN NHA (Spain & Latin America)
+    TTSVoice(
+        id="es-ES-ElviraNeural",
+        name="🇪🇸 Elvira (Nữ, es-ES)",
+        language="es-ES",
+        gender="female",
+        description="Nữ Tây Ban Nha, chuẩn Châu Âu — hợp thị trường nói tiếng Tây Ban Nha",
+    ),
+    TTSVoice(
+        id="es-MX-JorgeNeural",
+        name="🇲🇽 Jorge (Nam, es-MX)",
+        language="es-MX",
+        gender="male",
+        description="Nam Mexico, hào sảng — hợp video giải trí Mỹ Latinh",
+    ),
+
+    # 🇫🇷 TIẾNG PHÁP (France)
+    TTSVoice(
+        id="fr-FR-DeniseNeural",
+        name="🇫🇷 Denise (Nữ, fr-FR)",
+        language="fr-FR",
+        gender="female",
+        description="Nữ Pháp, thanh lịch — hợp video ẩm thực, thời trang & du lịch Châu Âu",
+    ),
+
+    # 🇩🇪 TIẾNG ĐỨC (Germany)
+    TTSVoice(
+        id="de-DE-KatjaNeural",
+        name="🇩🇪 Katja (Nữ, de-DE)",
+        language="de-DE",
+        gender="female",
+        description="Nữ Đức, chuẩn xác và chuyên nghiệp — hợp video khoa học & kỹ thuật",
+    ),
+
+    # 🇧🇷 TIẾNG BỒ ĐÀO NHA BRAZIL (Brazil)
+    TTSVoice(
+        id="pt-BR-FranciscaNeural",
+        name="🇧🇷 Francisca (Nữ, pt-BR)",
+        language="pt-BR",
+        gender="female",
+        description="Nữ Brazil, sôi động — hợp video bóng đá, giải trí thị trường Nam Mỹ",
     ),
 ]
 
@@ -99,7 +206,7 @@ def _edge_command() -> list[str]:
 
 
 class EdgeTTSProvider(TTSProvider):
-    """Real speech via Microsoft Edge TTS (Curated top voices)."""
+    """Real speech via Microsoft Edge TTS (Curated multi-country voices)."""
 
     @property
     def name(self) -> str:
@@ -162,6 +269,6 @@ class EdgeTTSProvider(TTSProvider):
     def test_connection(self) -> dict:
         return {
             "ok": True,
-            "message": "Edge TTS sẵn sàng hoạt động (đã chọn lọc 10 giọng hữu ích nhất).",
+            "message": "Edge TTS sẵn sàng hoạt động (đã chọn lọc 22 giọng quốc tế hàng đầu).",
             "voices": len(CURATED_EDGE_VOICES),
         }
