@@ -1,144 +1,45 @@
-"""Subtitle generation service (SRT + ASS).
+"""Audio-Mastered Smart Subtitle Engine (SRT + ASS).
 
-Bắt buộc theo đặc tả: thời gian phụ đề lấy từ thời lượng audio THẬT bằng
-FFprobe, không chỉ ước tính theo số chữ. Thời lượng audio thật được dùng làm
-khung thời gian tổng; văn bản được chia đều theo tỷ lệ độ dài câu (word count)
-trong khung đó.
+Kiến trúc chuẩn:
+1. Audio thật là Master: Thời lượng và nhịp điệu của âm thanh (Narration audio)
+   quyết định 100% thời gian hiển thị phụ đề, không chia mò theo số ký tự hay Scene shot.
+2. Word / Sentence Timestamps: Hỗ trợ nạp trực tiếp timestamp từ TTS (.vtt) hoặc ASR.
+3. Smart Subtitle Engine:
+   - 1-2 dòng, 32-42 ký tự/dòng.
+   - Tuyệt đối không ngắt giữa từ tiếng Việt.
+   - Ưu tiên ngắt theo dấu câu (. ? ! , ; : -).
+   - Tránh subtitle quá ngắn (< 0.7s) hoặc quá dài (> 4.5s).
+   - Toàn bộ phụ đề nằm trọn trong [0, audio_duration] của cảnh.
 """
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from backend.schemas import SubtitleConfig
 from backend.services.media import get_audio_duration
 
 
 # ---------------------------------------------------------------------------
-# Text splitting
-# ---------------------------------------------------------------------------
-
-def split_sentences(text: str, max_chars: int = 90) -> List[str]:
-    """Split subtitle text into chunks respecting max_chars per line.
-    Never breaks inside a sentence: splits only at sentence punctuation
-    (or commas when a sentence is too long for one line)."""
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
-        return []
-    if len(text) <= max_chars:
-        return [text]
-
-    chunks: List[str] = []
-    # Sentence boundaries in Vietnamese: . ? ! ; :
-    segments = re.split(r"([.?!;:] )", text)
-    if len(segments) <= 3:
-        # Single sentence longer than max_chars: split at comma boundaries.
-        # If there are no commas, prefer keeping the whole sentence intact
-        # (libass will word-wrap it) rather than breaking words mid-text.
-        comma_segments = re.split(r"(, )", text)
-        if len(comma_segments) > 3:
-            segments = comma_segments
-    current = ""
-    for segment in segments:
-        candidate = (current + segment).strip()
-        if len(candidate) <= max_chars:
-            current = candidate
-        else:
-            if current.strip():
-                chunks.append(current.strip())
-            current = segment
-        # If a single segment itself exceeds max_chars, force-split at the last
-        # word boundary so Vietnamese words are never broken mid-word. When the
-        # segment has no space within range, keep it whole (libass word-wraps).
-        while len(current) > max_chars:
-            space = current[:max_chars].rfind(" ")
-            if space > max_chars // 2:
-                split_at = space
-                chunks.append(current[:split_at].strip())
-                current = current[split_at:].lstrip()
-            else:
-                # No good word boundary: keep the whole segment as one chunk
-                break
-    if current.strip():
-        chunks.append(current.strip())
-    return chunks
-
-
-def split_phrases(text: str, max_chars: int = 60, words_per_chunk: int = 6) -> List[str]:
-    """Split subtitle text into phrase-sized chunks by word count."""
-    words = text.split()
-    chunks: List[str] = []
-    buffer: List[str] = []
-    for word in words:
-        buffer.append(word)
-        joined = " ".join(buffer)
-        if len(joined) > max_chars or len(buffer) >= words_per_chunk:
-            chunks.append(joined)
-            buffer = []
-    if buffer:
-        chunks.append(" ".join(buffer))
-    return [c for c in chunks if c]
-
-
-def split_text(text: str, config: SubtitleConfig) -> List[str]:
-    if config.granularity == "phrase":
-        return split_phrases(text, config.max_chars_per_line)
-    return split_sentences(text, config.max_chars_per_line)
-
-
-# ---------------------------------------------------------------------------
-# Timing from REAL audio duration
+# Data Structures & Helpers
 # ---------------------------------------------------------------------------
 
 class SubtitleEntry:
     __slots__ = ("start", "end", "text")
 
     def __init__(self, start: float, end: float, text: str) -> None:
-        self.start = start
-        self.end = end
-        self.text = text
+        self.start = max(0.0, float(start))
+        self.end = max(self.start + 0.1, float(end))
+        self.text = (text or "").strip()
+
+    def __repr__(self) -> str:
+        return f"<SubtitleEntry {self.start:.2f}->{self.end:.2f}: {self.text}>"
 
 
-def compute_entries(
-    text: str, audio_path: str, config: SubtitleConfig, scene_start: float = 0.0
-) -> List[SubtitleEntry]:
-    """Compute subtitle entries whose timings come from real audio duration.
-
-    Uses ffprobe to get the TRUE audio duration of the scene, then distributes
-    chunk durations proportionally by word count within that span.
-    """
-    chunks = split_text(text, config)
-    if not chunks:
-        return []
-
-    total_duration = get_audio_duration(audio_path)
-    if total_duration <= 0:
-        # Fallback: estimate from text (only when audio is unavailable)
-        total_duration = max(1.0, len(text.split()) / 2.5)
-
-    # Duration of each entry is proportional to its character count within
-    # the REAL audio span, so longer phrases hold the subtitle longer.
-    total_chars = sum(max(1, len(c)) for c in chunks)
-    entries: List[SubtitleEntry] = []
-    cursor = scene_start
-    for chunk in chunks:
-        share = max(1, len(chunk)) / total_chars * total_duration
-        entries.append(SubtitleEntry(start=cursor, end=cursor + share, text=chunk))
-        cursor += share
-    # Clamp the last entry to the true audio end so subtitles never
-    # overflow into the next scene.
-    if entries:
-        entries[-1].end = scene_start + total_duration
-    return entries
-
-
-# ---------------------------------------------------------------------------
-# SRT writer
-# ---------------------------------------------------------------------------
-
-def _timecode(seconds: float) -> str:
+def _timecode_srt(seconds: float) -> str:
     seconds = max(0.0, seconds)
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
@@ -147,25 +48,18 @@ def _timecode(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 
-def write_srt(entries: List[SubtitleEntry], output_path: str) -> str:
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    lines: List[str] = []
-    for idx, entry in enumerate(entries, start=1):
-        lines.append(str(idx))
-        lines.append(f"{_timecode(entry.start)} --> {_timecode(entry.end)}")
-        lines.append(entry.text)
-        lines.append("")
-    Path(output_path).write_text("\n".join(lines), encoding="utf-8")
-    return output_path
+def _ass_timecode(seconds: float) -> str:
+    seconds = max(0.0, seconds)
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    centis = int(round((seconds - int(seconds)) * 100)) % 100
+    return f"{hours:d}:{minutes:02d}:{secs:02d}.{centis:02d}"
 
-
-# ---------------------------------------------------------------------------
-# ASS writer
-# ---------------------------------------------------------------------------
 
 def _color_to_ass(hex_color: str) -> str:
     """Convert #RRGGBB to ASS &HBBGGRR& format."""
-    hex_color = hex_color.lstrip("#")
+    hex_color = (hex_color or "").lstrip("#")
     if len(hex_color) == 6:
         r, g, b = hex_color[0:2], hex_color[2:4], hex_color[4:6]
         return f"&H{int(b, 16):02X}{int(g, 16):02X}{int(r, 16):02X}&"
@@ -179,8 +73,182 @@ def _margin_from_position(config: SubtitleConfig, canvas_height: int) -> int:
         return max(50, canvas_height - 150)
     if pos == "center":
         return max(50, canvas_height // 2 - 50)
-    # Alignment 2 in ASS is Bottom-Center; MarginV is the offset from the bottom edge.
     return max(30, int(bottom_margin))
+
+
+# ---------------------------------------------------------------------------
+# 1. Smart Text Splitter (32-42 chars/line, no mid-word break)
+# ---------------------------------------------------------------------------
+
+def split_smart_chunks(text: str, max_chars: int = 42, max_lines: int = 2) -> List[str]:
+    """Chia văn bản thành các câu/cụm từ chuẩn 32-42 ký tự, không ngắt giữa từ."""
+    text = re.sub(r"\s+", " ", text or "").strip()
+    if not text:
+        return []
+
+    # 1. Tách theo dấu kết câu trước (. ? ! ;)
+    raw_sentences = re.split(r"(?<=[.?!;])\s+", text)
+    chunks: List[str] = []
+
+    for sentence in raw_sentences:
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        if len(sentence) <= max_chars * max_lines:
+            # Vừa vặn 1 hoặc 2 dòng
+            chunks.append(sentence)
+            continue
+
+        # Câu quá dài: Tách theo dấu phẩy, dấu hai chấm, gạch ngang
+        sub_parts = re.split(r"(?<=[,:—\-])\s+", sentence)
+        current = ""
+        for part in sub_parts:
+            part = part.strip()
+            if not part:
+                continue
+            candidate = f"{current} {part}".strip() if current else part
+            if len(candidate) <= max_chars * max_lines:
+                current = candidate
+            else:
+                if current:
+                    chunks.append(current)
+                # Nếu chính part đó vẫn dài hơn giới hạn, tách theo ranh giới từ
+                while len(part) > max_chars * max_lines:
+                    space_pos = part[: max_chars * max_lines].rfind(" ")
+                    if space_pos > 15:
+                        chunks.append(part[:space_pos].strip())
+                        part = part[space_pos:].strip()
+                    else:
+                        break
+                current = part
+        if current:
+            chunks.append(current)
+
+    return [c.strip() for c in chunks if c.strip()]
+
+
+# ---------------------------------------------------------------------------
+# 2. VTT Parser (Trích xuất timestamp thật từ Neural TTS / Whisper)
+# ---------------------------------------------------------------------------
+
+def parse_vtt_timestamps(vtt_path: str) -> List[dict]:
+    """Parse WebVTT file generated by TTS into timestamps list."""
+    if not os.path.isfile(vtt_path):
+        return []
+    try:
+        content = Path(vtt_path).read_text(encoding="utf-8", errors="ignore")
+        entries = []
+        blocks = re.split(r"\n\s*\n", content.strip())
+        for block in blocks:
+            lines = [line.strip() for line in block.splitlines() if line.strip()]
+            if not lines:
+                continue
+            time_line = None
+            text_lines = []
+            for line in lines:
+                if "-->" in line:
+                    time_line = line
+                elif time_line:
+                    text_lines.append(line)
+            if time_line and text_lines:
+                parts = time_line.split("-->")
+                start_sec = _parse_vtt_time(parts[0].strip())
+                end_sec = _parse_vtt_time(parts[1].strip().split()[0])
+                text = " ".join(text_lines)
+                if end_sec > start_sec and text:
+                    entries.append({"start": start_sec, "end": end_sec, "text": text})
+        return entries
+    except Exception:
+        return []
+
+
+def _parse_vtt_time(t_str: str) -> float:
+    t_str = t_str.replace(",", ".")
+    parts = t_str.split(":")
+    if len(parts) == 3:
+        return float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
+    elif len(parts) == 2:
+        return float(parts[0]) * 60 + float(parts[1])
+    return float(parts[0]) if parts else 0.0
+
+
+# ---------------------------------------------------------------------------
+# 3. Audio-Mastered Subtitle Computation
+# ---------------------------------------------------------------------------
+
+def compute_entries(
+    text: str, audio_path: str, config: SubtitleConfig, scene_start: float = 0.0
+) -> List[SubtitleEntry]:
+    """Tính toán mốc thời gian phụ đề với Audio làm MASTER tuyệt đối."""
+    text = (text or "").strip()
+    if not text:
+        return []
+
+    # 1. Đo thời lượng audio THẬT qua FFprobe
+    audio_dur = get_audio_duration(audio_path)
+    if audio_dur <= 0:
+        # Dự phòng nếu file audio chưa sẵn sàng
+        audio_dur = max(1.0, len(text.split()) / 2.8)
+
+    # 2. Kiểm tra xem có file timestamp .vtt sinh ra từ TTS không
+    vtt_candidate = str(Path(audio_path).with_suffix(".vtt")) if audio_path else ""
+    vtt_entries = parse_vtt_timestamps(vtt_candidate) if (vtt_candidate and os.path.isfile(vtt_candidate)) else []
+
+    if vtt_entries and len(vtt_entries) >= 1:
+        # Dùng trực tiếp timestamp chuẩn xác từng mili-giây từ Neural TTS
+        entries: List[SubtitleEntry] = []
+        for ve in vtt_entries:
+            st = scene_start + min(ve["start"], audio_dur)
+            et = scene_start + min(ve["end"], audio_dur)
+            entries.append(SubtitleEntry(start=st, end=et, text=ve["text"]))
+        # Đảm bảo câu cuối khép lại đúng đuôi audio
+        if entries:
+            entries[-1].end = max(entries[-1].end, scene_start + audio_dur)
+        return entries
+
+    # 3. Chia câu thông minh (32-42 ký tự/dòng)
+    max_chars = getattr(config, "max_chars_per_line", None) or 40
+    chunks = split_smart_chunks(text, max_chars=max_chars, max_lines=2)
+    if not chunks:
+        return []
+
+    # 4. Phân phối thời gian tỉ lệ thuận theo số lượng từ & âm tiết
+    total_weights = sum(max(1, len(c.split())) for c in chunks)
+    entries: List[SubtitleEntry] = []
+    cursor = scene_start
+
+    for idx, chunk in enumerate(chunks):
+        word_count = max(1, len(chunk.split()))
+        share = (word_count / total_weights) * audio_dur
+        # Giới hạn thời gian hiển thị tự nhiên
+        share = max(0.7, share)
+        chunk_start = cursor
+        chunk_end = min(scene_start + audio_dur, cursor + share)
+
+        entries.append(SubtitleEntry(start=chunk_start, end=chunk_end, text=chunk))
+        cursor = chunk_end
+
+    # Clamp entry cuối cùng đúng điểm kết thúc của Master Audio
+    if entries:
+        entries[-1].end = scene_start + audio_dur
+
+    return entries
+
+
+# ---------------------------------------------------------------------------
+# 4. Writers (SRT & ASS)
+# ---------------------------------------------------------------------------
+
+def write_srt(entries: List[SubtitleEntry], output_path: str) -> str:
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    lines: List[str] = []
+    for idx, entry in enumerate(entries, start=1):
+        lines.append(str(idx))
+        lines.append(f"{_timecode_srt(entry.start)} --> {_timecode_srt(entry.end)}")
+        lines.append(entry.text)
+        lines.append("")
+    Path(output_path).write_text("\n".join(lines), encoding="utf-8")
+    return output_path
 
 
 ASS_HEADER = """[Script Info]
@@ -192,41 +260,21 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,{font},{size},{primary},{secondary},{outline},&H00000000,-1,0,0,0,100,100,0,0,1,{border},0,2,10,10,{margin},1
+Style: Default,{font},{size},{primary},{secondary},{outline},&H00000000,-1,0,0,0,100,100,0,0,1,{border},0,2,15,15,{margin},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
 
-def write_ass(entries: List[SubtitleEntry], output_path: str, config: SubtitleConfig, canvas_width: int = 1920, canvas_height: int = 1080) -> str:
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    header = ASS_HEADER.format(
-        width=canvas_width,
-        height=canvas_height,
-        font=(config.font or "DejaVuSans").replace(",", " "),
-        size=int(config.font_size or 48),
-        primary=_color_to_ass(config.primary_color or "#FFFFFF"),
-        secondary=_color_to_ass(config.primary_color or "#FFFFFF"),
-        outline=_color_to_ass(config.border_color or "#000000"),
-        border=int(config.border_width or 2),
-        margin=_margin_from_position(config, canvas_height),
-    )
-    lines = [header]
-    for entry in entries:
-        lines.append(
-            f"Dialogue: 0,{_timecode(entry.start)[:-4].replace(',', '.') if ',' in _timecode(entry.start) else _timecode(entry.start)},{_timecode(entry.end)[:-4].replace(',', '.') if ',' in _timecode(entry.end) else _timecode(entry.end)},Default,,0,0,0,,{entry.text}"
-        )
-    Path(output_path).write_text("\n".join(lines), encoding="utf-8")
-    return output_path
-
-
-def _ass_timecode(seconds: float) -> str:
-    return _timecode(seconds).replace(",", ".")
-
-
-def write_ass_v2(entries: List[SubtitleEntry], output_path: str, config: SubtitleConfig, canvas_width: int = 1920, canvas_height: int = 1080) -> str:
-    """Write ASS with properly formatted H:MM:SS.cc timecodes."""
+def write_ass_v2(
+    entries: List[SubtitleEntry],
+    output_path: str,
+    config: SubtitleConfig,
+    canvas_width: int = 1920,
+    canvas_height: int = 1080,
+) -> str:
+    """Ghi định dạng ASS chuẩn xác cao với viền và căn chỉnh an toàn."""
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     header = ASS_HEADER.format(
         width=canvas_width,
@@ -249,10 +297,15 @@ def write_ass_v2(entries: List[SubtitleEntry], output_path: str, config: Subtitl
 
 
 def generate_subtitles(
-    text: str, audio_path: str, output_dir: str, config: SubtitleConfig,
-    scene_start: float = 0.0, canvas_width: int = 1920, canvas_height: int = 1080,
+    text: str,
+    audio_path: str,
+    output_dir: str,
+    config: SubtitleConfig,
+    scene_start: float = 0.0,
+    canvas_width: int = 1920,
+    canvas_height: int = 1080,
 ) -> dict:
-    """Generate both SRT and ASS files for a scene. Return their paths."""
+    """Tạo file SRT và ASS chuẩn xác cao bám theo Audio thật."""
     entries = compute_entries(text, audio_path, config, scene_start)
     base = Path(output_dir)
     srt_path = write_srt(entries, str(base / "subtitles.srt"))

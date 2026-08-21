@@ -88,11 +88,13 @@ class EdgeTTSProvider(TTSProvider):
 
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         mp3_tmp = str(Path(output_path).with_suffix(".raw.mp3"))
+        vtt_output = str(Path(output_path).with_suffix(".vtt"))
         cmd = _edge_command() + [
             "--voice", voice_id,
             "--rate", rate,
             "--text", text,
             "--write-media", mp3_tmp,
+            "--write-subtitles", vtt_output,
         ]
         mp3_ok = False
         for attempt in range(2):
