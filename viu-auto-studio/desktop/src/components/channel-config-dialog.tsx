@@ -1,3 +1,4 @@
+import { getCountryBadge } from "@/components/voice-studio-panel"
 import { useEffect, useState } from "react"
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
@@ -557,19 +558,17 @@ export function ChannelConfigDialog({
                       {String(config.voice || "").trim() && !voices.some((voice) => voice.id === String(config.voice)) && (
                         <SelectItem value={String(config.voice)}>Đang dùng: {String(config.voice)}</SelectItem>
                       )}
-                      {voices.map((voice) => (
-                        <SelectItem key={voice.id} value={voice.id}>
-                          {voice.name} ({voice.language}){voice.downloaded ? "" : " · cần tải"}
-                        </SelectItem>
-                      ))}
+                      {voices.map((voice) => {
+                        const badge = getCountryBadge(voice.language, voice.id)
+                        return (
+                          <SelectItem key={voice.id} value={voice.id}>
+                            {badge.flag} {voice.name}
+                          </SelectItem>
+                        )
+                      })}
                     </SelectContent>
                   </Select>
-                  <Input
-                    className="mt-2 border-white/10 bg-[#0c1419] text-slate-200 placeholder:text-slate-500"
-                    placeholder="Hoặc nhập voice ID tùy chỉnh"
-                    value={String(config.voice || "")}
-                    onChange={(e) => set("voice", e.target.value)}
-                  />
+
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium text-slate-400">Đồng bộ nhân vật</Label>

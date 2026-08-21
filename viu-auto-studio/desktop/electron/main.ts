@@ -323,7 +323,7 @@ function createWindow(): void {
           const tabLabels = ["Thiết lập nhanh", "Nội dung & AI", "Giọng & Âm thanh", "Hình ảnh & Video", "Dựng & Xuất video", "Tài khoản & Kết nối", "Hiệu năng", "Nâng cao"]
           const tabResults: Array<{ label: string; selected: string; bodyHasLabel: boolean }> = []
           for (const label of tabLabels) {
-            await mainWindow.webContents.executeJavaScript(`(() => { const target = [...document.querySelectorAll('button')].find((node) => (node.textContent || '').includes(${JSON.stringify(label)})); if (!target) throw new Error('Không tìm thấy tab: ' + ${JSON.stringify(label)}); target.click(); return true })()`)
+            await mainWindow.webContents.executeJavaScript(`(() => { const target = [...document.querySelectorAll('button')].find((node) => (node.textContent || '').includes(${JSON.stringify(label)})); if (!target) throw new Error('Không tìm thấy tab: ' + ${JSON.stringify(label)}); target.focus(); target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, buttons: 1 })); target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0 })); target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })); return true })()`)
             await waitSettings(350)
             const tabRuntimeErrors = await mainWindow.webContents.executeJavaScript(`window.__viuRuntimeErrors || []`)
             fs.writeFileSync(path.join(captureDir, `settings-tab-${tabLabels.indexOf(label) + 1}-runtime-errors.json`), JSON.stringify({ label, errors: tabRuntimeErrors }, null, 2), "utf8")
@@ -333,10 +333,15 @@ function createWindow(): void {
             fs.writeFileSync(path.join(captureDir, `settings-tab-${tabLabels.indexOf(label) + 1}.png`), (await mainWindow.webContents.capturePage()).toPNG())
             if (!(state.selected === "true" || state.selected === "active") || !state.bodyHasLabel) throw new Error(`Tab Settings không active: ${label}; state=${JSON.stringify(state)}`)
           }
+          console.log('[SettingsSmoke] tabs-ok')
           await mainWindow.webContents.executeJavaScript(`(() => { const target = [...document.querySelectorAll('button')].find((node) => (node.textContent || '').includes('Dựng & Xuất video')); if (!target) throw new Error('Không tìm thấy tab Dựng & Xuất video'); target.click(); return true })()`)
+          console.log('[SettingsSmoke] edit-clicked')
           await waitSettings(500)
+          console.log('[SettingsSmoke] edit-ready')
           const originalPreset = await mainWindow.webContents.executeJavaScript(`(() => [...document.querySelectorAll('button[aria-pressed="true"]')].find((node) => ['YouTube ngang','Shorts / TikTok','Video vuông','Chất lượng cao'].some((label) => (node.textContent || '').includes(label)))?.textContent || 'YouTube ngang')`)
+          console.log('[SettingsSmoke] preset-read')
           const originalSubtitle = await mainWindow.webContents.executeJavaScript(`(() => [...document.querySelectorAll('button[aria-pressed="true"]')].find((node) => ['Nổi bật','Cơ bản','Karaoke'].some((label) => (node.textContent || '').includes(label)))?.textContent || 'Nổi bật')`)
+          console.log('[SettingsSmoke] subtitle-read')
           await mainWindow.webContents.executeJavaScript(`(() => { const target = [...document.querySelectorAll('button')].find((node) => (node.textContent || '').includes('Shorts / TikTok')); if (!target) throw new Error('Không tìm thấy Output Preset Shorts'); target.click(); const subtitle = [...document.querySelectorAll('button')].find((node) => (node.textContent || '').includes('Karaoke')); if (!subtitle) throw new Error('Không tìm thấy Subtitle Karaoke'); subtitle.click(); return true })()`)
           await waitSettings(250)
           await mainWindow.webContents.executeJavaScript(`(() => { const save = [...document.querySelectorAll('button')].find((node) => (node.textContent || '').trim().includes('Lưu cài đặt')); if (!save) throw new Error('Không tìm thấy nút Lưu cài đặt'); save.click(); return true })()`)
