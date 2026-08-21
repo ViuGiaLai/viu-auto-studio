@@ -61,6 +61,13 @@ export interface StudioSettings {
   telegram_bot_token?: string
   telegram_chat_id?: string
   flow_logged_in: boolean
+  output_preset?: "youtube" | "shorts" | "square" | "4k" | "custom"
+  voice_volume?: number
+  music_volume?: number
+  enable_ducking?: boolean
+  normalize_audio?: boolean
+  subtitle_style?: "highlight" | "basic" | "karaoke"
+  subtitle_output_format?: "embed" | "srt" | "ass"
 }
 
 export interface TTSVoice {

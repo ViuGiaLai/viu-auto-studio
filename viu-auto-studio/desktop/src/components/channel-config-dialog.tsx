@@ -1,4 +1,4 @@
-import { getCountryBadge } from "@/components/voice-studio-panel"
+import { getCountryBadge, getSampleTextForVoice } from "@/components/voice-studio-panel"
 import { useEffect, useState } from "react"
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
@@ -180,7 +180,8 @@ export function ChannelConfigDialog({
   const previewVoice = async () => {
     setPreviewingVoice(true)
     try {
-      const text = String(config.hook || "Đây là giọng đọc mẫu của kênh.")
+      const selectedVoice = voices.find((v) => v.id === String(config.voice))
+      const text = getSampleTextForVoice(selectedVoice)
       const result = await api.ttsPreview(text, {
         provider: String(config.tts_provider || "") || undefined,
         voice: String(config.voice || "") || undefined,
@@ -188,7 +189,7 @@ export function ChannelConfigDialog({
       if (!result.ok || !result.audio_path) throw new Error(result.message || "Không tạo được audio mẫu")
       const audio = new Audio(mediaUrl(result.audio_path))
       await audio.play()
-      toast({ title: "Đang phát giọng mẫu" })
+      toast({ title: "Đang phát giọng mẫu", description: selectedVoice?.name || String(config.voice || "Mặc định") })
     } catch (e) {
       toast({ title: "Không nghe thử được", description: String(e), variant: "destructive" })
     } finally {
@@ -569,6 +570,30 @@ export function ChannelConfigDialog({
                     </SelectContent>
                   </Select>
 
+                  <div className="flex gap-2 pt-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 h-8 text-xs border-white/10 bg-white/[0.02] hover:bg-white/10 gap-1.5"
+                      disabled={previewingVoice}
+                      onClick={previewVoice}
+                    >
+                      {previewingVoice ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5 fill-current" />}
+                      {previewingVoice ? "Đang tạo..." : "▶ Nghe thử"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 h-8 text-xs border-white/10 bg-white/[0.02] hover:bg-white/10 gap-1.5"
+                      disabled={testingVoice}
+                      onClick={testVoiceConnection}
+                    >
+                      <RefreshCw className={cn("h-3.5 w-3.5", testingVoice && "animate-spin text-amber-400")} />
+                      {testingVoice ? "Đang test..." : "Test kết nối"}
+                    </Button>
+                  </div>
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium text-slate-400">Đồng bộ nhân vật</Label>

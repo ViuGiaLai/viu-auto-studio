@@ -560,9 +560,17 @@ class StudioSettingsRead(BaseModel):
     telegram_enabled: bool = False
     telegram_configured: bool = False
     flow_logged_in: bool = False
+    output_preset: str = "youtube"
+    voice_volume: float = Field(default=1.0, ge=0.0, le=2.0)
+    music_volume: float = Field(default=0.25, ge=0.0, le=2.0)
+    enable_ducking: bool = True
+    normalize_audio: bool = True
+    subtitle_style: str = "highlight"
+    subtitle_output_format: str = "embed"
 
 
 class StudioSettingsUpdate(BaseModel):
+
     engine_mode: Optional[str] = None
     ai_provider: Optional[str] = None
     ai_model: Optional[str] = None
@@ -580,6 +588,13 @@ class StudioSettingsUpdate(BaseModel):
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
     telegram_enabled: Optional[bool] = None
+    output_preset: Optional[str] = None
+    voice_volume: Optional[float] = Field(default=None, ge=0.0, le=2.0)
+    music_volume: Optional[float] = Field(default=None, ge=0.0, le=2.0)
+    enable_ducking: Optional[bool] = None
+    normalize_audio: Optional[bool] = None
+    subtitle_style: Optional[str] = None
+    subtitle_output_format: Optional[str] = None
 
 
 class IdeaCreateRequest(BaseModel):

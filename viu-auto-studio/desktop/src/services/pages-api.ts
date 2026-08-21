@@ -6,7 +6,14 @@
 import { buildApiUrl } from "./api"
 
 async function req<T = unknown>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(await buildApiUrl(path), init)
+  const bodyIsFormData = typeof FormData !== "undefined" && init?.body instanceof FormData
+  const headers = new Headers(init?.headers)
+  if (init?.body && !bodyIsFormData && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json")
+  }
+  const requestInit: RequestInit = { ...init, headers }
+  const res = await fetch(await buildApiUrl(path), requestInit)
+
   if (!res.ok) {
     const msg = await res.text().catch(() => "Lỗi không xác định")
     throw new Error(msg || `HTTP ${res.status}`)
