@@ -600,6 +600,7 @@ class PipelineManager:
 
     # ------------------------------------------------------------------
     def _execute_steps(self, db, job_id: int, project_id: int, render_config: dict, tts_config: dict, stop: threading.Event) -> None:
+        render_cfg = RenderConfig(**(render_config or {}))
         job = db.query(RenderJob).filter(RenderJob.id == job_id).first()
         project = db.query(Project).filter(Project.id == project_id).first()
         project_dir = Path(project.project_directory) if project and project.project_directory else (Path(PROJECTS_DIR) / f"project_{project_id}")
@@ -607,10 +608,33 @@ class PipelineManager:
         log_path = project_dir / "render.log"
         engine = FFmpegEngine(log_path=str(log_path))
         start_status = job.status if job else "generating_voice"
-        # Rendering can resume directly at media_ready/generating_subtitles.
-        # Canvas dimensions therefore belong to the whole job, not only to the
-        # optional prepare-media step that a Flow-completed project skips.
+
+        # Canvas dimensions
         width, height = output_size(project, render_cfg)
+
+        scenes = (
+            db.query(Scene).filter(Scene.project_id == project_id)
+            .order_by(Scene.order_index).all()
+        )
+
+        # Check if all scenes already have voice audio and media ready
+        all_voices_ready = bool(scenes and all(
+            (s.audio_path and Path(s.audio_path).exists()) or not (s.narration or "").strip()
+            for s in scenes
+        ))
+        all_media_ready = bool(scenes and all(
+            (s.media_path and Path(s.media_path).exists()) or
+            (s.video_path and Path(s.video_path).exists()) or
+            (s.image_path and Path(s.image_path).exists())
+            for s in scenes
+        ))
+
+        # If everything is already in place from Dựng phim, jump straight to subtitles or rendering
+        if start_status == "generating_voice" and all_voices_ready:
+            if all_media_ready:
+                start_status = "generating_subtitles" if render_cfg.enable_subtitles else "rendering"
+            else:
+                start_status = "preparing_media"
 
         # ------------------------------------------------------------------
         # Step 1: voice
