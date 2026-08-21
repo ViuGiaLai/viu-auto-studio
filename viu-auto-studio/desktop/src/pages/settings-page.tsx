@@ -33,7 +33,6 @@ const TABS = [
   { key: "content", label: "🧠 Nội dung & AI" },
   { key: "voice", label: "🎙 Giọng & Âm thanh" },
   { key: "visual", label: "🎨 Hình ảnh & Video" },
-  { key: "edit", label: "🎬 Dựng & Xuất video" },
   { key: "connections", label: "🔗 Tài khoản & Kết nối" },
   { key: "performance", label: "⚡ Hiệu năng" },
   { key: "advanced", label: "🛠 Nâng cao" },
@@ -81,7 +80,7 @@ export default function SettingsPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedTabRaw = searchParams.get("tab")
-  const requestedTab = ({ chung: "quick", engine: "edit", ai: "content", telegram: "connections", publish: "connections" } as Record<string, string>)[requestedTabRaw || ""] || requestedTabRaw
+  const requestedTab = ({ chung: "quick", engine: "performance", ai: "content", telegram: "connections", publish: "connections" } as Record<string, string>)[requestedTabRaw || ""] || requestedTabRaw
   const [activeTab, setActiveTab] = useState(TABS.some((tab) => tab.key === requestedTab) ? requestedTab || "quick" : "quick")
 
   const [config, setConfig] = useState<TTSConfig | null>(DEFAULT_TTS_CONFIG)
@@ -949,7 +948,7 @@ export default function SettingsPage() {
           <div className="vas-card p-5">
             <h3 className="mb-4 text-base font-semibold text-slate-100">Cài đặt chung</h3>
                         <p className="mb-4 text-sm text-slate-500">Thư mục dữ liệu, người vận hành và hành vi hệ thống</p>
-            <div className="mb-5 rounded-xl border border-emerald-400/20 bg-emerald-500/[0.05] p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="text-sm font-semibold text-slate-100">Kiểm tra hệ thống</div><p className="mt-1 text-xs text-slate-400">Viu kiểm tra runtime và capability thật trước khi workflow chạy.</p></div><Button type="button" size="sm" variant="outline" onClick={() => void refreshCapabilities()} disabled={capabilitiesLoading}>{capabilitiesLoading ? "Đang kiểm tra…" : "Kiểm tra lại"}</Button></div><div className="mt-3 grid gap-2 sm:grid-cols-3">{(capabilities?.capabilities.filter((item) => ["factory", "movie_recap", "import_media"].includes(item.id)) ?? []).map((item) => <div key={item.id} className="rounded-lg border border-white/[0.06] bg-black/15 p-3"><div className="text-xs font-semibold text-slate-200">{item.label}</div><div className={cn("mt-1 text-xs", item.ready ? "text-emerald-300" : "text-amber-300")}>{item.ready ? "Sẵn sàng" : `Thiếu ${item.missing.length} thành phần`}</div></div>)}</div><Button type="button" size="sm" variant="ghost" className="mt-3 px-0 text-amber-300 hover:bg-transparent hover:text-amber-200" onClick={() => { setActiveTab("edit"); setSearchParams({ tab: "edit" }, { replace: true }) }}>Quản lý Công cụ hệ thống →</Button></div>
+            <div className="mb-5 rounded-xl border border-emerald-400/20 bg-emerald-500/[0.05] p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="text-sm font-semibold text-slate-100">Kiểm tra hệ thống</div><p className="mt-1 text-xs text-slate-400">Viu kiểm tra runtime và capability thật trước khi workflow chạy.</p></div><Button type="button" size="sm" variant="outline" onClick={() => void refreshCapabilities()} disabled={capabilitiesLoading}>{capabilitiesLoading ? "Đang kiểm tra…" : "Kiểm tra lại"}</Button></div><div className="mt-3 grid gap-2 sm:grid-cols-3">{(capabilities?.capabilities.filter((item) => ["factory", "movie_recap", "import_media"].includes(item.id)) ?? []).map((item) => <div key={item.id} className="rounded-lg border border-white/[0.06] bg-black/15 p-3"><div className="text-xs font-semibold text-slate-200">{item.label}</div><div className={cn("mt-1 text-xs", item.ready ? "text-emerald-300" : "text-amber-300")}>{item.ready ? "Sẵn sàng" : `Thiếu ${item.missing.length} thành phần`}</div></div>)}</div><Button type="button" size="sm" variant="ghost" className="mt-3 px-0 text-amber-300 hover:bg-transparent hover:text-amber-200" onClick={() => { setActiveTab("performance"); setSearchParams({ tab: "performance" }, { replace: true }) }}>Quản lý Công cụ & Hiệu năng →</Button></div>
             <div className="grid gap-4 sm:grid-cols-2">
 
               <div className="space-y-1.5">
@@ -1063,167 +1062,6 @@ export default function SettingsPage() {
               <div className="mt-4 flex flex-wrap gap-2"><Button type="button" size="sm" disabled={flowAccountLoading} onClick={() => void (flowLoggedIn ? logoutFlowAccount() : openFlowAccount())} className={flowLoggedIn ? "gap-1.5 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25" : "gap-1.5 bg-indigo-500 text-white hover:bg-indigo-400"}>{flowLoggedIn ? <LogOut className="h-3.5 w-3.5" /> : <Chrome className="h-3.5 w-3.5" />}{flowAccountLoading ? "Đang xử lý…" : flowLoggedIn ? "Đăng xuất" : "Mở Chrome Profile riêng"}</Button><Button type="button" size="sm" variant="outline" onClick={() => void prepareCapability("factory")}>Kiểm tra Factory</Button></div>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4"><div className="text-sm font-semibold text-slate-100">Image generation</div><p className="mt-1 text-xs text-slate-400">Prompt hình ảnh, style và media policy được lấy từ cấu hình project/kênh khi chạy Factory.</p></div><div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4"><div className="text-sm font-semibold text-slate-100">Video generation</div><p className="mt-1 text-xs text-slate-400">Video được tạo theo queue Flow của project; không cần copy/paste prompt thủ công.</p></div></div>
-          </div>
-        </TabsContent>
-
-        {/* Dựng & Xuất video / Engine & Công cụ */}
-
-        <TabsContent value="edit">
-                    <div className="space-y-6">
-                      <div className="vas-card p-5">
-            <div className="mb-4"><h3 className="text-base font-semibold text-slate-100">🎬 Cấu hình xuất mặc định</h3><p className="mt-1 text-sm text-slate-400">Các lựa chọn này được dùng làm mặc định cho những lần mở Project Editor tiếp theo. Bạn vẫn có thể đổi riêng từng video.</p></div>
-            <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {[{ id: "youtube", title: "YouTube ngang", detail: "16:9 · 1920×1080 · 30 FPS" }, { id: "shorts", title: "Shorts / TikTok", detail: "9:16 · 1080×1920 · 30 FPS" }, { id: "square", title: "Video vuông", detail: "1:1 · 1080×1080 · 30 FPS" }, { id: "4k", title: "Chất lượng cao", detail: "16:9 · 3840×2160 · 30 FPS" }].map((item) => { const selected = String(settingsDraft.output_preset || "youtube") === item.id; return <button key={item.id} type="button" aria-pressed={selected} onClick={() => { setDirty(true); setSettingsDraft((current) => ({ ...current, output_preset: item.id })) }} className={cn("rounded-xl border p-3 text-left transition", selected ? "border-amber-400/70 bg-amber-400/10" : "border-white/[0.08] bg-white/[0.02] hover:border-white/20")}><div className="text-sm font-semibold text-slate-100">{item.title}</div><div className="mt-1 text-[11px] text-slate-500">{item.detail}</div></button> })}
-            </div>
-            <div className="mb-5 rounded-xl border border-white/[0.08] bg-white/[0.02] p-4"><div className="text-sm font-semibold text-slate-100">Audio Mix mặc định</div><div className="mt-3 grid gap-4 md:grid-cols-2"><div><div className="mb-1 flex justify-between text-xs"><span>Giọng đọc</span><span>{Math.round(Number(settingsDraft.voice_volume ?? 1) * 100)}%</span></div><Slider value={[Number(settingsDraft.voice_volume ?? 1)]} min={0} max={2} step={0.05} onValueChange={([value]) => { setDirty(true); setSettingsDraft((current) => ({ ...current, voice_volume: value })) }} /></div><div><div className="mb-1 flex justify-between text-xs"><span>Nhạc nền</span><span>{Math.round(Number(settingsDraft.music_volume ?? 0.25) * 100)}%</span></div><Slider value={[Number(settingsDraft.music_volume ?? 0.25)]} min={0} max={1} step={0.05} onValueChange={([value]) => { setDirty(true); setSettingsDraft((current) => ({ ...current, music_volume: value })) }} /></div></div><div className="mt-4 flex flex-wrap gap-x-6 gap-y-3 text-xs"><label className="flex items-center gap-2"><Switch checked={Boolean(settingsDraft.enable_ducking ?? true)} onCheckedChange={(value) => { setDirty(true); setSettingsDraft((current) => ({ ...current, enable_ducking: value })) }} /> Tự giảm nhạc khi có giọng</label><label className="flex items-center gap-2"><Switch checked={Boolean(settingsDraft.normalize_audio ?? true)} onCheckedChange={(value) => { setDirty(true); setSettingsDraft((current) => ({ ...current, normalize_audio: value })) }} /> Chuẩn hóa âm lượng</label></div></div>
-            <div className="mb-5 rounded-xl border border-white/[0.08] bg-white/[0.02] p-4"><div className="text-sm font-semibold text-slate-100">Subtitle mặc định</div><div className="mt-3 grid gap-2 sm:grid-cols-3">{[{ id: "highlight", title: "Nổi bật", detail: "Chữ lớn, tương phản cao" }, { id: "basic", title: "Cơ bản", detail: "Dễ đọc, gọn gàng" }, { id: "karaoke", title: "Karaoke", detail: "Bám theo từng nhịp câu" }].map((item) => { const selected = String(settingsDraft.subtitle_style || "highlight") === item.id; return <button key={item.id} type="button" aria-pressed={selected} onClick={() => { setDirty(true); setSettingsDraft((current) => ({ ...current, subtitle_style: item.id })) }} className={cn("rounded-lg border p-3 text-left", selected ? "border-fuchsia-400/70 bg-fuchsia-400/10" : "border-white/[0.08] hover:border-white/20")}><div className="text-sm font-medium text-slate-100">{item.title}</div><div className="mt-1 text-[11px] text-slate-500">{item.detail}</div></button> })}</div><div className="mt-3 flex flex-wrap gap-2">{[{ id: "embed", label: "Nhúng vào video" }, { id: "srt", label: "Xuất .SRT" }, { id: "ass", label: "Xuất .ASS" }].map((item) => <label key={item.id} className="flex items-center gap-2 text-xs"><input type="radio" name="settings-subtitle-format" checked={String(settingsDraft.subtitle_output_format || "embed") === item.id} onChange={() => { setDirty(true); setSettingsDraft((current) => ({ ...current, subtitle_output_format: item.id })) }} />{item.label}</label>)}</div></div>
-          </div>
-          <div className="vas-card overflow-hidden p-5">
-              <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-
-                <div>
-                  <h3 className="text-base font-semibold text-slate-100">🧩 Thành phần Viu Studio</h3>
-                  <p className="mt-1 text-sm text-slate-400">Cài theo capability: nền tảng luôn kiểm tra trước, thành phần nặng chỉ cài khi workflow cần.</p>
-                </div>
-                <Button type="button" size="sm" variant="outline" onClick={refreshCapabilities} disabled={capabilitiesLoading}>
-                  {capabilitiesLoading ? "Đang kiểm tra…" : "Kiểm tra lại"}
-                </Button>
-              </div>
-              <div className="mb-5 grid gap-3 sm:grid-cols-3">
-                {(capabilities?.capabilities.filter((item) => ["basic", "factory", "movie_recap"].includes(item.id)) ?? []).map((item) => (
-                  <button key={item.id} type="button" onClick={() => prepareCapability(item.id)} className={cn("rounded-xl border p-4 text-left transition-colors", item.ready ? "border-emerald-500/30 bg-emerald-500/[0.06]" : "border-amber-500/30 bg-amber-500/[0.06] hover:border-amber-400/60")}>
-                    <div className="flex items-center justify-between gap-2"><span className="text-sm font-semibold text-slate-100">{item.label === "AI Video Factory" ? "Factory" : item.label === "AI Movie Recap" ? "Movie Recap" : "Cơ bản"}</span><span className={cn("text-xs font-semibold", item.ready ? "text-emerald-400" : "text-amber-300")}>{item.ready ? "Sẵn sàng" : "Thiếu thành phần"}</span></div>
-                    <p className="mt-2 text-xs text-slate-400">{item.ready ? "Workflow có thể chạy preflight." : `Thiếu ${item.missing.length} thành phần`}</p>
-                  </button>
-                ))}
-                {!capabilities && <div className="col-span-full rounded-xl border border-white/[0.06] p-4 text-sm text-slate-400">Đang đọc trạng thái thành phần từ máy…</div>}
-              </div>
-              {preflight && (
-                <div className="mb-5 rounded-xl border border-amber-500/40 bg-amber-500/[0.08] p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div><div className="font-semibold text-amber-200">Preflight: {preflight.capability.label}</div><p className="mt-1 text-sm text-slate-300">Thiếu: {preflight.missing.map((item) => item.label).join(", ")}. Dung lượng dự kiến: {preflight.estimated_size}.</p><p className="mt-1 text-xs text-slate-400">Viu Studio sẽ tự tải, xác minh và cài thành phần vào thư mục riêng của ứng dụng sau khi bạn xác nhận. Cần kết nối mạng trong quá trình tải.</p></div>
-                    <div className="flex shrink-0 gap-2"><Button type="button" variant="ghost" size="sm" onClick={() => setPreflight(null)}>Huỷ</Button><Button type="button" size="sm" onClick={installPreflightDependencies} disabled={installingCapability}>{installingCapability ? "Đang cài…" : "Cài đặt & tiếp tục"}</Button></div>
-                  </div>
-                </div>
-              )}
-              <div className="mb-5"><div className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Nền tảng bắt buộc</div><div className="grid gap-3 sm:grid-cols-3">{(capabilities?.dependencies.filter((item) => item.tier === "platform") ?? []).map((item) => <div key={item.id} className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3"><div className="flex items-center justify-between gap-2"><span className="text-sm text-slate-200">{item.label}</span><span className={cn("text-xs font-semibold", item.installed ? "text-emerald-400" : "text-red-400")}>{item.installed ? "● Sẵn sàng" : "● Thiếu"}</span></div><div className="mt-1 text-xs text-slate-500">{item.version || item.reason}</div>{!item.installed && (item.id === "ffmpeg" || item.id === "ffprobe") && <Button type="button" size="sm" className="mt-3 w-full" onClick={() => setFfmpegAction("install")} disabled={ffmpegBusy}>Tải & cài đặt trong Viu</Button>}</div>)}</div></div>
-              <div className="grid gap-4 md:grid-cols-3">
-                {["factory", "movie_recap", "import_media"].map((tier) => {
-                  const item = capabilities?.capabilities.find((capability) => capability.id === tier)
-                  const dependencies = capabilities?.dependencies.filter((dependency) => dependency.tier === tier) ?? []
-                  if (!item) return null
-                  return <div key={tier} className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4"><div className="flex items-center justify-between gap-2"><div className="text-sm font-semibold text-slate-100">{item.label}</div><span className={cn("text-xs font-semibold", item.ready ? "text-emerald-400" : "text-amber-300")}>{item.ready ? "Sẵn sàng" : "Theo nhu cầu"}</span></div><div className="mt-3 space-y-2">{dependencies.map((dependency) => <div key={dependency.id} className="flex items-center justify-between gap-2 text-xs"><span className="text-slate-300">{dependency.label}</span><span className={dependency.installed ? "text-emerald-400" : "text-amber-300"}>{dependency.installed ? "Đã cài" : "Chưa cài"}</span></div>)}</div>{!item.ready && <Button type="button" size="sm" variant="outline" className="mt-4 w-full" onClick={() => prepareCapability(item.id)}>Kiểm tra & cài khi cần</Button>}</div>
-                })}
-              </div>
-            </div>
-            <div className="vas-card p-5">
-
-              <div className="mb-1 flex items-center justify-between">
-                <h3 className="text-base font-semibold text-slate-100">⚙️ Render Profile</h3>
-                <span className="text-xs text-slate-500">{engineStatus === "installed" ? "Đã cài đặt" : "Chưa cài đặt"}</span>
-              </div>
-              <p className="mb-5 text-sm text-slate-500">Cấu hình tốc độ/chất lượng render cho lần xuất video tiếp theo. Đây là cấu hình hiệu năng, không phải dependency.</p>
-
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div
-                  role="button"
-                  tabIndex={0}
-                  aria-pressed={String(settingsDraft.engine_mode ?? "balanced") === "basic"}
-                  onClick={() => selectEngineMode("basic")}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") selectEngineMode("basic") }}
-                  className={cn("cursor-pointer rounded-xl border p-4 transition-colors", String(settingsDraft.engine_mode ?? "balanced") === "basic" ? "border-amber-500/50 bg-amber-500/[0.08]" : "border-white/[0.06] bg-white/[0.02] hover:border-white/20")}
-                >
-                  <div className="flex items-center justify-between gap-2"><div className="text-sm font-semibold text-slate-100">Cơ bản</div>{String(settingsDraft.engine_mode ?? "balanced") === "basic" && <span className="text-[10px] font-semibold text-amber-300">Đang chọn</span>}</div>
-
-                  <div className="mb-2 text-xs text-amber-400">Máy yếu / laptop CPU</div>
-                  <p className="mb-4 text-xs text-slate-400">Phù hợp máy cấu hình thấp, ưu tiên nhẹ và hoạt động ổn định.</p>
-                  <div className="text-xs text-slate-500">FFmpeg: <span className="font-semibold text-slate-300">veryfast · CRF 24</span></div>
-
-                </div>
-                <div
-                  role="button"
-                  tabIndex={0}
-                  aria-pressed={String(settingsDraft.engine_mode ?? "balanced") === "balanced"}
-                  onClick={() => selectEngineMode("balanced")}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") selectEngineMode("balanced") }}
-                  className={cn("relative cursor-pointer rounded-xl border p-4 transition-colors", String(settingsDraft.engine_mode ?? "balanced") === "balanced" ? "border-amber-500/50 bg-amber-500/[0.08]" : "border-white/[0.06] bg-white/[0.02] hover:border-white/20")}
-                >
-                  <span className="absolute right-3 top-3 rounded-md bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold tracking-wider text-amber-300">KHUYẾN NGHỊ</span>
-                  <div className="flex items-center justify-between gap-2"><div className="text-sm font-semibold text-slate-100">Cân bằng</div>{String(settingsDraft.engine_mode ?? "balanced") === "balanced" && <span className="mr-24 text-[10px] font-semibold text-amber-300">Đang chọn</span>}</div>
-
-                  <div className="mb-2 text-xs text-amber-400">Máy trung bình / Đa số</div>
-                  <p className="mb-4 text-xs text-slate-400">Cân bằng tốt nhất giữa tốc độ nhận diện, chất lượng phụ đề và dung lượng bộ nhớ.</p>
-                  <div className="text-xs text-slate-500">FFmpeg: <span className="font-semibold text-slate-300">medium · CRF 21</span></div>
-
-                </div>
-                <div
-                  role="button"
-                  tabIndex={0}
-                  aria-pressed={String(settingsDraft.engine_mode ?? "balanced") === "high"}
-                  onClick={() => selectEngineMode("high")}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") selectEngineMode("high") }}
-                  className={cn("cursor-pointer rounded-xl border p-4 transition-colors", String(settingsDraft.engine_mode ?? "balanced") === "high" ? "border-amber-500/50 bg-amber-500/[0.08]" : "border-white/[0.06] bg-white/[0.02] hover:border-white/20")}
-                >
-                  <div className="flex items-center justify-between gap-2"><div className="text-sm font-semibold text-slate-100">Hiệu năng cao</div>{String(settingsDraft.engine_mode ?? "balanced") === "high" && <span className="text-[10px] font-semibold text-amber-300">Đang chọn</span>}</div>
-
-                  <div className="mb-2 text-xs text-amber-400">Máy khỏe / RAM lớn</div>
-                  <p className="mb-4 text-xs text-slate-400">Tận dụng tối đa phần cứng mạnh để đạt chất lượng xử lý âm thanh và phụ đề cao nhất.</p>
-                  <div className="text-xs text-slate-500">FFmpeg: <span className="font-semibold text-slate-300">slow · CRF 18</span></div>
-
-                </div>
-              </div>
-              <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-                <div className="text-xs text-slate-400">ℹ {diagnostics ? `${diagnostics.cpu} · ${diagnostics.ram_gb} GB RAM` : "Đang đọc thông số máy…"}</div>
-
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={async () => {
-                      const [res] = await Promise.all([
-                        api.ffmpegCheck().catch(() => null),
-                        api.systemDiagnose().then(setDiagnostics).catch(() => null),
-                      ])
-                      if (res?.ffmpeg && res?.ffprobe) {
-
-                        setEngineStatus("installed")
-                        toast({ title: "FFmpeg và FFprobe đã sẵn sàng", description: res.version || "" })
-
-                      } else {
-                        setEngineStatus("missing")
-                        toast({ title: "FFmpeg chưa tìm thấy", variant: "destructive" })
-                      }
-                    }}
-                  >
-                    Kiểm tra lại
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="gap-1.5"
-                    onClick={() => document.querySelector("[data-tool-management]")?.scrollIntoView({ behavior: "smooth", block: "center" })}
-                  >
-                    Quản lý công cụ
-                  </Button>
-
-                </div>
-              </div>
-            </div>
-            
-                        <div className="vas-card p-5" data-tool-management>
-              <div className="mb-4 flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-base font-semibold text-slate-100">🧩 Công cụ xử lý</h3><p className="mt-1 text-sm text-slate-400">Quản lý các binary mà Viu Studio dùng thật để render, encode, subtitle và đọc metadata.</p></div><Button type="button" size="sm" variant="outline" onClick={() => void checkFfmpegTools()} disabled={ffmpegBusy}>{ffmpegBusy ? "Đang kiểm tra…" : "Kiểm tra tất cả"}</Button></div>
-              {ffmpegAction && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-400/30 bg-amber-500/[0.08] p-3"><div><div className="text-sm font-semibold text-amber-100">Xác nhận {ffmpegAction === "install" ? "cài đặt" : "nâng cấp"} FFmpeg</div><p className="mt-1 text-xs text-slate-400">Viu Studio sẽ tự tải gói FFmpeg có FFprobe, xác minh và cài vào thư mục runtime riêng của ứng dụng. Chỉ thực hiện sau khi bạn xác nhận.</p></div><div className="flex gap-2"><Button type="button" size="sm" variant="ghost" onClick={() => setFfmpegAction(null)}>Huỷ</Button><Button type="button" size="sm" onClick={() => void applyFfmpegAction()} disabled={ffmpegBusy}>{ffmpegBusy ? "Đang xử lý…" : "Xác nhận"}</Button></div></div>}
-              <div className="grid gap-4 md:grid-cols-2">
-                {[{ id: "ffmpeg", label: "FFmpeg", version: diagnostics?.ffmpeg_version, description: "Render · encode · subtitle · audio" }, { id: "ffprobe", label: "FFprobe", version: diagnostics?.ffprobe_version, description: "Đọc thông tin và metadata video" }].map((tool) => { const installed = Boolean(tool.version); return <div key={tool.id} className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4"><div className="flex items-center justify-between gap-3"><div className="text-sm font-semibold text-slate-100">{tool.label}</div><span className={cn("text-xs font-semibold", installed ? "text-emerald-400" : "text-amber-300")}>{installed ? "● Đã cài đặt" : "○ Chưa cài đặt"}</span></div><div className="mt-2 text-xs text-slate-400">{installed ? tool.version : `Viu Studio cần ${tool.label} để hoạt động.`}</div><div className="mt-1 text-xs text-slate-500">{tool.description}</div><div className="mt-4 flex flex-wrap gap-2">{installed ? <><Button type="button" size="sm" variant="outline" onClick={() => void checkFfmpegUpdate()} disabled={ffmpegBusy}>Kiểm tra cập nhật</Button><Button type="button" size="sm" variant="outline" onClick={() => setFfmpegAction("upgrade")} disabled={ffmpegBusy}>Nâng cấp</Button></> : <Button type="button" size="sm" onClick={() => setFfmpegAction("install")} disabled={ffmpegBusy}>Tải & cài đặt</Button>}</div></div> })}
-              </div>
-            </div>
-            <div className="vas-card p-5">
-              <h3 className="mb-4 text-base font-semibold text-slate-100">Chẩn đoán hệ thống</h3>
-              {diagnostics && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><DiagnosticItem label="Viu Runtime" value={diagnostics.python_runtime} ok /><DiagnosticItem label="Ổ đĩa trống" value={`${diagnostics.disk_free_gb} GB`} ok={diagnostics.disk_free_gb > 2} /><DiagnosticItem label="Thư mục dự án" value={diagnostics.write_permission_projects ? "Có quyền ghi" : "Không ghi được"} ok={diagnostics.write_permission_projects} /><DiagnosticItem label="App data" value={diagnostics.write_permission_app_data ? "Có quyền ghi" : "Không ghi được"} ok={diagnostics.write_permission_app_data} /><DiagnosticItem label="Demucs" value={diagnostics.demucs_available ? "Sẵn sàng" : "Chưa cài"} ok={diagnostics.demucs_available} /><DiagnosticItem label="yt-dlp" value={diagnostics.yt_dlp_available ? "Sẵn sàng" : "Chưa cài"} ok={diagnostics.yt_dlp_available} /></div>}
-              <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-slate-300">FFmpeg và FFprobe được dùng thật cho toàn bộ pipeline; cài/nâng cấp chỉ chạy sau xác nhận của bạn.</div>
-            </div>
-
           </div>
         </TabsContent>
 
