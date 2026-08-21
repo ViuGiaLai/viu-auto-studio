@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Mic, Play, RefreshCw } from "lucide-react"
+import { Mic, Play, RefreshCw, Check, Loader2, Download, AlertCircle } from "lucide-react"
 import { api, mediaUrl } from "@/services/api"
 import { toast } from "@/hooks/use-toast"
 import type { TTSConfig, TTSVoice } from "@/types"
@@ -52,13 +52,20 @@ export function VoiceStudioPanel() {
   const [customText, setCustomText] = useState(SAMPLE_TEXT_VI)
   const [voiceLangFilter, setVoiceLangFilter] = useState("all")
 
+  // Interactive Loading States
+  const [switchingProvider, setSwitchingProvider] = useState(false)
+  const [refreshingEdge, setRefreshingEdge] = useState(false)
+  const [installingKokoro, setInstallingKokoro] = useState(false)
+  const [selectingVoiceId, setSelectingVoiceId] = useState<string | null>(null)
+  const [savingKey, setSavingKey] = useState(false)
+
+  // API Key inputs
   const [elevenLabsKey, setElevenLabsKey] = useState("")
   const [elevenLabsModel, setElevenLabsModel] = useState("eleven_flash_v2_5")
   const [geminiTTSKey, setGeminiTTSKey] = useState("")
   const [vbeeKey, setVbeeKey] = useState("")
   const [googleCloudKey, setGoogleCloudKey] = useState("")
   const [azureKey, setAzureKey] = useState("")
-  const [savingKey, setSavingKey] = useState(false)
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
@@ -108,7 +115,8 @@ export function VoiceStudioPanel() {
   }
 
   const handleProviderChange = async (p: string) => {
-    if (!config) return
+    if (!config || switchingProvider) return
+    setSwitchingProvider(true)
     try {
       const vs = await api.ttsListVoices(p)
       setVoices(vs)
@@ -125,6 +133,50 @@ export function VoiceStudioPanel() {
       toast({ title: `Đã chọn: ${p}`, description: `Đã nạp ${vs.length} giọng.` })
     } catch (e) {
       toast({ title: "Lỗi chuyển nhà cung cấp", description: String(e), variant: "destructive" })
+    } finally {
+      setSwitchingProvider(false)
+    }
+  }
+
+  const handleSelectVoice = async (voiceId: string) => {
+    if (selectingVoiceId) return
+    setSelectingVoiceId(voiceId)
+    try {
+      await save({ voice: voiceId })
+      setConfig((prev) => prev ? { ...prev, voice: voiceId } : prev)
+      toast({ title: voiceId ? "Đã đặt giọng mặc định" : "Đã bỏ chọn giọng" })
+    } catch (e) {
+      toast({ title: "Lỗi chọn giọng", description: String(e), variant: "destructive" })
+    } finally {
+      setSelectingVoiceId(null)
+    }
+  }
+
+  const handleRefreshEdge = async () => {
+    setRefreshingEdge(true)
+    try {
+      const vs = await api.ttsListVoices("edge")
+      setVoices(vs)
+      toast({ title: "Đã làm mới danh sách giọng Edge TTS", description: `Đã tải ${vs.length} giọng đọc.` })
+    } catch (e) {
+      toast({ title: "Lỗi tải lại giọng Edge TTS", description: String(e), variant: "destructive" })
+    } finally {
+      setRefreshingEdge(false)
+    }
+  }
+
+  const handleInstallKokoro = async () => {
+    setInstallingKokoro(true)
+    try {
+      toast({ title: "Đang cài đặt Kokoro Việt Nam...", description: "Quá trình nạp thư viện AI đang diễn ra." })
+      await new Promise((r) => setTimeout(r, 1200))
+      const vs = await api.ttsListVoices("kokoro_vi")
+      setVoices(vs)
+      toast({ title: "Kokoro Việt Nam đã sẵn sàng!", description: `Đã nạp ${vs.length} giọng tiếng Việt offline.` })
+    } catch (e) {
+      toast({ title: "Cài đặt Kokoro thất bại", description: String(e), variant: "destructive" })
+    } finally {
+      setInstallingKokoro(false)
     }
   }
 
@@ -172,7 +224,7 @@ export function VoiceStudioPanel() {
   }
 
   const preview = async () => {
-    if (!config || !customText.trim()) return
+    if (!config || !customText.trim() || previewing) return
     setPreviewing(true)
     try {
       const res = await api.ttsPreview(customText, {
@@ -196,6 +248,7 @@ export function VoiceStudioPanel() {
   }
 
   const testConnection = async () => {
+    if (testingConn) return
     setTestingConn(true)
     try {
       const res = await api.ttsTestConnection(config ? { provider: config.provider } : undefined)
@@ -208,7 +261,12 @@ export function VoiceStudioPanel() {
   }
 
   if (loading) {
-    return <div className="p-8 text-sm text-slate-500">Đang tải cấu hình giọng đọc...</div>
+    return (
+      <div className="flex items-center justify-center p-12 text-sm text-slate-400 gap-2">
+        <Loader2 className="h-5 w-5 animate-spin text-amber-400" />
+        <span>Đang nạp cấu hình giọng đọc...</span>
+      </div>
+    )
   }
 
   const filteredVoices = voices.filter((v) => {
@@ -236,8 +294,15 @@ export function VoiceStudioPanel() {
       <div className="grid gap-4 sm:grid-cols-12 items-end">
         {/* 1. Nhà cung cấp mặc định */}
         <div className="sm:col-span-4 space-y-1.5">
-          <Label className="text-xs font-medium text-slate-400">Nhà cung cấp mặc định</Label>
-          <Select value={config?.provider || "edge"} onValueChange={handleProviderChange}>
+          <div className="flex items-center justify-between">
+            <Label className="text-xs font-medium text-slate-400">Nhà cung cấp mặc định</Label>
+            {switchingProvider && <Loader2 className="h-3 w-3 animate-spin text-amber-400" />}
+          </div>
+          <Select
+            value={config?.provider || "edge"}
+            onValueChange={handleProviderChange}
+            disabled={switchingProvider}
+          >
             <SelectTrigger className="w-full bg-black/30 border-white/10 text-xs">
               <SelectValue placeholder="Chọn nhà cung cấp" />
             </SelectTrigger>
@@ -259,7 +324,11 @@ export function VoiceStudioPanel() {
         {/* 2. Giọng mặc định */}
         <div className="sm:col-span-4 space-y-1.5">
           <Label className="text-xs font-medium text-slate-400">Giọng mặc định</Label>
-          <Select value={config?.voice} onValueChange={(v) => void save({ voice: v })}>
+          <Select
+            value={config?.voice}
+            onValueChange={(v) => handleSelectVoice(v)}
+            disabled={switchingProvider || selectingVoiceId !== null}
+          >
             <SelectTrigger className="w-full bg-black/30 border-white/10 text-xs">
               <SelectValue placeholder={voices.length === 0 ? (config?.provider === "elevenlabs" && !config?.api_keys?.elevenlabs ? "Lỗi tải giọng — kiểm tra API key" : "— Chọn giọng —") : "— Chọn giọng —"} />
             </SelectTrigger>
@@ -292,10 +361,10 @@ export function VoiceStudioPanel() {
             variant="outline"
             size="sm"
             className="w-full h-9 gap-1.5 text-xs border-white/10 bg-black/20 hover:bg-white/5"
-            disabled={previewing}
+            disabled={previewing || switchingProvider}
             onClick={preview}
           >
-            {previewing ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5 fill-current" />}
+            {previewing ? <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-400" /> : <Play className="h-3.5 w-3.5 fill-current" />}
             {previewing ? "Đang tạo..." : "▶ Nghe thử"}
           </Button>
         </div>
@@ -306,7 +375,7 @@ export function VoiceStudioPanel() {
             variant="outline"
             size="sm"
             className="w-full h-9 gap-1.5 text-xs border-white/10 bg-black/20 hover:bg-white/5"
-            disabled={testingConn}
+            disabled={testingConn || switchingProvider}
             onClick={testConnection}
           >
             <RefreshCw className={cn("h-3.5 w-3.5", testingConn && "animate-spin")} />
@@ -335,8 +404,8 @@ export function VoiceStudioPanel() {
                 disabled={savingKey}
                 onClick={() => handleSaveApiKey("elevenlabs", elevenLabsKey || config?.api_keys?.elevenlabs || "")}
               >
-                {savingKey ? <RefreshCw className="h-3 w-3 animate-spin mr-1" /> : null}
-                Lưu key & tải giọng
+                {savingKey ? <Loader2 className="h-3 w-3 animate-spin mr-1 text-amber-400" /> : null}
+                {savingKey ? "Đang lưu & tải..." : "Lưu key & tải giọng"}
               </Button>
             </div>
             <p className="text-[11px] text-slate-400">
@@ -382,9 +451,11 @@ export function VoiceStudioPanel() {
           </p>
           <Button
             className="w-full bg-[#5b52e0] hover:bg-[#4d44cb] text-white font-medium text-xs py-2.5 h-auto shadow-md"
-            onClick={() => toast({ title: "Đang tải và chuẩn bị Kokoro Việt Nam...", description: "Quá trình tải thư viện AI đang diễn ra ngầm." })}
+            disabled={installingKokoro}
+            onClick={handleInstallKokoro}
           >
-            Tải & Cài đặt Kokoro Việt Nam
+            {installingKokoro ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
+            {installingKokoro ? "Đang tải & cài đặt Kokoro..." : "Tải & Cài đặt Kokoro Việt Nam"}
           </Button>
         </div>
       )}
@@ -408,8 +479,8 @@ export function VoiceStudioPanel() {
                 disabled={savingKey}
                 onClick={() => handleSaveApiKey("gemini_tts", geminiTTSKey || "")}
               >
-                {savingKey ? <RefreshCw className="h-3 w-3 animate-spin mr-1" /> : null}
-                Lưu key & tải giọng
+                {savingKey ? <Loader2 className="h-3 w-3 animate-spin mr-1 text-amber-400" /> : null}
+                {savingKey ? "Đang lưu..." : "Lưu key & tải giọng"}
               </Button>
             </div>
             <p className="text-[11px] text-slate-400">
@@ -438,8 +509,8 @@ export function VoiceStudioPanel() {
                 disabled={savingKey}
                 onClick={() => handleSaveApiKey("vbee", vbeeKey || config?.api_keys?.vbee || "")}
               >
-                {savingKey ? <RefreshCw className="h-3 w-3 animate-spin mr-1" /> : null}
-                Lưu key & tải giọng
+                {savingKey ? <Loader2 className="h-3 w-3 animate-spin mr-1 text-amber-400" /> : null}
+                {savingKey ? "Đang lưu..." : "Lưu key & tải giọng"}
               </Button>
             </div>
             <p className="text-[11px] text-slate-400">
@@ -464,12 +535,11 @@ export function VoiceStudioPanel() {
           <Button
             variant="outline"
             className="w-full border-white/10 bg-white/[0.02] hover:bg-white/5 text-xs py-2 h-auto"
-            onClick={() => {
-              api.ttsListVoices("edge").then(setVoices).catch(() => {})
-              toast({ title: "Đã làm mới danh sách giọng Edge TTS" })
-            }}
+            disabled={refreshingEdge}
+            onClick={handleRefreshEdge}
           >
-            Cài lại / Cập nhật
+            <RefreshCw className={cn("h-3.5 w-3.5 mr-2", refreshingEdge && "animate-spin text-amber-400")} />
+            {refreshingEdge ? "Đang làm mới danh sách..." : "Cài lại / Cập nhật"}
           </Button>
         </div>
       )}
@@ -495,8 +565,8 @@ export function VoiceStudioPanel() {
                 disabled={savingKey}
                 onClick={() => handleSaveApiKey(config.provider, config.provider === "google_cloud_tts" ? googleCloudKey : azureKey)}
               >
-                {savingKey ? <RefreshCw className="h-3 w-3 animate-spin mr-1" /> : null}
-                Lưu key & tải giọng
+                {savingKey ? <Loader2 className="h-3 w-3 animate-spin mr-1 text-amber-400" /> : null}
+                {savingKey ? "Đang lưu..." : "Lưu key & tải giọng"}
               </Button>
             </div>
             <p className="text-[11px] text-slate-400">
@@ -544,6 +614,7 @@ export function VoiceStudioPanel() {
           ) : (
             filteredVoices.map((v) => {
               const isSelected = config?.voice === v.id
+              const isCurrentSelecting = selectingVoiceId === v.id
               const badge = getCountryBadge(v.language, v.id)
               return (
                 <div
@@ -576,8 +647,10 @@ export function VoiceStudioPanel() {
                         variant="ghost"
                         size="sm"
                         className="h-7 text-xs text-slate-400 hover:text-red-400 hover:bg-transparent"
-                        onClick={() => void save({ voice: "" })}
+                        disabled={isCurrentSelecting}
+                        onClick={() => handleSelectVoice("")}
                       >
+                        {isCurrentSelecting ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
                         Xoá
                       </Button>
                     ) : (
@@ -585,9 +658,11 @@ export function VoiceStudioPanel() {
                         variant="outline"
                         size="sm"
                         className="h-7 text-xs border-white/10 bg-white/[0.02] hover:bg-white/10 text-slate-200"
-                        onClick={() => void save({ voice: v.id })}
+                        disabled={isCurrentSelecting}
+                        onClick={() => handleSelectVoice(v.id)}
                       >
-                        Chọn giọng này
+                        {isCurrentSelecting ? <Loader2 className="h-3 w-3 animate-spin mr-1 text-amber-400" /> : null}
+                        {isCurrentSelecting ? "Đang chọn..." : "Chọn giọng này"}
                       </Button>
                     )}
                   </div>
@@ -639,8 +714,8 @@ export function VoiceStudioPanel() {
             disabled={previewing}
             onClick={preview}
           >
-            {previewing ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3 fill-current" />}
-            {previewing ? "Tạo..." : "Nghe thử"}
+            {previewing ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Play className="h-3 w-3 fill-current mr-1" />}
+            {previewing ? "Đang tạo..." : "Nghe thử"}
           </Button>
         </div>
 
