@@ -12,6 +12,9 @@ Tính năng:
 
 from __future__ import annotations
 
+from backend.registry.render_registry import render_registry
+from backend.registry.subtitle_registry import subtitle_registry
+
 import json
 import logging
 import subprocess

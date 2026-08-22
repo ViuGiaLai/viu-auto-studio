@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from backend.registry.subtitle_registry import subtitle_registry
+from backend.registry.ai_registry import ai_registry
+
 """FastAPI routes for Viu Auto Studio."""
 
 import json
@@ -2143,18 +2146,7 @@ def update_channel_config(channel_id: int, payload: dict, db: Session = Depends(
 # ===========================================================================
 # AI video styles (Kiểu video — FREE / BASIC)
 # ===========================================================================
-VIDEO_STYLES = [
-    {"key": "doodle", "name": "Hoạt hình Doodle vẽ tay", "desc": "Giải thích kiến thức", "tier": "FREE"},
-    {"key": "toplist", "name": "Sự thật thú vị / Top-List", "desc": "Khơi tò mò", "tier": "FREE"},
-    {"key": "finance", "name": "Tài chính cá nhân", "desc": "Giải thích đời thường", "tier": "FREE"},
-    {"key": "psychology", "name": "Tâm lý học & Hành vi", "desc": "Khám phá bản thân", "tier": "FREE"},
-    {"key": "fable", "name": "Truyện ngụ ngôn", "desc": "Thư giãn, êm dịu", "tier": "FREE"},
-    {"key": "kids", "name": "Truyện thiếu nhi / Cổ tích", "desc": "Hoạt hình", "tier": "FREE"},
-    {"key": "travel", "name": "Ẩm thực & Du lịch", "desc": "Phim tài liệu cảm quan", "tier": "BASIC"},
-    {"key": "horror", "name": "Chuyện kinh dị / Huyền bí", "desc": "Căng thẳng, tò mò", "tier": "BASIC"},
-    {"key": "news", "name": "Tin tức tổng hợp", "desc": "Nhanh, sắc gọn", "tier": "BASIC"},
-    {"key": "biography", "name": "Tiểu sử / Nhân vật lịch sử", "desc": "Kể chuyện có chiều sâu", "tier": "BASIC"},
-]
+VIDEO_STYLES = subtitle_registry.get_video_styles()
 
 
 @router.get("/ai/video-styles")
