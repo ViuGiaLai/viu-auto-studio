@@ -199,7 +199,7 @@ export function VoiceStudioPanel() {
       })
 
       if (res.ok && res.audio_path) {
-        const fullUrl = mediaUrl(res.audio_path)
+        const fullUrl = `${mediaUrl(res.audio_path)}?t=${Date.now()}`
         setPreviewUrl(fullUrl)
         if (audioRef.current) {
           audioRef.current.src = fullUrl

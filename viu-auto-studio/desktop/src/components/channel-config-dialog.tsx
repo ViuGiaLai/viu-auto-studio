@@ -216,9 +216,9 @@ export function ChannelConfigDialog({
         voice: String(config.voice || "") || undefined,
       })
       if (!result.ok || !result.audio_path) throw new Error(result.message || "Không tạo được audio mẫu")
-      const audio = new Audio(mediaUrl(result.audio_path))
+      const audio = new Audio(`${mediaUrl(result.audio_path)}?t=${Date.now()}`)
       await audio.play()
-      toast({ title: "Đang phát giọng mẫu", description: selectedVoice?.name || String(config.voice || "Mặc định") })
+      toast({ title: "Đang phát giọng mẫu", description: `Động cơ: ${result.actual_provider || resolvedProv || "Mặc định"} · Giọng: ${selectedVoice?.name || String(config.voice || "Mặc định")}` })
     } catch (e) {
       toast({ title: "Không nghe thử được", description: String(e), variant: "destructive" })
     } finally {
