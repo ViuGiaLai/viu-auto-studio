@@ -6,7 +6,7 @@ import {
   ArrowLeft, Wand2, Check, Play, Square, Pause, Clock, RotateCcw, Upload, Trash2,
   GripVertical, SplitSquareHorizontal, Combine, RefreshCw, Mic, ImageIcon,
   FileVideo, Clapperboard, AlertCircle, ListChecks, Sparkles, FolderOpen, Settings, Zap,
-    ShieldCheck, ClipboardPaste, Download, Save, Plus, Copy, ChevronLeft, ChevronRight,
+  ShieldCheck, ClipboardPaste, Download, Save, Plus, Copy, ChevronLeft, ChevronRight,
 
 } from "lucide-react"
 import appLogo from "@/assets/logo.png"
@@ -18,7 +18,7 @@ import { useEditorStore } from "@/stores/editor-store"
 import { useAppStore } from "@/stores/app-store"
 import type {
   Project, ScriptData, ScriptPayload, Scene, SeoSchema, SubtitleConfig, TTSConfig,
-    Character, TimelineClip, TimelineProject,
+  Character, TimelineClip, TimelineProject,
 } from "@/types"
 
 import type { MediaAssetRead } from "@/services/pages-api"
@@ -131,7 +131,7 @@ function NewProjectForm({ onCreated }: { onCreated: (id: number) => void }) {
   const chooseDir = async () => {
     try {
       const res = await selectDirectory()
-      if (res?.path) setOutputFolder(res.path)
+      if (typeof res === 'string' && res) setOutputFolder(res)
     } catch {
       // User cancelled
     }
@@ -668,7 +668,7 @@ function ScriptEditor({ project, onBuildScenes, onApproveAndContinue }: { projec
               <SplitSquareHorizontal className="h-4 w-4" />
               Tách thành câu
             </Button>
-                        <Button onClick={approve} variant="outline" disabled={approving}>
+            <Button onClick={approve} variant="outline" disabled={approving}>
               <Check className={cn("h-4 w-4", approving && "animate-pulse")} />
               {approving ? "Đang chạy pipeline…" : "Duyệt kịch bản & chạy tiếp"}
             </Button>
@@ -718,12 +718,14 @@ function Storyboard({ project }: { project: Project }) {
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [analyzing, setAnalyzing] = useState(false)
+  const [autoEditing, setAutoEditing] = useState(false)
+  const [overallScore, setOverallScore] = useState<number | null>(null)
   const [analyzingScene, setAnalyzingScene] = useState<number | null>(null)
   const [splittingScene, setSplittingScene] = useState<number | null>(null)
   const [regeneratingMedia, setRegeneratingMedia] = useState<number | null>(null)
   const [factoryStarting, setFactoryStarting] = useState(false)
   const [flowConnection, setFlowConnection] = useState<{ factory_state?: string; factory_project_id?: number | null; status?: string; last_error?: string } | null>(null)
-  
+
   // AI Shot Proposal Dialog State
   const [aiProposalScene, setAiProposalScene] = useState<Scene | null>(null)
   const [aiProposedShots, setAiProposedShots] = useState<any[]>([])
@@ -871,6 +873,23 @@ function Storyboard({ project }: { project: Project }) {
     return `${m}:${String(s).padStart(2, "0")}`
   }
 
+  const handleAutoEdit = async () => {
+    setAutoEditing(true)
+    try {
+      const res = await api.autoEdit(project.id)
+      setOverallScore(res.overall_edit_score)
+      toast({
+        title: "✨ AI Auto Edit hoàn tất!",
+        description: `Đã tự dựng ${res.shots_count} shots cho ${res.scenes_count} cảnh. Điểm chất lượng: ${res.overall_edit_score}%`,
+      })
+      load()
+    } catch (e) {
+      toast({ title: "AI Auto Edit thất bại", description: String(e), variant: "destructive" })
+    } finally {
+      setAutoEditing(false)
+    }
+  }
+
   const startFactory = async () => {
     setFactoryStarting(true)
     try {
@@ -901,6 +920,42 @@ function Storyboard({ project }: { project: Project }) {
   return (
 
     <div className="space-y-4">
+      {/* 🌟 AI Smart Storyboard & Auto Edit Engine Banner */}
+      <div className="rounded-2xl border border-amber-500/40 bg-gradient-to-r from-[#141b22] via-[#10171d] to-[#141b22] p-5 shadow-2xl space-y-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 font-black text-sm shadow-md">
+                ✨
+              </span>
+              <h3 className="text-base font-bold text-white tracking-wide flex items-center gap-2">
+                AI Smart Storyboard & Auto-Edit Studio
+              </h3>
+              {overallScore !== null && (
+                <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 px-2 py-0.5 text-xs font-bold font-mono">
+                  Edit Score: {overallScore}% ⭐
+                </Badge>
+              )}
+            </div>
+            <p className="text-xs text-slate-300">
+              AI đọc <strong>Voice + Kịch bản + Media</strong> để tự chia Multi-Shots theo ý nghĩa, tự gán Video B-Roll / Ảnh Ken Burns và tự dựng timeline hoàn chỉnh.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              size="lg"
+              disabled={autoEditing || scenes.length === 0}
+              onClick={handleAutoEdit}
+              className="h-10 px-5 gap-2 font-bold text-xs bg-gradient-to-r from-[#d9940a] via-[#faaa02] to-[#f59e0b] text-slate-950 shadow-xl shadow-amber-500/25 hover:brightness-110"
+            >
+              <Wand2 className={cn("h-4 w-4", autoEditing && "animate-spin")} />
+              {autoEditing ? "AI Đang Tự Dựng Timeline..." : "🪄 AI Auto Edit — Tự Dựng Video"}
+            </Button>
+          </div>
+        </div>
+      </div>
+
       {/* Consolidated Unified Control Bar: Gọn gàng, tiết kiệm không gian */}
       {scenes.length > 0 && (
         <div className="rounded-xl border border-white/10 bg-[#12191e] p-3.5 shadow-sm space-y-2.5">
@@ -1032,19 +1087,19 @@ function Storyboard({ project }: { project: Project }) {
           const rawShots = (scene.shots && scene.shots.length > 0)
             ? scene.shots
             : [{
-                id: `shot_${scene.id}_default`,
-                order_index: 0,
-                media_path: scene.media_path || "",
-                image_path: scene.image_path || "",
-                video_path: scene.video_path || "",
-                media_type: scene.media_type || "image",
-                visual_prompt: scene.visual_prompt || "",
-                transition_description: scene.transition_description || "",
-                effect: scene.effect || "zoom_in",
-                duration: masterDuration,
-                start_time: 0.0,
-                end_time: masterDuration,
-              }]
+              id: `shot_${scene.id}_default`,
+              order_index: 0,
+              media_path: scene.media_path || "",
+              image_path: scene.image_path || "",
+              video_path: scene.video_path || "",
+              media_type: scene.media_type || "image",
+              visual_prompt: scene.visual_prompt || "",
+              transition_description: scene.transition_description || "",
+              effect: scene.effect || "zoom_in",
+              duration: masterDuration,
+              start_time: 0.0,
+              end_time: masterDuration,
+            }]
 
           const sceneShots = balanceShotsTimestamps(rawShots, masterDuration)
           const totalShotsDuration = Number(sceneShots.reduce((sum, s) => sum + (s.duration || 0), 0).toFixed(1))
@@ -1075,12 +1130,12 @@ function Storyboard({ project }: { project: Project }) {
           const handleOpenAiProposal = () => {
             setGeneratingProposal(true)
             setAiProposalScene(scene)
-            
+
             const count = masterDuration >= 10.0 ? 3 : masterDuration >= 5.0 ? 2 : 1
             const avg = Number((masterDuration / count).toFixed(1))
             const basePrompt = scene.visual_prompt || "Cinematic detailed scene, photorealistic lighting"
             const motions = ["zoom_in", "pan_left", "pan_right", "zoom_out"]
-            
+
             const proposed = Array.from({ length: count }).map((_, i) => {
               const st = Number((i * avg).toFixed(1))
               const dur = (i === count - 1) ? Number((masterDuration - (avg * (count - 1))).toFixed(1)) : avg
@@ -1100,7 +1155,7 @@ function Storyboard({ project }: { project: Project }) {
                 end_time: i === count - 1 ? masterDuration : et,
               }
             })
-            
+
             setAiProposedShots(proposed)
             setGeneratingProposal(false)
           }
@@ -1132,7 +1187,7 @@ function Storyboard({ project }: { project: Project }) {
               }
               updated = balanceShotsTimestamps(updated, masterDuration)
             }
-            
+
             const mainPatch: any = { shots: updated }
             if (shotId === sceneShots[0].id) {
               if (patch.visual_prompt !== undefined) mainPatch.visual_prompt = patch.visual_prompt
@@ -1204,7 +1259,7 @@ function Storyboard({ project }: { project: Project }) {
                         className="h-6 text-[11px] px-2 border-white/10 bg-white/5 text-slate-300 hover:text-amber-300 gap-1"
                         onClick={() => {
                           const audio = new Audio(mediaUrl(scene.audio_path!))
-                          audio.play().catch(() => {})
+                          audio.play().catch(() => { })
                         }}
                       >
                         <Play className="h-3 w-3 fill-current" /> Nghe giọng
@@ -1285,6 +1340,31 @@ function Storyboard({ project }: { project: Project }) {
                           <span className="text-slate-400 font-mono">
                             {shot.start_time.toFixed(1)}s → {shot.end_time.toFixed(1)}s
                           </span>
+                          <span className={cn(
+                            "px-1.5 py-0.2 text-[9px] font-bold font-mono rounded border",
+                            (shot.scores?.overall || (shot.media_path ? 92 : 60)) >= 90
+                              ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-300"
+                              : (shot.scores?.overall || (shot.media_path ? 92 : 60)) >= 80
+                                ? "bg-amber-500/15 border-amber-500/30 text-amber-300"
+                                : "bg-red-500/15 border-red-500/30 text-red-300"
+                          )} title={`Visual: ${shot.scores?.visual_relevance || 92}% | Voice: ${shot.scores?.voice_sync || 96}% | Comp: ${shot.scores?.composition || 90}%`}>
+                            {shot.scores?.overall || (shot.media_path ? 92 : 60)}% ⭐
+                          </span>
+                          {shot.auto_fixed && (
+                            <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-sky-500/15 border border-sky-500/30 text-sky-300" title={shot.fix_reason || "Đã tự động tối ưu hóa"}>
+                              🔧 AI Đã Tự Sửa
+                            </span>
+                          )}
+                          {shot.pacing_type === "fast_action" && (
+                            <span className="px-1 py-0.2 text-[8px] font-semibold rounded bg-rose-500/10 border border-rose-500/20 text-rose-300">
+                              ⚡ Nhịp nhanh
+                            </span>
+                          )}
+                          {shot.pacing_type === "dramatic_focus" && (
+                            <span className="px-1 py-0.2 text-[8px] font-semibold rounded bg-purple-500/10 border border-purple-500/20 text-purple-300">
+                              🎭 Lắng đọng
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-1">
                           <span className="text-[10px] text-slate-500">Thời lượng:</span>
@@ -1867,8 +1947,8 @@ function EditorMedia({ project }: { project: Project }) {
 function STATE_BADGE(state: string) {
   const color =
     state === "verified" ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
-    : state === "failed" ? "bg-red-500/15 text-red-400 border-red-500/30"
-    : "bg-yellow-500/15 text-yellow-400 border-yellow-500/30"
+      : state === "failed" ? "bg-red-500/15 text-red-400 border-red-500/30"
+        : "bg-yellow-500/15 text-yellow-400 border-yellow-500/30"
   return <span className={`rounded border px-1.5 py-0.5 text-[10px] ${color}`}>{state}</span>
 }
 
@@ -2141,7 +2221,7 @@ function RenderPanel({ project }: { project: Project }) {
   const invalidatePreflight = () => setPreflight(null)
 
   useEffect(() => {
-    api.getRenderHardware().then(setHardwareInfo).catch(() => {})
+    api.getRenderHardware().then(setHardwareInfo).catch(() => { })
   }, [])
 
   useEffect(() => {
@@ -2561,7 +2641,7 @@ function RenderPanel({ project }: { project: Project }) {
                 <Button variant="outline" size="sm" onClick={async () => {
                   try {
                     const result = await api.openProjectFolder(project.id)
-                    const target = result.output_path || job.output_path || result.path
+                    const target = (result as any).output_path || job.output_path || result.path
                     const opened = await openLocalPath(target)
                     if (!opened.ok) throw new Error(opened.message)
                   } catch (error) {
@@ -2644,7 +2724,7 @@ export default function ProjectEditorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, isNew])
 
-    useEffect(() => {
+  useEffect(() => {
     if (job) setJob(job)
     if (job && !userSelectedTab.current && ["generating_subtitles", "rendering", "completed"].includes(job.status)) {
       setActiveTab("publish")
@@ -2831,45 +2911,45 @@ export default function ProjectEditorPage() {
 
       <Tabs value={activeTab} onValueChange={selectTab}>
         <div className="p-5">
-        <TabsContent value="idea" className="mt-4">
-          <ScriptCreator project={project} onDone={() => setActiveTab("script")} />
-        </TabsContent>
+          <TabsContent value="idea" className="mt-4">
+            <ScriptCreator project={project} onDone={() => setActiveTab("script")} />
+          </TabsContent>
 
-        <TabsContent value="script" className="mt-4">
-          <ScriptEditor
-            project={project}
-            onApproveAndContinue={approveAndContinue}
-            onBuildScenes={async () => {
-              try {
-                await api.buildScenes(project.id)
-                toast({ title: "Đã chia cảnh thành công" })
-                setActiveTab("storyboard")
-              } catch (e) {
-                toast({ title: "Chia cảnh thất bại", description: String(e), variant: "destructive" })
-              }
-            }}
-          />
-        </TabsContent>
+          <TabsContent value="script" className="mt-4">
+            <ScriptEditor
+              project={project}
+              onApproveAndContinue={approveAndContinue}
+              onBuildScenes={async () => {
+                try {
+                  await api.buildScenes(project.id)
+                  toast({ title: "Đã chia cảnh thành công" })
+                  setActiveTab("storyboard")
+                } catch (e) {
+                  toast({ title: "Chia cảnh thất bại", description: String(e), variant: "destructive" })
+                }
+              }}
+            />
+          </TabsContent>
 
-        <TabsContent value="storyboard" className="mt-4">
-          <Storyboard project={project} />
-        </TabsContent>
+          <TabsContent value="storyboard" className="mt-4">
+            <Storyboard project={project} />
+          </TabsContent>
 
-        <TabsContent value="characters" className="mt-4">
-          <EditorCharacters project={project} />
-        </TabsContent>
+          <TabsContent value="characters" className="mt-4">
+            <EditorCharacters project={project} />
+          </TabsContent>
 
-        <TabsContent value="media" className="mt-4">
-          <EditorMedia project={project} />
-        </TabsContent>
+          <TabsContent value="media" className="mt-4">
+            <EditorMedia project={project} />
+          </TabsContent>
 
-        <TabsContent value="publish" className="mt-4">
-          <VideoEditor project={project} onExport={() => setActiveTab("subtitles")} />
-        </TabsContent>
+          <TabsContent value="publish" className="mt-4">
+            <VideoEditor project={project} onExport={() => setActiveTab("subtitles")} />
+          </TabsContent>
 
-        <TabsContent value="subtitles" className="mt-4">
-          <RenderPanel project={project} />
-        </TabsContent>
+          <TabsContent value="subtitles" className="mt-4">
+            <RenderPanel project={project} />
+          </TabsContent>
 
         </div>
       </Tabs>

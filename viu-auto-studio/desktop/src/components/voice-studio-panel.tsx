@@ -96,6 +96,7 @@ export function VoiceStudioPanel() {
   const [config, setConfig] = useState<TTSConfig | null>(null)
   const [voices, setVoices] = useState<TTSVoice[]>([])
   const [previewing, setPreviewing] = useState(false)
+  const [downloadingPreview, setDownloadingPreview] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [isPlayingAudio, setIsPlayingAudio] = useState(false)
   const [customText, setCustomText] = useState(SAMPLE_SCRIPTS[0].text)
@@ -189,17 +190,16 @@ export function VoiceStudioPanel() {
     if (specificVoiceId) setPreviewingVoiceId(specificVoiceId)
 
     try {
-      const res = await api.ttsTestPreview({
+      const res = await api.ttsPreview(textToRead, {
         provider: config.provider,
         voice: voiceToUse,
-        text: textToRead,
         speed: config.speed || 1.0,
         pitch: config.pitch || 0,
         volume: config.volume || 1.0,
       })
 
-      if (res.ok && res.audio_url) {
-        const fullUrl = mediaUrl(res.audio_url)
+      if (res.ok && res.audio_path) {
+        const fullUrl = mediaUrl(res.audio_path)
         setPreviewUrl(fullUrl)
         if (audioRef.current) {
           audioRef.current.src = fullUrl
@@ -249,6 +249,30 @@ export function VoiceStudioPanel() {
       toast({ title: "Kiểm tra kết nối thất bại", description: String(e), variant: "destructive" })
     } finally {
       setTestingConn(false)
+    }
+  }
+
+  const handleDownloadPreview = async () => {
+    if (!previewUrl) return
+    setDownloadingPreview(true)
+    try {
+      const res = await fetch(previewUrl)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      const safeVoice = (currentVoiceObj?.name || "voice").replace(/[^a-zA-Z0-9_-]+/g, "_")
+      link.download = `viu_voice_${safeVoice}.mp3`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      toast({ title: "Đã bắt đầu tải file MP3" })
+    } catch (e) {
+      toast({ title: "Không tải được file MP3", description: String(e), variant: "destructive" })
+    } finally {
+      setDownloadingPreview(false)
     }
   }
 
@@ -571,13 +595,15 @@ export function VoiceStudioPanel() {
               </Button>
 
               {previewUrl && (
-                <a
-                  href={previewUrl}
-                  download="viu_voice_preview.mp3"
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleDownloadPreview}
+                  disabled={downloadingPreview}
                   className="inline-flex items-center justify-center gap-1.5 px-4 h-12 rounded-xl text-xs font-bold border border-white/15 bg-white/[0.04] text-slate-200 hover:bg-white/10 transition-colors"
                 >
-                  <Download className="h-4 w-4" /> Tải file MP3
-                </a>
+                  {downloadingPreview ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Tải file MP3
+                </Button>
               )}
             </div>
 

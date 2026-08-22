@@ -1,312 +1,810 @@
-import { Table } from "@/components/design-system"
 import { useEffect, useState } from "react"
-import { Link, useSearchParams } from "react-router-dom"
-import { Hourglass, RotateCcw, Ban, Filter, Loader2, FileText } from "lucide-react"
-import { api } from "@/services/api"
+import { Link, useNavigate, useSearchParams } from "react-router-dom"
+import {
+  Hourglass,
+  RotateCcw,
+  Ban,
+  Play,
+  Pause,
+  ArrowUp,
+  Cpu,
+  Zap,
+  CheckCircle2,
+  AlertCircle,
+  Clock,
+  Sparkles,
+  Clapperboard,
+  Mic,
+  FolderOpen,
+  Eye,
+  FileText,
+  RefreshCw,
+  ExternalLink,
+  ChevronRight,
+  Sliders,
+  Terminal,
+  Link2,
+  Layers,
+  ArrowRight,
+  ShieldCheck,
+  HardDrive,
+  Copy,
+  Check,
+} from "lucide-react"
+import { api, openLocalPath } from "@/services/api"
 import { toast } from "@/hooks/use-toast"
 import { cn } from "@/utils/cn"
-import type { RenderJob } from "@/types"
-import { STATUS_LABELS } from "@/types"
+import type { RenderJob, JobDomain, JobStatusFilter, JobStats } from "@/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/design-system"
 import { Progress } from "@/components/ui/progress"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
-const STATUS_STYLES: Record<string, "success" | "destructive" | "secondary" | "warning"> = {
-  completed: "success",
-  failed: "destructive",
-  cancelled: "secondary",
-  queued: "secondary",
-  running: "warning",
-  rendering: "warning",
-  generating_voice: "warning",
-  voice_ready: "warning",
-  building_scenes: "warning",
-  preparing_media: "warning",
-  media_ready: "warning",
-  generating_subtitles: "warning",
-  subtitle_ready: "warning",
-  pending: "secondary",
-  draft: "secondary",
-}
+const DOMAIN_TABS: Array<{ id: JobDomain; label: string; icon: any; color: string }> = [
+  { id: "all", label: "Tất cả tác vụ", icon: Layers, color: "text-cyan-400" },
+  { id: "render", label: "Render Video", icon: Clapperboard, color: "text-amber-400" },
+  { id: "ai", label: "AI Auto Edit", icon: Sparkles, color: "text-purple-400" },
+  { id: "media", label: "Giọng đọc & Media", icon: Mic, color: "text-emerald-400" },
+]
 
-const FILTERS = ["all", "running", "queued", "completed", "failed"] as const
-
-const STEP_LABELS: Record<string, string> = {
-  draft: "Bản nháp",
-  queued: "Đang chờ",
-  pending: "Đang chờ",
-  generating_voice: "Lồng tiếng",
-  voice_ready: "Giọng đọc sẵn sàng",
-  preparing_media: "Chuẩn bị hình/ảnh",
-  media_ready: "Media sẵn sàng",
-  generating_subtitles: "Tạo phụ đề",
-  subtitle_ready: "Phụ đề sẵn sàng",
-  rendering: "Đang dựng phim",
-  completed: "Hoàn tất",
-  failed: "Lỗi",
-  cancelled: "Đã hủy",
-}
-
-const stepLabel = (step: string) => STEP_LABELS[step] || step || "—"
+const STATUS_FILTERS: Array<{ id: JobStatusFilter; label: string }> = [
+  { id: "all", label: "Tất cả" },
+  { id: "running", label: "Đang chạy" },
+  { id: "queued", label: "Đang chờ" },
+  { id: "completed", label: "Hoàn thành" },
+  { id: "failed", label: "Lỗi" },
+]
 
 export default function QueuePage() {
+  const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const [jobs, setJobs] = useState<RenderJob[]>([])
+  const [stats, setStats] = useState<JobStats>({
+    running: 0,
+    queued: 0,
+    completed: 0,
+    failed: 0,
+    paused: 0,
+    total_active: 0,
+  })
   const [loading, setLoading] = useState(true)
-  const initialFilter = FILTERS.includes(params.get("status") as (typeof FILTERS)[number])
-    ? (params.get("status") as (typeof FILTERS)[number])
-    : "all"
-  const [filter, setFilter] = useState<(typeof FILTERS)[number]>(initialFilter)
-  const [logJob, setLogJob] = useState<number | null>(null)
-  const [logContent, setLogContent] = useState<string>("")
-  const [logOpen, setLogOpen] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [selectedDomain, setSelectedDomain] = useState<JobDomain>("all")
+  const [selectedStatus, setSelectedStatus] = useState<JobStatusFilter>("all")
 
-  const openLog = async (id: number) => {
-    setLogJob(id)
-    setLogOpen(true)
-    setLogContent("Đang tải log…")
+  // Job Detail Modal State
+  const [detailJob, setDetailJob] = useState<RenderJob | null>(null)
+  const [detailModalOpen, setDetailModalOpen] = useState(false)
+  const [logContent, setLogContent] = useState<string>("")
+  const [copiedLog, setCopiedLog] = useState(false)
+  const [actionLoading, setActionLoading] = useState<number | null>(null)
+
+  const loadData = async (manual = false) => {
+    if (manual) setRefreshing(true)
     try {
-      const res = await api.getJobLog(id)
-      const text = Array.isArray(res.lines) ? res.lines.join("\n") : "Không có log cho lệnh này."
-      setLogContent(text || "Không có log cho lệnh này.")
+      const [jobsData, statsData] = await Promise.all([
+        api.listJobs(selectedDomain, selectedStatus),
+        api.jobStats(),
+      ])
+      setJobs(jobsData)
+      setStats(statsData)
+    } catch {
+      // silently retry on background poll
+    } finally {
+      setLoading(false)
+      if (manual) setRefreshing(false)
+    }
+  }
+
+  useEffect(() => {
+    loadData()
+    const interval = setInterval(() => loadData(false), 2500)
+    return () => clearInterval(interval)
+  }, [selectedDomain, selectedStatus])
+
+  const openDetail = async (job: RenderJob) => {
+    setDetailJob(job)
+    setDetailModalOpen(true)
+    setLogContent("Đang tải log chi tiết từ tiến trình...")
+    try {
+      const full = await api.jobGetDetail(job.id)
+      setDetailJob(full)
+      setLogContent(full.log_lines?.join("\n") || "Không có bản ghi log nào.")
     } catch {
       setLogContent("Không thể tải log.")
     }
   }
 
-  const load = () => {
-    api
-      .listJobs()
-      .then(setJobs)
-      .catch(() => toast({ title: "Không thể tải hàng đợi", variant: "destructive" }))
-      .finally(() => setLoading(false))
+  const copyLogsToClipboard = () => {
+    if (!logContent) return
+    navigator.clipboard.writeText(logContent)
+    setCopiedLog(true)
+    setTimeout(() => setCopiedLog(false), 2000)
+    toast({ title: "Đã sao chép log vào clipboard" })
   }
 
-  useEffect(() => {
-    load()
-    const interval = setInterval(load, 2000)
-    return () => clearInterval(interval)
-  }, [])
-
-  useEffect(() => {
-    const next = params.get("status")
-    if (next && FILTERS.includes(next as (typeof FILTERS)[number])) setFilter(next as (typeof FILTERS)[number])
-    const jobId = Number(params.get("job") || "")
-    if (jobId) void openLog(jobId)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params])
-
-  const filtered =
-    filter === "all"
-      ? jobs
-      : filter === "running"
-        ? jobs.filter((j) =>
-            ["running", "rendering", "generating_voice", "building_scenes", "preparing_media", "generating_subtitles"].includes(j.status),
-          )
-        : filter === "queued"
-          ? jobs.filter((j) => ["queued", "pending"].includes(j.status))
-          : jobs.filter((j) => j.status === filter)
-  const selectedJobId = Number(params.get("job") || "")
-
-  const counts = {
-    all: jobs.length,
-    running: jobs.filter((j) =>
-      ["running", "rendering", "generating_voice", "building_scenes", "preparing_media", "generating_subtitles"].includes(j.status),
-    ).length,
-    queued: jobs.filter((j) => ["queued", "pending"].includes(j.status)).length,
-    completed: jobs.filter((j) => j.status === "completed").length,
-    failed: jobs.filter((j) => j.status === "failed").length,
+  const handlePrioritize = async (id: number) => {
+    setActionLoading(id)
+    try {
+      const res = await api.jobPrioritize(id)
+      toast({ title: res.message })
+      await loadData(false)
+    } catch (err) {
+      toast({ title: "Không thể đổi mức ưu tiên", description: String(err), variant: "destructive" })
+    } finally {
+      setActionLoading(null)
+    }
   }
 
-  const cancel = async (id: number) => {
+  const handlePauseResume = async (job: RenderJob) => {
+    setActionLoading(job.id)
+    try {
+      if (job.status === "paused") {
+        const res = await api.jobResume(job.id)
+        toast({ title: res.message })
+      } else {
+        const res = await api.jobPause(job.id)
+        toast({ title: res.message })
+      }
+      await loadData(false)
+    } catch (err) {
+      toast({ title: "Thao tác thất bại", description: String(err), variant: "destructive" })
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handleCancel = async (id: number) => {
+    setActionLoading(id)
     try {
       await api.cancelJob(id)
-      toast({ title: "Đã hủy lệnh render" })
-      load()
-    } catch (e) {
-      toast({ title: "Không thể hủy", description: String(e), variant: "destructive" })
+      toast({ title: "Đã hủy tác vụ và dọn dẹp file tạm an toàn" })
+      await loadData(false)
+    } catch (err) {
+      toast({ title: "Không thể hủy tác vụ", description: String(err), variant: "destructive" })
+    } finally {
+      setActionLoading(null)
     }
   }
 
-  const retry = async (id: number) => {
+  const handleRetry = async (id: number) => {
+    setActionLoading(id)
     try {
-      await api.retryJob(id)
-      toast({ title: "Đang thử lại từ bước lỗi..." })
-      load()
-    } catch (e) {
-      toast({ title: "Không thể thử lại", description: String(e), variant: "destructive" })
+      const res = await api.retryJob(id)
+      toast({ title: res.message || "Đã đưa job vào hàng đợi thử lại" })
+      await loadData(false)
+    } catch (err) {
+      toast({ title: "Không thể thử lại", description: String(err), variant: "destructive" })
+    } finally {
+      setActionLoading(null)
     }
   }
+
+  // Active / Running jobs
+  const runningJobs = jobs.filter((j) =>
+    ["processing", "preparing", "finalizing", "running", "rendering"].includes(j.status)
+  )
+
+  // Queued & Paused jobs
+  const queuedJobs = jobs.filter((j) => ["queued", "paused"].includes(j.status))
+
+  // Finished jobs (completed / failed / cancelled)
+  const finishedJobs = jobs.filter((j) => ["completed", "failed", "cancelled"].includes(j.status))
 
   return (
-    <div className="space-y-6 p-8">
-      <div className="flex items-end justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">Hàng đợi</h1>
-          <p className="mt-1 text-sm text-slate-500">Quản lý các lệnh render đang chạy, chờ và hoàn tất</p>
-        </div>
-        <Button onClick={load} variant="outline" className="gap-1.5">
-          <RotateCcw className="h-3.5 w-3.5" />
-          Làm mới
-        </Button>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Filter className="h-4 w-4 text-muted-foreground" />
-        {FILTERS.map((f) => (
-          <Button variant="ghost"
-            key={f}
-            onClick={() => {
-              setFilter(f)
-              const next = new URLSearchParams(params)
-              if (f === "all") next.delete("status")
-              else next.set("status", f)
-              setParams(next, { replace: true })
-            }}
-            className={cn(
-              "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors duration-200 border border-transparent",
-              filter === f
-                ? "bg-amber-500/20 text-amber-300 border-amber-500/30"
-                : "text-slate-500 hover:bg-white/[0.04] hover:text-slate-300",
-            )}
-          >
-            {f === "all" ? "Tất cả" : f === "running" ? "Đang chạy" : f === "queued" ? "Đang chờ" : f === "completed" ? "Hoàn tất" : "Lỗi"}{" "}
-            ({counts[f]})
-          </Button>
-        ))}
-      </div>
-
-      <div className="vas-card p-5">
-        <h3 className="mb-4 text-base font-semibold text-slate-100">
-          Lệnh render
-        </h3>
-        <div>
-          {loading ? (
-            <div className="space-y-2 py-4">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="h-14 animate-pulse rounded-lg bg-white/[0.03]" />
-              ))}
+    <div className="min-h-full space-y-6 p-6 xl:p-8 pb-20">
+      {/* 1. TOP HEADER & STAT CARDS */}
+      <div className="space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-600/20 border border-cyan-500/30 text-cyan-400 shadow-lg shadow-cyan-500/10">
+              <Layers className="h-6 w-6" />
             </div>
-          ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 border border-dashed rounded-lg py-16 text-center">
-              <Hourglass className="h-10 w-10 text-muted-foreground/40" />
-              <div>
-                <div className="font-medium">Chưa có lệnh render nào</div>
-                <div className="mt-1 text-sm text-muted-foreground">
-                  Khi bạn chạy Render, lệnh sẽ xuất hiện ở đây.
+            <div>
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-2xl font-bold tracking-tight text-white">
+                  Trung Tâm Điều Phối Tác Vụ
+                </h1>
+                {stats.total_active > 0 ? (
+                  <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/15 border border-amber-500/30 text-amber-300 animate-pulse">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400"></span>
+                    {stats.total_active} đang chạy/chờ
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+                    Hàng đợi rảnh rỗi
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Điều phối trung tâm: Render phần cứng, AI Director Auto-Edit, TTS hàng loạt &amp; Quản lý tài nguyên đa luồng.
+              </p>
+            </div>
+          </div>
+
+          {/* Real Dynamic Hardware & Scheduler Capabilities from Backend */}
+          <div className="flex items-center gap-2.5 self-start lg:self-auto">
+            {stats.hardware_engine && (
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#10171e] border border-white/10 text-[11px] text-slate-300">
+                <Cpu className={cn("h-3.5 w-3.5", stats.is_hardware_accelerated ? "text-emerald-400" : "text-cyan-400")} />
+                <span>
+                  {stats.hardware_engine}
+                  {stats.cpu_cores ? ` · ${stats.cpu_cores} Cores` : ""}
+                </span>
+              </div>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => loadData(true)}
+              className="h-9 px-3 text-xs gap-1.5 border-white/10 bg-[#10171e] hover:bg-white/5 text-slate-300"
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5 text-cyan-400", refreshing && "animate-spin")} />
+              <span>Làm mới</span>
+            </Button>
+          </div>
+        </div>
+
+        {/* 4 MODERN STAT CARDS */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {/* Running Card */}
+          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-amber-500/10 via-[#10171e] to-[#0d1318] p-4 border border-amber-500/25 shadow-lg shadow-amber-500/5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-amber-300 uppercase tracking-wider">Đang chạy</span>
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/20 text-amber-400">
+                <Zap className="h-3.5 w-3.5 animate-pulse" />
+              </div>
+            </div>
+            <div className="mt-2 text-2xl font-extrabold text-white font-mono">{stats.running}</div>
+            <div className="mt-0.5 text-[11px] text-slate-400">Tác vụ đang chiếm worker</div>
+          </div>
+
+          {/* Queued Card */}
+          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-500/10 via-[#10171e] to-[#0d1318] p-4 border border-blue-500/25 shadow-lg shadow-blue-500/5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-blue-300 uppercase tracking-wider">Đang chờ</span>
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/20 text-blue-400">
+                <Clock className="h-3.5 w-3.5" />
+              </div>
+            </div>
+            <div className="mt-2 text-2xl font-extrabold text-white font-mono">{stats.queued}</div>
+            <div className="mt-0.5 text-[11px] text-slate-400">Xếp hàng &amp; chờ phụ thuộc</div>
+          </div>
+
+          {/* Completed Card */}
+          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-500/10 via-[#10171e] to-[#0d1318] p-4 border border-emerald-500/25 shadow-lg shadow-emerald-500/5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-emerald-300 uppercase tracking-wider">Hoàn thành</span>
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+              </div>
+            </div>
+            <div className="mt-2 text-2xl font-extrabold text-white font-mono">{stats.completed}</div>
+            <div className="mt-0.5 text-[11px] text-slate-400">Đã xuất bản thành công</div>
+          </div>
+
+          {/* Failed Card */}
+          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-rose-500/10 via-[#10171e] to-[#0d1318] p-4 border border-rose-500/25 shadow-lg shadow-rose-500/5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-rose-300 uppercase tracking-wider">Gặp lỗi</span>
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-500/20 text-rose-400">
+                <AlertCircle className="h-3.5 w-3.5" />
+              </div>
+            </div>
+            <div className="mt-2 text-2xl font-extrabold text-white font-mono">{stats.failed}</div>
+            <div className="mt-0.5 text-[11px] text-slate-400">Tác vụ cần kiểm tra log</div>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. UNIFIED STUDIO FILTER BAR */}
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-[#10171e] p-1.5 rounded-2xl border border-white/10 shadow-sm">
+        {/* Domain Tabs */}
+        <div className="flex flex-wrap items-center gap-1">
+          {DOMAIN_TABS.map((tab) => {
+            const Icon = tab.icon
+            const active = selectedDomain === tab.id
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setSelectedDomain(tab.id)}
+                className={cn(
+                  "flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium transition-all",
+                  active
+                    ? "bg-gradient-to-r from-cyan-950/90 to-blue-950/90 border border-cyan-500/40 text-cyan-200 shadow-sm shadow-cyan-500/10 font-semibold"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
+                )}
+              >
+                <Icon className={cn("h-3.5 w-3.5", tab.color)} />
+                <span>{tab.label}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Status Filters */}
+        <div className="flex items-center gap-1 self-start md:self-auto bg-black/30 p-1 rounded-xl border border-white/5 text-xs">
+          {STATUS_FILTERS.map((st) => (
+            <button
+              key={st.id}
+              onClick={() => setSelectedStatus(st.id)}
+              className={cn(
+                "px-3 py-1.5 rounded-lg transition-all",
+                selectedStatus === st.id
+                  ? "bg-white/15 text-white font-semibold shadow-xs"
+                  : "text-slate-400 hover:text-slate-200"
+              )}
+            >
+              {st.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 3. SECTION: ACTIVE RUNNING JOBS (HERO CARDS) */}
+      {runningJobs.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-xs font-bold text-amber-400 uppercase tracking-wider">
+            <span className="flex h-2 w-2 rounded-full bg-amber-400 animate-ping"></span>
+            Đang Thực Thi Trực Tiếp ({runningJobs.length})
+          </div>
+
+          <div className="grid gap-3.5">
+            {runningJobs.map((job) => (
+              <div
+                key={job.id}
+                className="relative overflow-hidden rounded-2xl border border-amber-500/40 bg-gradient-to-br from-amber-500/10 via-[#10171e] to-[#0b1015] p-5 shadow-xl shadow-amber-500/5 space-y-4"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                        {job.domain === "render" ? "🎬" : job.domain === "ai" ? "🤖" : "🎙"} {job.title}
+                      </span>
+                      <Badge variant="outline" className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-[10px]">
+                        {job.domain?.toUpperCase()} WORKER
+                      </Badge>
+                      <Badge variant="outline" className="bg-blue-500/20 text-blue-300 border-blue-500/30 text-[10px]">
+                        Ưu tiên: {job.priority?.toUpperCase()}
+                      </Badge>
+                      {job.schema_version && (
+                        <span className="text-[10px] font-mono text-slate-400 bg-white/5 px-1.5 py-0.5 rounded border border-white/10">
+                          v{job.schema_version}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-slate-400 flex items-center gap-2.5">
+                      <span>Dự án: <strong className="text-slate-200">{job.project_name}</strong></span>
+                      <span>·</span>
+                      <span>Khởi tạo: {job.started_at ? new Date(job.started_at).toLocaleTimeString() : "Vừa xong"}</span>
+                    </div>
+                  </div>
+
+                  <div className="text-right">
+                    <div className="text-2xl sm:text-3xl font-black text-amber-400 font-mono tracking-tight">{job.progress}%</div>
+                    <div className="text-[11px] text-slate-400 flex items-center justify-end gap-1.5 mt-0.5">
+                      <Cpu className="h-3 w-3 text-cyan-400" />
+                      <span>{job.worker_id || stats.hardware_engine || "Hardware Worker"}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Progress Bar & Performance Metrics */}
+                <div className="space-y-2">
+                  <Progress value={job.progress} className="h-2.5 bg-black/50 border border-white/10" />
+                  <div className="flex items-center justify-between text-xs text-slate-300">
+                    <span className="font-medium text-amber-200 flex items-center gap-1.5">
+                      <RefreshCw className="h-3 w-3 animate-spin text-amber-400" />
+                      {job.current_step || "Đang xử lý..."}
+                    </span>
+                    <div className="flex items-center gap-3 text-slate-400 text-[11px]">
+                      {job.speed_multiplier && job.speed_multiplier > 1.0 && (
+                        <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                          <Zap className="h-3 w-3" />
+                          {job.speed_multiplier.toFixed(1)}× realtime
+                        </span>
+                      )}
+                      {job.eta_seconds ? <span>~{job.eta_seconds}s còn lại</span> : null}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex items-center justify-between pt-2 border-t border-white/10">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs gap-1.5 bg-black/40 hover:bg-black/60 border-white/10 text-slate-200"
+                    onClick={() => openDetail(job)}
+                  >
+                    <Terminal className="h-3.5 w-3.5 text-amber-400" />
+                    Chi tiết &amp; Log
+                  </Button>
+
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="h-8 text-xs gap-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30"
+                    disabled={actionLoading === job.id}
+                    onClick={() => handleCancel(job.id)}
+                  >
+                    <Ban className="h-3.5 w-3.5" />
+                    Hủy tác vụ
+                  </Button>
                 </div>
               </div>
-              <Link to="/projects" className="mt-2 text-sm font-medium text-primary hover:underline">
-                Đến trang Dự án →
-              </Link>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-white/5 text-left text-xs uppercase tracking-wide text-slate-500">
-                    <th className="py-2 pr-4">ID</th>
-                    <th className="py-2 pr-4">Dự án</th>
-                    <th className="py-2 pr-4">Bước hiện tại</th>
-                    <th className="py-2 pr-4">Trạng thái</th>
-                    <th className="py-2 pr-4">Tiến độ</th>
-                    <th className="py-2 pr-4">Thời gian</th>
-                    <th className="py-2">Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((j) => (
-                    <tr key={j.id} className={cn("border-b border-white/5 last:border-0 hover:bg-white/[0.02]", selectedJobId === j.id && "bg-cyan-500/10")}>
-                      <td className="py-3 pr-4 font-mono text-xs text-muted-foreground">{j.id}</td>
-                      <td className="py-3 pr-4">
-                        <Link
-                          to={`/projects/${j.project_id}`}
-                          className="font-medium text-primary hover:underline"
-                        >
-                          Dự án #{j.project_id}
-                        </Link>
-                      </td>
-                      <td className="py-3 pr-4 text-muted-foreground">{stepLabel(j.current_step)}</td>
-                      <td className="py-3 pr-4">
-                        <Badge variant={STATUS_STYLES[j.status] ?? "secondary"}>
-                          {j.status === "running" && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
-                          {STATUS_LABELS[j.status] || j.status}
-                        </Badge>
-                      </td>
-                      <td className="py-3 pr-4">
-                        <div className="flex items-center gap-2">
-                          <Progress value={j.progress} className="h-1.5 w-20" />
-                          <span className="font-mono text-xs font-semibold text-slate-300">{j.progress}%</span>
-                        </div>
-                      </td>
-                      <td className="py-3 pr-4 text-xs font-mono">
-                        {(() => {
-                          if (!j.started_at) return <span className="text-slate-500">—</span>
-                          const start = new Date(j.started_at).getTime()
-                          const end = j.completed_at ? new Date(j.completed_at).getTime() : Date.now()
-                          const durSec = Math.max(0, Math.floor((end - start) / 1000))
-                          const m = Math.floor(durSec / 60)
-                          const s = durSec % 60
-                          const timeStr = `${m > 0 ? `${m}m ` : ""}${s}s`
-
-                          const isRun = ["running", "rendering", "generating_voice", "preparing_media", "generating_subtitles"].includes(j.status)
-                          if (isRun && j.progress > 5 && j.progress < 100) {
-                            const totalEst = Math.round((durSec / j.progress) * 100)
-                            const eta = Math.max(0, totalEst - durSec)
-                            const em = Math.floor(eta / 60)
-                            const es = eta % 60
-                            const etaStr = `${em > 0 ? `${em}m ` : ""}${es}s`
-                            return <span className="text-cyan-300">{timeStr} <span className="text-slate-500 font-sans">(còn ~{etaStr})</span></span>
-                          }
-                          if (j.status === "completed") {
-                            return <span className="text-emerald-400">✓ {timeStr}</span>
-                          }
-                          return <span className="text-slate-400">{timeStr}</span>
-                        })()}
-                      </td>
-                      <td className="py-3">
-                        <div className="flex items-center gap-1">
-                          {j.status === "failed" && (
-                            <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => retry(j.id)}>
-                              <RotateCcw className="h-3 w-3" />
-                              Thử lại
-                            </Button>
-                          )}
-                          {["running", "rendering", "generating_voice", "preparing_media", "generating_subtitles"].includes(j.status) && (
-                            <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => cancel(j.id)}>
-                              <Ban className="h-3 w-3" />
-                              Hủy
-                            </Button>
-                          )}
-                          <Button size="sm" variant="ghost" className="gap-1 text-xs text-slate-400 hover:text-slate-200" onClick={() => openLog(j.id)}>
-                            <FileText className="h-3 w-3" />
-                            Log
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </Table>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Xem log lệnh render */}
-      {logOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setLogOpen(false)}>
-          <div className="max-h-[75vh] w-full max-w-3xl overflow-hidden rounded-xl border border-white/10 bg-[#141d22]" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-              <div className="font-medium text-slate-100">Log lệnh render #{logJob}</div>
-              <Button size="sm" variant="ghost" onClick={() => setLogOpen(false)}>✕</Button>
-            </div>
-            <pre className="max-h-[calc(75vh-56px)] overflow-auto whitespace-pre-wrap p-4 text-xs leading-relaxed text-slate-300">
-              {logContent || "(chưa có log)"}
-            </pre>
+            ))}
           </div>
         </div>
       )}
+
+      {/* 4. SECTION: QUEUED & PAUSED TASKS */}
+      {queuedJobs.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-xs font-bold text-blue-400 uppercase tracking-wider">
+            <Clock className="h-3.5 w-3.5 text-blue-400" />
+            Đang Chờ Thực Thi ({queuedJobs.length})
+          </div>
+
+          <div className="grid gap-3">
+            {queuedJobs.map((job) => {
+              const isPaused = job.status === "paused"
+              return (
+                <div
+                  key={job.id}
+                  className={cn(
+                    "flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl border transition-all",
+                    isPaused
+                      ? "bg-[#10171e]/60 border-dashed border-amber-500/30"
+                      : "bg-[#10171e] border-white/10 hover:border-cyan-500/30 shadow-sm"
+                  )}
+                >
+                  <div className="space-y-1.5 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold text-white flex items-center gap-2">
+                        {job.domain === "render" ? "🎬" : job.domain === "ai" ? "🤖" : "🎙"} {job.title}
+                      </span>
+                      {isPaused ? (
+                        <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/30 text-[10px]">
+                          TẠM DỪNG
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-blue-500/10 text-blue-300 border-blue-500/30 text-[10px]">
+                          ĐANG CHỜ
+                        </Badge>
+                      )}
+                      {job.priority === "high" && (
+                        <Badge className="bg-rose-500/20 text-rose-300 border-rose-500/40 text-[10px]">
+                          ƯU TIÊN CAO
+                        </Badge>
+                      )}
+                      {job.depends_on && job.depends_on.length > 0 && (
+                        <Badge variant="outline" className="bg-cyan-500/10 text-cyan-300 border-cyan-500/30 text-[10px] flex items-center gap-1">
+                          <Link2 className="h-3 w-3" />
+                          Chờ Job: #{job.depends_on.join(", #")}
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="text-xs text-slate-400 flex items-center gap-2">
+                      <span>Dự án: <strong className="text-slate-300">{job.project_name}</strong></span>
+                      <span>·</span>
+                      <span className="text-slate-400">{job.current_step || "Chờ phân bổ worker..."}</span>
+                    </div>
+                  </div>
+
+                  {/* Actions for Queued job */}
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs gap-1 bg-white/5 hover:bg-white/10 border-white/10"
+                      disabled={actionLoading === job.id || job.priority === "high"}
+                      onClick={() => handlePrioritize(job.id)}
+                      title="Ưu tiên job này lên đầu hàng đợi"
+                    >
+                      <ArrowUp className="h-3 w-3 text-amber-400" />
+                      Ưu tiên
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs gap-1 bg-white/5 hover:bg-white/10 border-white/10"
+                      disabled={actionLoading === job.id}
+                      onClick={() => handlePauseResume(job)}
+                    >
+                      {isPaused ? (
+                        <>
+                          <Play className="h-3 w-3 text-emerald-400" />
+                          Tiếp tục
+                        </>
+                      ) : (
+                        <>
+                          <Pause className="h-3 w-3 text-amber-400" />
+                          Tạm dừng
+                        </>
+                      )}
+                    </Button>
+
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 text-xs text-rose-400 hover:bg-rose-500/10"
+                      disabled={actionLoading === job.id}
+                      onClick={() => handleCancel(job.id)}
+                    >
+                      <Ban className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 5. SECTION: COMPLETED & FAILED HISTORY */}
+      {finishedJobs.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+            Lịch Sử Tác Vụ ({finishedJobs.length})
+          </div>
+
+          <div className="grid gap-2.5">
+            {finishedJobs.map((job) => {
+              const isCompleted = job.status === "completed"
+              const isFailed = job.status === "failed"
+              const isCancelled = job.status === "cancelled"
+
+              return (
+                <div
+                  key={job.id}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-[#10171e] border border-white/5 hover:border-white/15 transition-all text-xs"
+                >
+                  <div className="space-y-1 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold text-slate-200">
+                        {job.domain === "render" ? "🎬" : job.domain === "ai" ? "🤖" : "🎙"} {job.title}
+                      </span>
+                      {isCompleted && (
+                        <Badge className="bg-emerald-500/15 text-emerald-300 border-emerald-500/30 text-[10px]">
+                          HOÀN THÀNH
+                        </Badge>
+                      )}
+                      {isFailed && (
+                        <Badge className="bg-rose-500/15 text-rose-300 border-rose-500/30 text-[10px]">
+                          LỖI XỬ LÝ
+                        </Badge>
+                      )}
+                      {isCancelled && (
+                        <Badge className="bg-slate-500/15 text-slate-400 border-slate-500/30 text-[10px]">
+                          ĐÃ HỦY
+                        </Badge>
+                      )}
+                      <span className="text-slate-400">· Dự án: <strong className="text-slate-300">{job.project_name}</strong></span>
+                    </div>
+
+                    {isFailed && job.error_message && (
+                      <div className="text-[11px] text-rose-400 bg-rose-500/5 p-2 rounded-lg border border-rose-500/20 font-mono">
+                        {job.error_message}
+                      </div>
+                    )}
+
+                    <div className="text-[11px] text-slate-400 flex items-center gap-3">
+                      <span>Hoàn tất lúc: {job.completed_at ? new Date(job.completed_at).toLocaleTimeString() : "--"}</span>
+                      {job.output_path && (
+                        <>
+                          <span>·</span>
+                          <span className="text-cyan-400 font-mono truncate max-w-xs">{job.output_path}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-2 self-end sm:self-auto">
+                    {job.output_path && isCompleted && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs gap-1 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border-cyan-500/30"
+                        onClick={() => openLocalPath(job.output_path || "")}
+                      >
+                        <FolderOpen className="h-3.5 w-3.5" />
+                        Mở file
+                      </Button>
+                    )}
+
+                    {isFailed && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs gap-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30"
+                        disabled={actionLoading === job.id}
+                        onClick={() => handleRetry(job.id)}
+                      >
+                        <RotateCcw className="h-3 w-3" />
+                        Thử lại
+                      </Button>
+                    )}
+
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 text-xs gap-1 text-slate-400 hover:text-white"
+                      onClick={() => openDetail(job)}
+                    >
+                      <Terminal className="h-3.5 w-3.5" />
+                      Log
+                    </Button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 6. RICH EMPTY STATE (When no jobs exist or filter returns empty) */}
+      {jobs.length === 0 && !loading && (
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-b from-[#121B24] to-[#0A1015] border border-white/10 p-8 sm:p-12 text-center space-y-8 shadow-2xl">
+          {/* Ambient Glow */}
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_30%,rgba(0,156,216,0.08),transparent_60%)] pointer-events-none" />
+
+          {/* Central Hero Icon */}
+          <div className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-cyan-500/15 via-[#14232f] to-[#0d161d] border border-cyan-500/30 text-cyan-400 shadow-2xl shadow-cyan-500/10">
+            <Layers className="h-9 w-9" />
+          </div>
+
+          <div className="space-y-2 max-w-lg mx-auto">
+            <h2 className="text-xl sm:text-2xl font-bold text-white">Hàng Đợi Sẵn Sàng Tiếp Nhận Tác Vụ</h2>
+            <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+              Chưa có tác vụ nào đang chờ xử lý. Khi bạn xuất video, chạy AI Director Auto-Edit hoặc tổng hợp giọng đọc TTS hàng loạt, tiến trình sẽ xuất hiện trực tiếp tại đây.
+            </p>
+          </div>
+
+          {/* 3 Action Quick Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl mx-auto text-left">
+            <div
+              onClick={() => navigate("/studio")}
+              className="group cursor-pointer rounded-2xl bg-[#10171e]/80 hover:bg-[#15202a] border border-white/10 hover:border-cyan-500/40 p-4 transition-all hover:shadow-lg hover:shadow-cyan-500/5 space-y-2"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400">
+                  <Clapperboard className="h-4 w-4" />
+                </div>
+                <ChevronRight className="h-4 w-4 text-slate-500 group-hover:text-cyan-400 transition-transform group-hover:translate-x-1" />
+              </div>
+              <div className="font-semibold text-white text-sm">Xuất Video &amp; Render</div>
+              <div className="text-xs text-slate-400">
+                Tăng tốc mã hóa video bằng {stats.hardware_engine || "bộ mã hóa tối ưu"}.
+              </div>
+            </div>
+
+            <div
+              onClick={() => navigate("/studio")}
+              className="group cursor-pointer rounded-2xl bg-[#10171e]/80 hover:bg-[#15202a] border border-white/10 hover:border-cyan-500/40 p-4 transition-all hover:shadow-lg hover:shadow-cyan-500/5 space-y-2"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-400">
+                  <Sparkles className="h-4 w-4" />
+                </div>
+                <ChevronRight className="h-4 w-4 text-slate-500 group-hover:text-cyan-400 transition-transform group-hover:translate-x-1" />
+              </div>
+              <div className="font-semibold text-white text-sm">AI Auto Edit Studio</div>
+              <div className="text-xs text-slate-400">Tự động phân tích nhịp giọng nói, chia multi-shot và ghép visual.</div>
+            </div>
+
+            <div
+              onClick={() => navigate("/voices")}
+              className="group cursor-pointer rounded-2xl bg-[#10171e]/80 hover:bg-[#15202a] border border-white/10 hover:border-cyan-500/40 p-4 transition-all hover:shadow-lg hover:shadow-cyan-500/5 space-y-2"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
+                  <Mic className="h-4 w-4" />
+                </div>
+                <ChevronRight className="h-4 w-4 text-slate-500 group-hover:text-cyan-400 transition-transform group-hover:translate-x-1" />
+              </div>
+              <div className="font-semibold text-white text-sm">Lồng Tiếng TTS Hàng Loạt</div>
+              <div className="text-xs text-slate-400">Tạo giọng đọc AI Edge TTS và tự động đồng bộ phụ đề.</div>
+            </div>
+          </div>
+
+          {/* System Scheduler Status Footer (100% Dynamic from Backend) */}
+          <div className="pt-4 border-t border-white/10 flex flex-wrap items-center justify-center gap-6 text-xs text-slate-400">
+            <span className="flex items-center gap-1.5">
+              <ShieldCheck className="h-4 w-4 text-emerald-400" />
+              Bộ điều phối: <strong>Hoạt động bình thường</strong>
+            </span>
+            {stats.concurrency_slots && (
+              <span className="flex items-center gap-1.5">
+                <Cpu className="h-4 w-4 text-cyan-400" />
+                Slot điều phối:{" "}
+                <strong>
+                  Render: {stats.concurrency_slots.render} | AI: {stats.concurrency_slots.ai} | Media: {stats.concurrency_slots.media}
+                </strong>
+              </span>
+            )}
+            {stats.hardware_engine && (
+              <span className="flex items-center gap-1.5">
+                <Zap className="h-4 w-4 text-amber-400" />
+                Bộ mã hóa: <strong>{stats.hardware_engine}</strong>
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 7. LIVE LOG & DIAGNOSTIC MODAL */}
+      <Dialog open={detailModalOpen} onOpenChange={setDetailModalOpen}>
+        <DialogContent className="max-w-3xl bg-[#0e161c] border-white/15 text-slate-100 p-6 rounded-2xl shadow-2xl">
+          <DialogHeader className="border-b border-white/10 pb-4">
+            <DialogTitle className="flex items-center justify-between text-base">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-400">
+                  <Terminal className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="font-bold text-white flex items-center gap-2">
+                    Tác Vụ #{detailJob?.id}: {detailJob?.title}
+                  </div>
+                  <div className="text-xs text-slate-400 font-normal">
+                    Dự án: {detailJob?.project_name} · Domain: {detailJob?.domain?.toUpperCase()} · Schema: v{detailJob?.schema_version || 1}
+                  </div>
+                </div>
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={copyLogsToClipboard}
+                className="h-8 text-xs gap-1.5 bg-white/5 hover:bg-white/10 border-white/10"
+              >
+                {copiedLog ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                {copiedLog ? "Đã sao chép" : "Sao chép log"}
+              </Button>
+            </DialogTitle>
+          </DialogHeader>
+
+          {/* Dependencies Tree in Modal */}
+          {detailJob?.dependencies && detailJob.dependencies.length > 0 && (
+            <div className="p-3 rounded-xl bg-black/40 border border-white/10 space-y-2 text-xs">
+              <div className="font-semibold text-slate-300 flex items-center gap-1.5">
+                <Link2 className="h-3.5 w-3.5 text-cyan-400" />
+                Tác vụ phụ thuộc (Pipeline Dependencies):
+              </div>
+              <div className="grid gap-1.5">
+                {detailJob.dependencies.map((dep: any) => (
+                  <div key={dep.id} className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-white/5 border border-white/5">
+                    <span className="font-medium text-slate-200">#{dep.id}: {dep.title}</span>
+                    <Badge variant="outline" className={cn(
+                      "text-[10px]",
+                      dep.status === "completed" ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" : "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                    )}>
+                      {dep.status?.toUpperCase()}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Terminal Log Console */}
+          <div className="space-y-1.5">
+            <div className="text-xs font-semibold text-slate-400">Bản ghi thực thi (Execution Tail Logs):</div>
+            <pre className="h-80 overflow-y-auto rounded-xl bg-[#080d11] p-4 text-[11px] font-mono text-slate-300 border border-white/10 leading-relaxed whitespace-pre-wrap select-text">
+              {logContent}
+            </pre>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

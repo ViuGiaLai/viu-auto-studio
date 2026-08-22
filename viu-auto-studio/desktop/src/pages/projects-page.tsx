@@ -167,7 +167,7 @@ export default function ProjectsPage() {
   const handleSelectFolder = async () => {
     try {
       const res = await selectDirectory()
-      if (res?.path) setNewOutputFolder(res.path)
+      if (typeof res === "string" && res) setNewOutputFolder(res)
     } catch {
       // User cancelled
     }
@@ -258,9 +258,8 @@ export default function ProjectsPage() {
                     <Button variant="ghost"
                       key={s.value}
                       onClick={() => { setSort(s.value); setProjectSort(s.value); setSortOpen(false) }}
-                      className={`block w-full px-3 py-2 text-left text-sm transition-colors ${
-                        sort === s.value ? "bg-amber-500/15 text-amber-300 font-medium" : "text-slate-300 hover:bg-white/5"
-                      }`}
+                      className={`block w-full px-3 py-2 text-left text-sm transition-colors ${sort === s.value ? "bg-amber-500/15 text-amber-300 font-medium" : "text-slate-300 hover:bg-white/5"
+                        }`}
                     >
                       {s.label}
                     </Button>
@@ -276,11 +275,10 @@ export default function ProjectsPage() {
                 <Button variant="ghost"
                   key={f.value}
                   onClick={() => setTypeFilter(f.value)}
-                  className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
-                    typeFilter === f.value
+                  className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${typeFilter === f.value
                       ? "border-amber-500/50 bg-amber-500/15 text-amber-300"
                       : "border-white/10 bg-white/[0.02] text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
-                  }`}
+                    }`}
                 >
                   {f.label} ({f.count(projects)})
                 </Button>
@@ -305,11 +303,10 @@ export default function ProjectsPage() {
                         : "all",
                 )
               }}
-              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                statusFilter === f.value
+              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${statusFilter === f.value
                   ? "bg-white/10 text-white"
                   : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
-              }`}
+                }`}
             >
               {f.label} ({f.count(projects)})
             </Button>

@@ -180,6 +180,7 @@ export interface Scene {
   end_time: number
   effect: string
   status: string
+  shots?: any[]
   error_message: string
   created_at: string
   updated_at: string
@@ -253,20 +254,59 @@ export interface TTSConfig {
   audio_chunk_threshold?: number
 }
 
+export type JobDomain = "all" | "render" | "ai" | "media"
+export type JobPriority = "high" | "normal" | "low"
+export type JobStatusFilter = "all" | "running" | "queued" | "completed" | "failed"
+
+export interface JobStats {
+  running: number
+  queued: number
+  completed: number
+  failed: number
+  paused: number
+  total_active: number
+  hardware_engine?: string
+  encoder?: string
+  is_hardware_accelerated?: boolean
+  cpu_cores?: number
+  concurrency_slots?: {
+    render: number
+    ai: number
+    media: number
+  }
+}
+
 export interface RenderJob {
   id: number
   project_id: number
+  project_name?: string
+  job_type?: string
+  domain?: "render" | "ai" | "media"
+  title?: string
+  priority?: "high" | "normal" | "low"
   status: string
   progress: number
   current_step: string
-  process_id: number | null
-  log_path: string
+  speed_multiplier?: number
+  eta_seconds?: number
+  worker_id?: string
+  process_id?: number | null
+  log_path?: string
   output_path: string
   error_message: string
+  error_category?: string
+  retry_count?: number
+  depends_on?: number[]
+  dependencies?: Array<{ id: number; title: string; domain: string; status: string; progress: number }>
+  schema_version?: number
+  result_schema_version?: number
+  params?: Record<string, unknown>
+  result?: Record<string, unknown>
+  log_lines?: string[]
   started_at: string | null
   completed_at: string | null
   created_at: string
-  updated_at: string
+  updated_at?: string
 }
 
 export interface RenderConfig {

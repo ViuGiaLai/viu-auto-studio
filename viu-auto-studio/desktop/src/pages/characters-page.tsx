@@ -85,7 +85,7 @@ export default function CharactersPage() {
       return
     }
     try {
-            const payload = {
+      const payload = {
         name: form.name.trim(), code: form.code.trim() || undefined,
         role: form.role, appearance: form.appearance || undefined,
         negative: form.negative_prompt || undefined,
@@ -107,7 +107,7 @@ export default function CharactersPage() {
     }
   }
 
-    const importProfile = async (file: File | null) => {
+  const importProfile = async (file: File | null) => {
     if (!file) return
     try {
       const raw = JSON.parse(await file.text()) as { characters?: unknown } | unknown[]
@@ -202,7 +202,7 @@ export default function CharactersPage() {
       </div>
 
       {/* Tabs + filters */}
-              <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40">Thư viện nhân vật</Badge>
 
         <div className="ml-auto flex items-center gap-2">

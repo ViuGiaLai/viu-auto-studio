@@ -26,7 +26,37 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/design-system"
 import { cn } from "@/utils/cn"
 
-const SAMPLE_TEXT_VI = "Xin chào, đây là giọng đọc mẫu của Viu Auto Studio. Hãy điều chỉnh tốc độ và âm lượng để phù hợp với video của bạn."
+const SAMPLE_TEXTS = {
+  vi: "Xin chào, đây là giọng đọc mẫu của Viu Auto Studio. Hãy điều chỉnh tốc độ và âm lượng để phù hợp với video của bạn.",
+  en: "Hello! This is a voice sample from Viu Auto Studio. Adjust the speed and volume to fit your video perfectly.",
+  ja: "こんにちは！これは Viu Auto Studio の音声サンプルです。動画に合わせてスピードや音量を調整してください。",
+  ko: "안녕하세요! Viu Auto Studio의 샘플 음성입니다. 비디오에 맞게 속도와 음량을 조절해 보세요.",
+  zh: "你好！这是 Viu Auto Studio 的语音示例。请根据您的视频调整语速和音量。",
+  th: "สวัสดีครับ! นี่คือตัวอย่างเสียงจาก Viu Auto Studio ปรับความเร็วและระดับเสียงให้เหมาะกับวิดีโอของคุณได้เลย",
+  other: "Hello! This is a voice sample from Viu Auto Studio. Adjust the speed and volume to fit your video perfectly.",
+} as const
+
+const getSampleTextFromVoice = (language?: string, voiceId?: string) => {
+  const lang = (language || voiceId || "").toLowerCase()
+  if (lang.startsWith("vi") || (voiceId || "").startsWith("kokoro_vi") || (voiceId || "").startsWith("hn_") || (voiceId || "").startsWith("sg_") || (voiceId || "").startsWith("hue_")) return SAMPLE_TEXTS.vi
+  if (lang.startsWith("en") || (voiceId || "").startsWith("en") || (voiceId || "").startsWith("kokoro_a")) return SAMPLE_TEXTS.en
+  if (lang.startsWith("ja") || (voiceId || "").startsWith("ja")) return SAMPLE_TEXTS.ja
+  if (lang.startsWith("ko") || (voiceId || "").startsWith("ko")) return SAMPLE_TEXTS.ko
+  if (lang.startsWith("zh") || (voiceId || "").startsWith("zh")) return SAMPLE_TEXTS.zh
+  if (lang.startsWith("th") || (voiceId || "").startsWith("th")) return SAMPLE_TEXTS.th
+  return SAMPLE_TEXTS.other
+}
+
+const getSampleTextFromFilter = (filterId: string) => {
+  if (filterId === "vi") return SAMPLE_TEXTS.vi
+  if (filterId === "en") return SAMPLE_TEXTS.en
+  if (filterId === "ja") return SAMPLE_TEXTS.ja
+  if (filterId === "ko") return SAMPLE_TEXTS.ko
+  if (filterId === "zh") return SAMPLE_TEXTS.zh
+  if (filterId === "th") return SAMPLE_TEXTS.th
+  if (filterId === "other") return SAMPLE_TEXTS.other
+  return SAMPLE_TEXTS.vi
+}
 
 const TABS = [
   { key: "quick", label: "⚡ Thiết lập nhanh" },
@@ -79,7 +109,7 @@ export default function SettingsPage() {
   const [testingConn, setTestingConn] = useState(false)
   const [previewing, setPreviewing] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-  const [customText, setCustomText] = useState(SAMPLE_TEXT_VI)
+  const [customText, setCustomText] = useState<string>(SAMPLE_TEXTS.vi)
   const [dirty, setDirty] = useState(false)
 
   // AI Dịch & SEO state
@@ -107,7 +137,7 @@ export default function SettingsPage() {
   // Gemini (aistudio.google) image source
   const [geminiKey, setGeminiKey] = useState("")
 
-    // Flow Connector (Chrome Extension)
+  // Flow Connector (Chrome Extension)
   const [connectorEnabled, setConnectorEnabled] = useState(false)
   const [workerConnected, setWorkerConnected] = useState(false)
   const [flowConnection, setFlowConnection] = useState<FlowConnectionRead | null>(null)
@@ -126,7 +156,7 @@ export default function SettingsPage() {
   const [diagnostics, setDiagnostics] = useState<Awaited<ReturnType<typeof api.systemDiagnose>> | null>(null)
   const [telegramTesting, setTelegramTesting] = useState(false)
   const [telegramSending, setTelegramSending] = useState(false)
-    const [sysStats, setSysStats] = useState<{
+  const [sysStats, setSysStats] = useState<{
     cpu_percent: number
     ram_total_gb: number
     ram_percent: number
@@ -311,12 +341,12 @@ export default function SettingsPage() {
       api.systemDiagnose()
         .then(setDiagnostics)
         .catch(() => setDiagnostics(null))
-            api.systemStats()
+      api.systemStats()
         .then(setSysStats)
-        .catch(() => {})
+        .catch(() => { })
       api.ttsStorage()
         .then(setTtsStorageStats)
-        .catch(() => {})
+        .catch(() => { })
       void refreshCapabilities()
       void refreshHardware()
 
@@ -330,13 +360,13 @@ export default function SettingsPage() {
           setPollinationsFallback(Boolean(c.pollinations_fallback))
           setConnectorEnabled(Boolean(c.connector_enabled))
         })
-        .catch(() => {})
+        .catch(() => { })
       api.connectorWorkerStatus()
         .then((s) => setWorkerConnected(Boolean(s?.registered && (s.worker_count || 0) > 0)))
-        .catch(() => {})
+        .catch(() => { })
       api.labsCheck()
         .then(setLabsCheckInfo)
-        .catch(() => {})
+        .catch(() => { })
       setConfig(cfg)
       setSettings(set)
       setSettingsDraft(set)
@@ -347,8 +377,8 @@ export default function SettingsPage() {
         if (set.gemini_model) setGeminiModelTier(String(set.gemini_model))
         if (set.deepseek_api_key) setDeepseekKey(String(set.deepseek_api_key))
       }
-      getAiBrowserStatus("chatgpt").then(setChatgptStatus).catch(() => {})
-      getAiBrowserStatus("gemini").then(setGeminiStatus).catch(() => {})
+      getAiBrowserStatus("chatgpt").then(setChatgptStatus).catch(() => { })
+      getAiBrowserStatus("gemini").then(setGeminiStatus).catch(() => { })
       if (cfg && !cfg.voice && vs.length > 0) {
         saveTTS({ voice: vs[0].id } as Partial<TTSConfig>)
       }
@@ -362,7 +392,7 @@ export default function SettingsPage() {
   }
 
 
-    const refreshFlowConnection = async () => {
+  const refreshFlowConnection = async () => {
     try {
       setFlowConnection(await flowApi.get())
     } catch {
@@ -594,12 +624,12 @@ export default function SettingsPage() {
         .then((s) => {
           setChatgptStatus(s)
         })
-        .catch(() => {})
+        .catch(() => { })
       getAiBrowserStatus("gemini")
         .then((s) => {
           setGeminiStatus(s)
         })
-        .catch(() => {})
+        .catch(() => { })
     }, 3000)
 
     return () => {
@@ -611,7 +641,7 @@ export default function SettingsPage() {
   // Refresh voice list whenever the selected provider changes
   useEffect(() => {
     if (!config?.provider) return
-    api.ttsListVoices(config.provider).then(setVoices).catch(() => {})
+    api.ttsListVoices(config.provider).then(setVoices).catch(() => { })
   }, [config?.provider])
 
   const handleSaveApiKey = async (provider: string, keyVal: string) => {
@@ -739,7 +769,7 @@ export default function SettingsPage() {
   }
 
   const refreshLabsCheck = () => {
-    api.labsCheck().then(setLabsCheckInfo).catch(() => {})
+    api.labsCheck().then(setLabsCheckInfo).catch(() => { })
   }
 
   const testConnection = async () => {
@@ -859,7 +889,7 @@ export default function SettingsPage() {
     }
   }
 
-    const clearTtsStorage = async () => {
+  const clearTtsStorage = async () => {
     try {
       const result = await api.ttsStorageClear()
       const refreshed = await api.ttsStorage()
@@ -882,10 +912,10 @@ export default function SettingsPage() {
         speed: config.speed,
         volume: config.volume,
       })
-            if (res.audio_path) {
+      if (res.audio_path) {
         setPreviewUrl(mediaUrl(res.audio_path))
         setTimeout(() => audioRef.current?.play(), 100)
-        api.ttsStorage().then(setTtsStorageStats).catch(() => {})
+        api.ttsStorage().then(setTtsStorageStats).catch(() => { })
         toast({ title: res.cache_hit ? "Đã dùng lại TTS cache" : "Đã tạo âm thanh mẫu thành công", description: res.cache_hit ? "Nội dung và cấu hình giống lần trước nên không gọi TTS lại." : "Preview được lưu tạm và sẽ tự dọn." })
 
       } else {
@@ -983,7 +1013,7 @@ export default function SettingsPage() {
         <TabsContent value="quick">
           <div className="vas-card p-5">
             <h3 className="mb-4 text-base font-semibold text-slate-100">Cài đặt chung</h3>
-                        <p className="mb-4 text-sm text-slate-500">Thư mục dữ liệu, người vận hành và hành vi hệ thống</p>
+            <p className="mb-4 text-sm text-slate-500">Thư mục dữ liệu, người vận hành và hành vi hệ thống</p>
             <div className="mb-5 rounded-xl border border-emerald-400/20 bg-emerald-500/[0.05] p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="text-sm font-semibold text-slate-100">Kiểm tra hệ thống</div><p className="mt-1 text-xs text-slate-400">Viu kiểm tra runtime và capability thật trước khi workflow chạy.</p></div><Button type="button" size="sm" variant="outline" onClick={() => void refreshCapabilities()} disabled={capabilitiesLoading}>{capabilitiesLoading ? "Đang kiểm tra…" : "Kiểm tra lại"}</Button></div><div className="mt-3 grid gap-2 sm:grid-cols-3">{(capabilities?.capabilities.filter((item) => ["factory", "movie_recap", "import_media"].includes(item.id)) ?? []).map((item) => <div key={item.id} className="rounded-lg border border-white/[0.06] bg-black/15 p-3"><div className="text-xs font-semibold text-slate-200">{item.label}</div><div className={cn("mt-1 text-xs", item.ready ? "text-emerald-300" : "text-amber-300")}>{item.ready ? "Sẵn sàng" : `Thiếu ${item.missing.length} thành phần`}</div></div>)}</div><Button type="button" size="sm" variant="ghost" className="mt-3 px-0 text-amber-300 hover:bg-transparent hover:text-amber-200" onClick={() => { setActiveTab("performance"); setSearchParams({ tab: "performance" }, { replace: true }) }}>Quản lý Công cụ & Hiệu năng →</Button></div>
             <div className="grid gap-4 sm:grid-cols-2">
 
@@ -1086,7 +1116,7 @@ export default function SettingsPage() {
           </div>
         </TabsContent>
 
-                                                {/* 🧠 Nội dung & AI */}
+        {/* 🧠 Nội dung & AI */}
         <TabsContent value="content" className="space-y-6">
           {/* Section: Nhà cung cấp dịch / SEO */}
           <div className="space-y-3">
@@ -1490,7 +1520,11 @@ export default function SettingsPage() {
                 <Label className="text-xs font-medium text-slate-400">Giọng mặc định</Label>
                 <Select
                   value={config?.voice}
-                  onValueChange={(v) => void saveTTS({ voice: v })}
+                  onValueChange={(v) => {
+                    const selectedVoice = voices.find((voice) => voice.id === v)
+                    setCustomText(getSampleTextFromVoice(selectedVoice?.language, selectedVoice?.id))
+                    void saveTTS({ voice: v })
+                  }}
                 >
                   <SelectTrigger className="w-full bg-black/30 border-white/10 text-xs">
                     <SelectValue placeholder={voices.length === 0 ? (config?.provider === "elevenlabs" && !config?.api_keys?.elevenlabs ? "Lỗi tải giọng — kiểm tra API key" : "— Chọn giọng —") : "— Chọn giọng —"} />
@@ -1501,8 +1535,8 @@ export default function SettingsPage() {
                         {config?.provider === "elevenlabs" && !config?.api_keys?.elevenlabs
                           ? "Lỗi tải giọng — kiểm tra API key"
                           : config?.provider === "kokoro_vi"
-                          ? "⚠️ Chưa cài đặt — bấm 'Tải & Cài đặt...'"
-                          : "Chưa có danh sách giọng"}
+                            ? "⚠️ Chưa cài đặt — bấm 'Tải & Cài đặt...'"
+                            : "Chưa có danh sách giọng"}
                       </SelectItem>
                     ) : (
                       voices.map((v) => (
@@ -1698,7 +1732,7 @@ export default function SettingsPage() {
                   variant="outline"
                   className="w-full border-white/10 bg-white/[0.02] hover:bg-white/5 text-xs py-2 h-auto"
                   onClick={() => {
-                    api.ttsListVoices("edge").then(setVoices).catch(() => {})
+                    api.ttsListVoices("edge").then(setVoices).catch(() => { })
                     toast({ title: "Đã làm mới danh sách giọng Edge TTS" })
                   }}
                 >
@@ -1762,7 +1796,10 @@ export default function SettingsPage() {
                     <button
                       key={filter.id}
                       type="button"
-                      onClick={() => setVoiceLangFilter(filter.id)}
+                      onClick={() => {
+                        setVoiceLangFilter(filter.id)
+                        setCustomText(getSampleTextFromFilter(filter.id))
+                      }}
                       className={cn(
                         "rounded-md px-2 py-0.5 text-[11px] font-medium transition border",
                         voiceLangFilter === filter.id
@@ -1797,53 +1834,56 @@ export default function SettingsPage() {
                       return true
                     })
                     .map((v) => {
-                    const isSelected = config?.voice === v.id
-                    return (
-                      <div
-                        key={v.id}
-                        className={cn(
-                          "flex items-center justify-between p-3.5 transition",
-                          isSelected ? "bg-amber-400/[0.06]" : "hover:bg-white/[0.02]"
-                        )}
-                      >
-                        <div className="min-w-0 pr-4">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold text-slate-100">{v.name}</span>
-                            {isSelected && (
-                              <span className="rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.2 text-[10px] font-bold">
-                                MẶC ĐỊNH ✓
-                              </span>
+                      const isSelected = config?.voice === v.id
+                      return (
+                        <div
+                          key={v.id}
+                          className={cn(
+                            "flex items-center justify-between p-3.5 transition",
+                            isSelected ? "bg-amber-400/[0.06]" : "hover:bg-white/[0.02]"
+                          )}
+                        >
+                          <div className="min-w-0 pr-4">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-semibold text-slate-100">{v.name}</span>
+                              {isSelected && (
+                                <span className="rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.2 text-[10px] font-bold">
+                                  MẶC ĐỊNH ✓
+                                </span>
+                              )}
+                            </div>
+                            <p className="mt-0.5 text-[11px] text-slate-400">
+                              {v.description || [v.gender === "female" ? "Nữ" : v.gender === "male" ? "Nam" : null, v.language].filter(Boolean).join(" · ")}
+                            </p>
+                          </div>
+
+                          <div>
+                            {isSelected ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-xs text-slate-400 hover:text-red-400 hover:bg-transparent"
+                                onClick={() => void saveTTS({ voice: "" })}
+                              >
+                                Xoá
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs border-white/10 bg-white/[0.02] hover:bg-white/10 text-slate-200"
+                                onClick={() => {
+                                  setCustomText(getSampleTextFromVoice(v.language, v.id))
+                                  void saveTTS({ voice: v.id })
+                                }}
+                              >
+                                Chọn giọng này
+                              </Button>
                             )}
                           </div>
-                          <p className="mt-0.5 text-[11px] text-slate-400">
-                            {v.description || [v.gender === "female" ? "Nữ" : v.gender === "male" ? "Nam" : null, v.language].filter(Boolean).join(" · ")}
-                          </p>
                         </div>
-
-                        <div>
-                          {isSelected ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 text-xs text-slate-400 hover:text-red-400 hover:bg-transparent"
-                              onClick={() => void saveTTS({ voice: "" })}
-                            >
-                              Xoá
-                            </Button>
-                          ) : (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-7 text-xs border-white/10 bg-white/[0.02] hover:bg-white/10 text-slate-200"
-                              onClick={() => void saveTTS({ voice: v.id })}
-                            >
-                              Chọn giọng này
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })
+                      )
+                    })
                 )}
               </div>
             </div>
@@ -1908,8 +1948,8 @@ export default function SettingsPage() {
           </div>
         </TabsContent>
 
-        
-                {/* Engine & Công cụ */}
+
+        {/* Engine & Công cụ */}
         <TabsContent value="engine" className="space-y-6">
           {/* 1. Bộ Công Cụ Viu Auto Studio (Preset Packages) */}
           <div className="rounded-2xl border border-white/10 bg-[#0d1318] p-6 shadow-2xl space-y-6">
@@ -2164,8 +2204,8 @@ export default function SettingsPage() {
                       {installingTool?.includes("yt_dlp")
                         ? "Đang tải & cài đặt..."
                         : isInstalled
-                        ? "✓ Đã Cài Đặt (Cài lại / Cập nhật)"
-                        : "Tải & Cài đặt yt-dlp"}
+                          ? "✓ Đã Cài Đặt (Cài lại / Cập nhật)"
+                          : "Tải & Cài đặt yt-dlp"}
                     </Button>
                   </div>
                 )
@@ -2205,8 +2245,8 @@ export default function SettingsPage() {
                       {installingTool?.includes("demucs")
                         ? "Đang tải & cài đặt..."
                         : isInstalled
-                        ? "✓ Đã Cài Đặt (Cài lại / Cập nhật)"
-                        : "Tải & Cài đặt Demucs"}
+                          ? "✓ Đã Cài Đặt (Cài lại / Cập nhật)"
+                          : "Tải & Cài đặt Demucs"}
                     </Button>
                   </div>
                 )
@@ -2373,7 +2413,7 @@ export default function SettingsPage() {
         <TabsContent value="connections">
           <div className="vas-card p-5">
             <h3 className="mb-4 text-base font-semibold text-slate-100">✈ Telegram</h3>
-<p className="mb-4 text-sm text-slate-500">Nhận thông báo và duyệt video qua Telegram</p>
+            <p className="mb-4 text-sm text-slate-500">Nhận thông báo và duyệt video qua Telegram</p>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>Bot Token</Label>
@@ -2480,7 +2520,7 @@ export default function SettingsPage() {
                 variant="ghost"
                 size="sm"
                 className="gap-1.5 text-slate-400 hover:text-slate-200"
-                onClick={() => api.systemStats().then(setSysStats).catch(() => {})}
+                onClick={() => api.systemStats().then(setSysStats).catch(() => { })}
               >
                 <RefreshCw className="h-3.5 w-3.5" />
                 Làm mới
@@ -2602,7 +2642,7 @@ function EngineCheckRow() {
   const [check, setCheck] = useState<{ ffmpeg: boolean; ffprobe: boolean; guide?: string } | null>(null)
 
   useEffect(() => {
-    api.ffmpegCheck().then(setCheck).catch(() => {})
+    api.ffmpegCheck().then(setCheck).catch(() => { })
   }, [])
 
   if (!check) return <div className="animate-pulse rounded-md bg-muted p-4" />

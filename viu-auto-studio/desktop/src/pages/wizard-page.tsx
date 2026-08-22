@@ -28,7 +28,7 @@ export default function WizardPage() {
   const handleChooseFolder = async () => {
     try {
       const res = await selectDirectory()
-      if (res?.path) setOutputFolder(res.path)
+      if (typeof res === 'string' && res) setOutputFolder(res)
     } catch {
       // User cancelled
     }

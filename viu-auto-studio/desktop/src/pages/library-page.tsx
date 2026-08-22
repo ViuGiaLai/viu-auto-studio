@@ -129,20 +129,20 @@ export default function LibraryPage() {
       ) : (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-6">
           {items.map((item) => (
-                          <div
-                key={item.path}
-                className="group relative overflow-hidden rounded-xl border border-white/[0.06] bg-[#141d22] transition-all duration-200 hover:border-amber-500/30 hover:shadow-lg hover:shadow-amber-500/10"
+            <div
+              key={item.path}
+              className="group relative overflow-hidden rounded-xl border border-white/[0.06] bg-[#141d22] transition-all duration-200 hover:border-amber-500/30 hover:shadow-lg hover:shadow-amber-500/10"
+            >
+              <button
+                type="button"
+                aria-label={`Xóa ${item.name}`}
+                title="Xóa khỏi thư viện"
+                disabled={deletingPath === item.path}
+                onClick={() => void remove(item)}
+                className="absolute right-2 top-2 z-10 rounded-md bg-black/70 p-1.5 text-slate-300 opacity-0 transition-opacity hover:bg-red-500/80 hover:text-white group-hover:opacity-100 disabled:opacity-50"
               >
-                <button
-                  type="button"
-                  aria-label={`Xóa ${item.name}`}
-                  title="Xóa khỏi thư viện"
-                  disabled={deletingPath === item.path}
-                  onClick={() => void remove(item)}
-                  className="absolute right-2 top-2 z-10 rounded-md bg-black/70 p-1.5 text-slate-300 opacity-0 transition-opacity hover:bg-red-500/80 hover:text-white group-hover:opacity-100 disabled:opacity-50"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
 
               {item.media_type === "video" ? (
                 <video src={mediaUrl(item.path)} className="aspect-video w-full object-cover" muted />

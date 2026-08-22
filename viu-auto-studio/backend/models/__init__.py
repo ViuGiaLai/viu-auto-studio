@@ -124,14 +124,28 @@ class RenderJob(Base):  # noqa: ANN001
 
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, nullable=False)
-    status = Column(String(64), default="draft")
+    job_type = Column(String(64), default="render")  # render | ai_auto_edit | tts_batch | ai_image_gen | ai_video_gen | subtitle | demucs
+    domain = Column(String(32), default="render")    # render | ai | media
+    title = Column(String(255), default="")
+    priority = Column(String(32), default="normal")  # high | normal | low
+    status = Column(String(64), default="queued")    # queued | preparing | processing | finalizing | completed | failed | paused | cancelled
     progress = Column(Integer, default=0)
-    current_step = Column(String(128), default="")
+    current_step = Column(String(255), default="")
     process_id = Column(Integer, nullable=True)
     log_path = Column(String(512), default="")
     output_path = Column(String(512), default="")
+    params_json = Column(Text, default="{}")
+    schema_version = Column(Integer, default=1)
+    result_json = Column(Text, default="{}")
+    result_schema_version = Column(Integer, default=1)
+    depends_on_json = Column(Text, default="[]")  # JSON list of parent job IDs e.g. "[101, 102]"
     error_message = Column(Text, default="")
+    error_category = Column(String(64), default="")  # retryable | fatal | timeout
     retry_count = Column(Integer, default=0)
+    max_retries = Column(Integer, default=3)
+    speed_multiplier = Column(Float, default=1.0)
+    eta_seconds = Column(Integer, default=0)
+    worker_id = Column(String(64), default="")
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

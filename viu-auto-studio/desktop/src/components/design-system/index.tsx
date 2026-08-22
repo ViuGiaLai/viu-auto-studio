@@ -5,6 +5,8 @@ import {
   Link2, Mic, PanelLeftClose, PanelLeftOpen, Settings, Sparkles, Users, Wifi, WifiOff,
 } from "lucide-react"
 import { cn } from "@/utils/cn"
+import { api } from "@/services/api"
+import type { JobStats } from "@/types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -62,6 +64,17 @@ export function Sidebar({ collapsed, onToggle, backendOnline, version, operatorN
   operatorName?: string; operatorEmail?: string
 }) {
   const location = useLocation()
+  const [jobStats, setJobStats] = React.useState<JobStats>({ running: 0, queued: 0, completed: 0, failed: 0, paused: 0, total_active: 0 })
+
+  React.useEffect(() => {
+    const fetchStats = () => {
+      api.jobStats().then(setJobStats).catch(() => {})
+    }
+    fetchStats()
+    const interval = setInterval(fetchStats, 3000)
+    return () => clearInterval(interval)
+  }, [])
+
   const isActive = (to: string, exact?: boolean) => {
     if (to === "/studio") return location.pathname === "/studio"
     if (to === "/projects") return location.pathname === "/projects" || location.pathname === "/projects/new" || /^\/projects\/\d+/.test(location.pathname)
@@ -76,9 +89,43 @@ export function Sidebar({ collapsed, onToggle, backendOnline, version, operatorN
       <nav className="flex-1 space-y-1 px-2.5 py-4" aria-label="Điều hướng chính">
         {APP_NAV_ITEMS.map((item) => {
           const active = isActive(item.to, "exact" in item ? item.exact : false)
-          return <NavLink key={item.to} to={item.to} title={collapsed ? item.label : undefined} aria-current={active ? "page" : undefined} className={cn("group flex h-10 items-center gap-3 rounded-md border px-3 text-[13px] font-medium transition-colors", collapsed && "justify-center px-0", active ? "border-cyan-500/35 bg-[#073344] text-cyan-100 shadow-[inset_3px_0_0_#00B8F0]" : "border-transparent text-[#9AABB6] hover:border-white/[0.06] hover:bg-white/[0.04] hover:text-white")}>
-            <item.icon className={cn("h-4 w-4 shrink-0", active ? "text-[#00B8F0]" : "text-[#8395A1] group-hover:text-white")} />{!collapsed && <span>{item.label}</span>}
-          </NavLink>
+          const isQueue = item.to === "/queue"
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              title={collapsed ? item.label : undefined}
+              aria-current={active ? "page" : undefined}
+              className={cn(
+                "group flex h-10 items-center gap-3 rounded-md border px-3 text-[13px] font-medium transition-colors",
+                collapsed && "justify-center px-0",
+                active
+                  ? "border-cyan-500/35 bg-[#073344] text-cyan-100 shadow-[inset_3px_0_0_#00B8F0]"
+                  : "border-transparent text-[#9AABB6] hover:border-white/[0.06] hover:bg-white/[0.04] hover:text-white"
+              )}
+            >
+              <item.icon className={cn("h-4 w-4 shrink-0", active ? "text-[#00B8F0]" : "text-[#8395A1] group-hover:text-white")} />
+              {!collapsed && (
+                <div className="flex flex-1 items-center justify-between min-w-0">
+                  <span className="truncate">{item.label}</span>
+                  {isQueue && (jobStats.total_active > 0 || jobStats.failed > 0) && (
+                    <div className="flex items-center gap-1 shrink-0 ml-1.5">
+                      {jobStats.total_active > 0 && (
+                        <span className="rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1.5 py-0.2 text-[9px] font-bold">
+                          {jobStats.total_active}
+                        </span>
+                      )}
+                      {jobStats.failed > 0 && (
+                        <span className="rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 px-1.5 py-0.2 text-[9px] font-bold">
+                          🔴 {jobStats.failed}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </NavLink>
+          )
         })}
       </nav>
       <div className="mt-auto border-t border-[#24313A] p-3">

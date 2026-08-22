@@ -434,13 +434,13 @@ export default function DashboardPage() {
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 {recent.map((p) => {
                   const tone = overviewTone(p.status)
-                                    const scenes = sceneCounts[p.id]
+                  const scenes = sceneCounts[p.id]
                   return (
 
                     <div key={p.id} className="group relative overflow-hidden rounded-xl border border-[#24313A] bg-[#141D22]">
                       <Link to={`/projects/${p.id}`} className="block">
                         <div className="relative aspect-[16/10] overflow-hidden bg-[#0c161c]">
-                                                    <ProjectThumbnail project={p} className="absolute inset-0" />
+                          <ProjectThumbnail project={p} className="absolute inset-0" />
 
                           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
                           <span className={cn("absolute left-2.5 top-2.5 rounded px-2 py-0.5 text-[10px] font-semibold", tone.badge)}>

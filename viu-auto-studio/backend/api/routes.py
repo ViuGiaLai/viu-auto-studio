@@ -1,9 +1,10 @@
-"""FastAPI routes for Viu Auto Studio."""
-
 from __future__ import annotations
+
+"""FastAPI routes for Viu Auto Studio."""
 
 import json
 import logging
+import os
 import re
 import shutil
 import time
@@ -2031,21 +2032,7 @@ def pipeline_start(payload: PipelineStartRequest = Body(...), db: Session = Depe
 
 @router.get("/render/jobs")
 def list_jobs(db: Session = Depends(get_db)):
-    jobs = db.query(RenderJob).order_by(RenderJob.created_at.desc()).limit(50).all()
-    return [
-        {
-            "id": j.id,
-            "project_id": j.project_id,
-            "status": j.status,
-            "progress": j.progress,
-            "current_step": j.current_step,
-            "error_message": j.error_message or "",
-            "output_path": j.output_path or "",
-            "started_at": j.started_at.isoformat() if j.started_at else None,
-            "completed_at": j.completed_at.isoformat() if j.completed_at else None,
-        }
-        for j in jobs
-    ]
+    return list_universal_jobs(db=db)
 
 
 @router.get("/render/hardware")
@@ -2408,6 +2395,18 @@ def project_preview(project_id: int, db: Session = Depends(get_db)):
     raise HTTPException(404, "video kết xuất chưa có")
 
 
+@router.post("/projects/{project_id}/auto-edit")
+def auto_edit_project(project_id: int, payload: dict = None, db: Session = Depends(get_db)):
+    """Execute AI Auto Edit Engine for intelligent multi-shot timeline assembly."""
+    from backend.services.ai.auto_edit_engine import AutoEditEngine
+    try:
+        engine = AutoEditEngine(db)
+        result = engine.auto_edit_project(project_id, payload or {})
+        return result
+    except Exception as exc:
+        raise HTTPException(500, f"Auto edit failed: {exc}") from exc
+
+
 @router.post("/projects/{project_id}/scenes/{scene_id}/split-shots", response_model=SceneRead)
 def split_scene_shots(project_id: int, scene_id: int, db: Session = Depends(get_db)):
     """AI phân tích lời thoại của cảnh và tự động chia thành 2-4 shots hình ảnh với thời lượng và prompt riêng."""
@@ -2460,3 +2459,222 @@ def split_scene_shots(project_id: int, scene_id: int, db: Session = Depends(get_
     res = SceneRead.model_validate(scene)
     res.shots = [ShotItem(**s) for s in shots]
     return res
+
+
+
+# ---------------------------------------------------------------------------
+# Universal Task Center & Job Dispatcher APIs
+# ---------------------------------------------------------------------------
+
+@router.get("/jobs/stats")
+def get_jobs_stats(db: Session = Depends(get_db)):
+    """Return live job counts, dynamic scheduler concurrency slots, and real hardware engine info."""
+    from backend.pipeline.task_dispatcher import get_dynamic_concurrency
+    from backend.render.smart_engine import detect_hardware_capabilities
+
+    running_count = db.query(RenderJob).filter(RenderJob.status.in_(["processing", "preparing", "finalizing", "running", "rendering"])).count()
+    queued_count = db.query(RenderJob).filter(RenderJob.status == "queued").count()
+    completed_count = db.query(RenderJob).filter(RenderJob.status == "completed").count()
+    failed_count = db.query(RenderJob).filter(RenderJob.status == "failed").count()
+    paused_count = db.query(RenderJob).filter(RenderJob.status == "paused").count()
+    
+    hw = detect_hardware_capabilities()
+    concurrency = get_dynamic_concurrency()
+    
+    return {
+        "running": running_count,
+        "queued": queued_count,
+        "completed": completed_count,
+        "failed": failed_count,
+        "paused": paused_count,
+        "total_active": running_count + queued_count,
+        "hardware_engine": hw.get("encoder_name") or hw.get("encoder") or "CPU libx264",
+        "encoder": hw.get("encoder") or "libx264",
+        "is_hardware_accelerated": bool(hw.get("is_hardware", False)),
+        "cpu_cores": os.cpu_count() or 4,
+        "concurrency_slots": concurrency,
+    }
+
+
+@router.get("/jobs")
+def list_universal_jobs(
+    domain: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+):
+    """List jobs with filtering by domain (render | ai | media) and status."""
+    query = db.query(RenderJob)
+    if domain and domain != "all":
+        query = query.filter(RenderJob.domain == domain)
+    if status and status != "all":
+        if status == "running":
+            query = query.filter(RenderJob.status.in_(["processing", "preparing", "finalizing", "running", "rendering"]))
+        else:
+            query = query.filter(RenderJob.status == status)
+
+    jobs = query.order_by(RenderJob.created_at.desc()).offset(offset).limit(limit).all()
+
+    # Enrich with project info
+    project_ids = list({j.project_id for j in jobs if j.project_id})
+    projects_map = {p.id: p for p in db.query(Project).filter(Project.id.in_(project_ids)).all()} if project_ids else {}
+
+    results = []
+    for j in jobs:
+        proj = projects_map.get(j.project_id)
+        results.append({
+            "id": j.id,
+            "project_id": j.project_id,
+            "project_name": proj.name if proj else f"Project #{j.project_id}",
+            "job_type": j.job_type or "render",
+            "domain": j.domain or "render",
+            "title": j.title or (f"Xuất video · {proj.name}" if proj else f"Job #{j.id}"),
+            "priority": j.priority or "normal",
+            "status": j.status,
+            "progress": j.progress,
+            "current_step": j.current_step,
+            "speed_multiplier": getattr(j, "speed_multiplier", 1.0) or 1.0,
+            "eta_seconds": getattr(j, "eta_seconds", 0) or 0,
+            "worker_id": getattr(j, "worker_id", "worker-01") or "worker-01",
+            "depends_on": json.loads(getattr(j, "depends_on_json", "[]") or "[]"),
+            "schema_version": getattr(j, "schema_version", 1) or 1,
+            "result_schema_version": getattr(j, "result_schema_version", 1) or 1,
+            "error_message": j.error_message or "",
+            "error_category": getattr(j, "error_category", "") or "",
+            "retry_count": j.retry_count or 0,
+            "output_path": j.output_path or "",
+            "started_at": j.started_at.isoformat() if j.started_at else None,
+            "completed_at": j.completed_at.isoformat() if j.completed_at else None,
+            "created_at": j.created_at.isoformat() if j.created_at else None,
+        })
+    return results
+
+
+@router.get("/jobs/{job_id}")
+def get_job_detail(job_id: int, db: Session = Depends(get_db)):
+    """Get full job details including timeline steps and tail logs."""
+    job = db.query(RenderJob).filter(RenderJob.id == job_id).first()
+    if not job:
+        raise HTTPException(404, "Job không tồn tại")
+    proj = db.query(Project).filter(Project.id == job.project_id).first()
+    
+    depends_on = json.loads(getattr(job, "depends_on_json", "[]") or "[]")
+    dependencies = []
+    if depends_on:
+        p_jobs = db.query(RenderJob).filter(RenderJob.id.in_(depends_on)).all()
+        for p in p_jobs:
+            dependencies.append({
+                "id": p.id,
+                "title": p.title,
+                "domain": p.domain,
+                "status": p.status,
+                "progress": p.progress,
+            })
+
+    # Read log tail
+    log_lines = []
+    if job.log_path and Path(job.log_path).exists():
+        try:
+            content = Path(job.log_path).read_text(encoding="utf-8", errors="ignore").splitlines()
+            log_lines = content[-100:]
+        except Exception:
+            log_lines = []
+
+    return {
+        "id": job.id,
+        "project_id": job.project_id,
+        "project_name": proj.name if proj else f"Project #{job.project_id}",
+        "job_type": job.job_type or "render",
+        "domain": job.domain or "render",
+        "title": job.title or f"Job #{job.id}",
+        "priority": job.priority or "normal",
+        "status": job.status,
+        "progress": job.progress,
+        "current_step": job.current_step,
+        "speed_multiplier": getattr(job, "speed_multiplier", 1.0) or 1.0,
+        "eta_seconds": getattr(job, "eta_seconds", 0) or 0,
+        "worker_id": getattr(job, "worker_id", "worker-01") or "worker-01",
+        "depends_on": depends_on,
+        "dependencies": dependencies,
+        "schema_version": getattr(job, "schema_version", 1) or 1,
+        "result_schema_version": getattr(job, "result_schema_version", 1) or 1,
+        "error_message": job.error_message or "",
+        "error_category": getattr(job, "error_category", "") or "",
+        "retry_count": job.retry_count or 0,
+        "output_path": job.output_path or "",
+        "params": json.loads(job.params_json or "{}"),
+        "result": json.loads(job.result_json or "{}"),
+        "log_lines": log_lines,
+        "started_at": job.started_at.isoformat() if job.started_at else None,
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+        "created_at": job.created_at.isoformat() if job.created_at else None,
+    }
+
+
+@router.post("/jobs/{job_id}/prioritize")
+def prioritize_job_endpoint(job_id: int):
+    ok = dispatcher.prioritize_job(job_id)
+    return {"ok": ok, "message": "Đã đưa job lên mức ưu tiên cao nhất" if ok else "Không thể đổi ưu tiên"}
+
+
+@router.post("/jobs/{job_id}/pause")
+def pause_job_endpoint(job_id: int):
+    ok, msg = dispatcher.pause_job(job_id)
+    return {"ok": ok, "message": msg}
+
+
+@router.post("/jobs/{job_id}/resume")
+def resume_job_endpoint(job_id: int):
+    ok, msg = dispatcher.resume_job(job_id)
+    return {"ok": ok, "message": msg}
+
+
+@router.post("/jobs/{job_id}/cancel")
+def cancel_job_endpoint(job_id: int):
+    ok = dispatcher.cancel_job(job_id)
+    return {"ok": ok, "message": "Đã hủy job và dọn dẹp file tạm" if ok else "Không thể hủy job"}
+
+
+@router.post("/jobs/{job_id}/retry")
+def retry_job_endpoint(job_id: int):
+    ok = dispatcher.retry_job(job_id)
+    return {"ok": ok, "message": "Đã đưa job vào hàng đợi để thử lại" if ok else "Không thể thử lại job"}
+
+
+@router.post("/projects/{project_id}/auto-edit-job")
+def create_auto_edit_job_endpoint(project_id: int, payload: dict = Body(...), db: Session = Depends(get_db)):
+    """Dispatch AI Auto Edit task into Queue."""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(404, "Project không tồn tại")
+    depends_on = payload.get("depends_on") or []
+    job = dispatcher.create_job(
+        project_id=project_id,
+        job_type="ai_auto_edit",
+        domain="ai",
+        title=f"AI Auto Edit · {project.name}",
+        priority="normal",
+        params=payload,
+        depends_on=depends_on,
+    )
+    return {"ok": True, "job_id": job.id, "message": "Đã tạo AI Auto Edit Job trong Hàng đợi"}
+
+
+@router.post("/projects/{project_id}/tts-batch-job")
+def create_tts_batch_job_endpoint(project_id: int, payload: dict = Body(default={}), db: Session = Depends(get_db)):
+    """Dispatch TTS batch task into Queue."""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(404, "Project không tồn tại")
+    depends_on = payload.get("depends_on") or []
+    job = dispatcher.create_job(
+        project_id=project_id,
+        job_type="tts_batch",
+        domain="media",
+        title=f"Lồng tiếng hàng loạt · {project.name}",
+        priority="normal",
+        params=payload,
+        depends_on=depends_on,
+    )
+    return {"ok": True, "job_id": job.id, "message": "Đã tạo TTS Batch Job trong Hàng đợi"}

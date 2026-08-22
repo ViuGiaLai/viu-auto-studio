@@ -176,7 +176,7 @@ export const publishApi = {
 // ---------------------------------------------------------------------------
 export const charactersGlobalApi = {
   list: () => req<CharacterGlobalRead[]>(`/characters-global`),
-    create: (payload: { name: string; code?: string; role?: string; appearance?: string; negative?: string; identity_prompt?: string; face_lock?: number; outfit_lock?: number; seed?: number | null }) =>
+  create: (payload: { name: string; code?: string; role?: string; appearance?: string; negative?: string; identity_prompt?: string; face_lock?: number; outfit_lock?: number; seed?: number | null }) =>
     req<{ character_id: number }>(`/characters-global`, {
       method: "POST",
       body: JSON.stringify(payload),

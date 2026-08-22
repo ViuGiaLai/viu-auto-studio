@@ -130,7 +130,13 @@ def detect_hardware_capabilities(force_refresh: bool = False) -> Dict[str, Any]:
 
 
 def get_encoder_args(encoder: str, mode: str = "fastest", crf: int = 22, preset: str = "ultrafast") -> List[str]:
-    """Return tuned FFmpeg encoding arguments for the selected encoder and mode."""
+    """Return tuned FFmpeg encoding arguments for the selected encoder and mode with BT.709 color standards."""
+    bt709_flags = [
+        "-color_primaries", "bt709",
+        "-color_trc", "bt709",
+        "-colorspace", "bt709",
+        "-color_range", "tv",
+    ]
     if encoder == "h264_qsv":
         # Intel Quick Sync
         qsv_preset = "veryfast" if mode == "fastest" else "medium" if mode == "balanced" else "slow"
@@ -139,6 +145,7 @@ def get_encoder_args(encoder: str, mode: str = "fastest", crf: int = 22, preset:
             "-preset", qsv_preset,
             "-global_quality", str(crf if crf > 0 else 22),
             "-look_ahead", "0",
+            *bt709_flags,
         ]
     elif encoder == "h264_nvenc":
         # NVIDIA NVENC
@@ -148,6 +155,7 @@ def get_encoder_args(encoder: str, mode: str = "fastest", crf: int = 22, preset:
             "-preset", nv_preset,
             "-cq", str(crf if crf > 0 else 22),
             "-spatial-aq", "1",
+            *bt709_flags,
         ]
     elif encoder == "h264_amf":
         # AMD AMF
@@ -157,6 +165,7 @@ def get_encoder_args(encoder: str, mode: str = "fastest", crf: int = 22, preset:
             "-quality", amf_quality,
             "-rc", "cqp",
             "-qp_p", str(crf if crf > 0 else 22),
+            *bt709_flags,
         ]
     elif encoder == "h264_videotoolbox":
         # Apple VideoToolbox
@@ -164,6 +173,7 @@ def get_encoder_args(encoder: str, mode: str = "fastest", crf: int = 22, preset:
             "-c:v", "h264_videotoolbox",
             "-q:v", "65",
             "-realtime", "1" if mode == "fastest" else "0",
+            *bt709_flags,
         ]
     else:
         # Default Multi-threaded CPU libx264
@@ -173,6 +183,7 @@ def get_encoder_args(encoder: str, mode: str = "fastest", crf: int = 22, preset:
             "-c:v", "libx264",
             "-preset", cpu_preset,
             "-crf", str(crf if crf > 0 else 22),
+            *bt709_flags,
         ]
 
 
@@ -291,9 +302,9 @@ class SmartRenderEngine:
         cache_hash_path = output_file.with_suffix(".cache_hash")
         current_state = {
             "media": media_path,
-            "media_mtime": os.path.getmtime(media_path) if Path(media_path).exists() else 0,
+            "media_mtime": os.path.getmtime(media_path) if (media_path and Path(media_path).is_file()) else 0,
             "audio": audio_path,
-            "audio_mtime": os.path.getmtime(audio_path) if Path(audio_path).exists() else 0,
+            "audio_mtime": os.path.getmtime(audio_path) if (audio_path and Path(audio_path).is_file()) else 0,
             "duration": round(duration, 3),
             "width": width,
             "height": height,
@@ -326,8 +337,12 @@ class SmartRenderEngine:
         crop_y = f"max(0,min(ih-oh,(ih-oh)/2+({transform_y:.4f})*(ih-oh)/2))"
 
         # --- Video / Image Processing ---
-        if media_type == "video" and Path(media_path).exists():
-            inputs += ["-t", f"{duration:.3f}", "-i", media_path]
+        is_video = bool(
+            (media_type == "video" or str(media_path).lower().endswith((".mp4", ".mov", ".webm", ".mkv", ".avi", ".ts", ".flv")))
+            and Path(media_path).is_file()
+        )
+        if is_video:
+            inputs += ["-stream_loop", "-1", "-t", f"{duration:.3f}", "-i", media_path]
             filters.append(
                 f"[0:v]scale={scaled_width}:{scaled_height}:force_original_aspect_ratio=increase,"
                 f"crop={width}:{height}:x='{crop_x}':y='{crop_y}',fps={fps},setpts=PTS-STARTPTS[vsrc]"
@@ -336,7 +351,7 @@ class SmartRenderEngine:
         else:
             has_media = bool(media_path and Path(media_path).exists())
             if not has_media:
-                inputs += ["-f", "lavfi", "-i", f"color=c=0x111827:s={width}x{height}:r={fps}:d={max(duration, 3):.3f}"]
+                inputs += ["-f", "lavfi", "-i", f"color=c=0x111827:s={width}x{height}:r={fps}:d={duration:.3f}"]
                 filters.append("[0:v]setpts=PTS-STARTPTS[vsrc]")
                 video_label = "[vsrc]"
             elif effect == "none":
@@ -373,7 +388,7 @@ class SmartRenderEngine:
             inputs += ["-i", audio_path, "-t", f"{duration:.3f}"]
             filters.append(f"[1:a]volume={audio_volume:.4f},apad[aout]")
         else:
-            inputs += ["-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={max(float(duration or 3.0), 3.0):.3f}"]
+            inputs += ["-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo:d={duration:.3f}"]
             filters.append("[1:a]anull[aout]")
 
         # --- Subtitles ---
@@ -396,11 +411,8 @@ class SmartRenderEngine:
             "-map", video_label,
             "-map", "[aout]",
             "-c:a", "aac", "-b:a", "192k",
+            "-t", f"{duration:.3f}",
         ]
-        if audio_path and Path(audio_path).exists():
-            base_cmd.append("-shortest")
-        else:
-            base_cmd += ["-t", f"{max(float(duration or 3.0), 3.0):.3f}"]
 
         primary_args = [*base_cmd, *hw_enc_args, "-y", output_path]
         fallback_args = [*base_cmd, *cpu_enc_args, "-y", output_path]
@@ -436,6 +448,7 @@ class SmartRenderEngine:
         voice_volume: float = 1.0,
         enable_ducking: bool = True,
         normalize_audio: bool = True,
+        target_lufs: float = -14.0,
         mode: str = "fastest",
     ) -> str:
         """Compose all scene clips + audio + subtitles with hardware acceleration."""
@@ -449,24 +462,28 @@ class SmartRenderEngine:
         for clip in available_clips:
             concat_args += ["-i", clip]
 
-        if len(available_clips) > 1:
-            concat_args += [
-                "-filter_complex",
-                "".join(f"[{i}:v][{i}:a]" for i in range(len(available_clips)))
-                + f"concat=n={len(available_clips)}:v=1:a=1[vout][aout]",
-                "-map", "[vout]", "-map", "[aout]",
-            ]
-        else:
-            concat_args += ["-map", "0:v", "-map", "0:a"]
-
-        concat_tmp = str(Path(output_path).parent / "_concat_tmp.mp4")
+        # Use concat demuxer / filter
+        concat_tmp = str(Path(output_path).with_name("_concat_tmp.mp4"))
+        n = len(available_clips)
+        v_ins = "".join(f"[{i}:v]" for i in range(n))
+        a_ins = "".join(f"[{i}:a]" for i in range(n))
+        filter_str = f"{v_ins}concat=n={n}:v=1:a=0[vconcat];{a_ins}concat=n={n}:v=0:a=1[aconcat]"
 
         hw_encoder = self.hw_info.get("encoder", "libx264")
-        hw_enc_args = get_encoder_args(hw_encoder, mode=mode, crf=22, preset="ultrafast")
-        cpu_enc_args = get_encoder_args("libx264", mode=mode, crf=22, preset="ultrafast")
+        hw_enc_args = get_encoder_args(hw_encoder, mode=mode, crf=crf or 22, preset=preset or "ultrafast")
+        cpu_enc_args = get_encoder_args("libx264", mode=mode, crf=crf or 22, preset=preset or "ultrafast")
 
-        c_base = ["-threads", "0", *concat_args, "-c:a", "aac", "-b:a", "192k", "-y", concat_tmp]
-        primary_c = [*c_base[:-2], *hw_enc_args, "-y", concat_tmp]
+        c_base = [
+            "-threads", "0",
+            *concat_args,
+            "-filter_complex", filter_str,
+            "-map", "[vconcat]",
+            "-map", "[aconcat]",
+            "-c:a", "aac",
+            "-b:a", "192k",
+        ]
+
+        primary_c = [*c_base, *hw_enc_args, "-y", concat_tmp]
         fallback_c = [*c_base[:-2], *cpu_enc_args, "-y", concat_tmp]
 
         try:
@@ -475,28 +492,43 @@ class SmartRenderEngine:
             Path(concat_tmp).unlink(missing_ok=True)
             raise
 
-        # 2) Final Mix
+        # 2) Final Mix & Loudness Mastering
         inputs2: List[str] = ["-i", concat_tmp]
+        file_count = 1
         filter_parts = []
 
         voice_gain = max(0.0, min(2.0, float(voice_volume)))
-        voice_chain = f"volume={voice_gain:.3f}"
-        if normalize_audio:
-            voice_chain += ",loudnorm=I=-16:TP=-1.5:LRA=11"
+        if audio_path and Path(audio_path).exists():
+            inputs2 += ["-i", audio_path]
+            voice_in_idx = file_count
+            file_count += 1
+            filter_parts.append(f"[{voice_in_idx}:a]volume={voice_gain:.3f}[voice]")
+        else:
+            filter_parts.append(f"[0:a]volume={voice_gain:.3f}[voice]")
 
         if music_path and Path(music_path).exists():
             inputs2 += ["-i", music_path]
-            filter_parts.append(f"[0:a]{voice_chain}[voice]")
-            filter_parts.append(f"[1:a]volume={max(0.0, min(1.0, music_volume)):.3f},afade=t=in:d=2,afade=t=out:st=3:d=3[music]")
+            music_in_idx = file_count
+            file_count += 1
+            filter_parts.append(f"[{music_in_idx}:a]volume={max(0.0, min(1.0, music_volume)):.3f},afade=t=in:d=2,afade=t=out:st=3:d=3[music]")
             if enable_ducking:
+                filter_parts.append("[voice]asplit=2[v_main][v_sc]")
                 filter_parts.append(
-                    "[voice][music]sidechaincompress=threshold=0.03:ratio=8:attack=100:release=800,"
-                    "amix=inputs=2:duration=first:dropout_transition=2[aout]"
+                    "[music][v_sc]sidechaincompress=threshold=0.03:ratio=8:attack=100:release=800[ducked]"
                 )
+                filter_parts.append("[v_main][ducked]amix=inputs=2:duration=first:dropout_transition=2:weights=1.0 0.5[amix_out]")
             else:
-                filter_parts.append("[voice][music]amix=inputs=2:duration=first:dropout_transition=2[aout]")
+                filter_parts.append("[voice][music]amix=inputs=2:duration=first:dropout_transition=2:weights=1.0 0.5[amix_out]")
+            final_audio_stream = "[amix_out]"
         else:
-            filter_parts.append(f"[0:a]{voice_chain},aformat=sample_rates=44100:channel_layouts=stereo[aout]")
+            final_audio_stream = "[voice]"
+
+        if normalize_audio:
+            filter_parts.append(
+                f"{final_audio_stream}loudnorm=I={float(target_lufs or -14.0):.1f}:TP=-1.0:LRA=11,aformat=sample_rates=44100:channel_layouts=stereo[aout]"
+            )
+        else:
+            filter_parts.append(f"{final_audio_stream}aformat=sample_rates=44100:channel_layouts=stereo[aout]")
 
         # Logo watermark
         if logo_path and Path(logo_path).exists():
@@ -527,6 +559,17 @@ class SmartRenderEngine:
         hw_final = get_encoder_args(hw_encoder, mode=mode, crf=crf or 22, preset=preset or "veryfast")
         cpu_final = get_encoder_args("libx264", mode=mode, crf=crf or 22, preset=preset or "veryfast")
 
+        # Probe exact duration of concatenated video to ensure audio mix matches exactly
+        final_target_dur = 0.0
+        try:
+            probe_out = subprocess.check_output([
+                FFPROBE_BIN, "-v", "error", "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1", concat_tmp
+            ], text=True).strip()
+            final_target_dur = float(probe_out)
+        except Exception:
+            final_target_dur = 0.0
+
         f_base = [
             "-threads", "0",
             *inputs2,
@@ -536,6 +579,10 @@ class SmartRenderEngine:
             "-c:a", "aac",
             "-b:a", "192k",
         ]
+        if final_target_dur > 0:
+            f_base += ["-t", f"{final_target_dur:.3f}"]
+        else:
+            f_base.append("-shortest")
 
         primary_final = [*f_base, *hw_final, "-y", output_path]
         fallback_final = [*f_base, *cpu_final, "-y", output_path]

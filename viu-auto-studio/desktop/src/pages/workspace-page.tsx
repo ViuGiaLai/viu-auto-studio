@@ -60,29 +60,29 @@ function pipelineToView(state: PipelineState | null): PipelineView | null {
   if (!state) return null
   const steps = state.steps?.length
     ? state.steps.map((step) => ({
-        key: step.key,
-        label: step.label,
-        status: step.status === "done" ? "done" : step.status,
-        progress: step.progress ?? 0,
-        error: step.error || "",
-      }))
+      key: step.key,
+      label: step.label,
+      status: step.status === "done" ? "done" : step.status,
+      progress: step.progress ?? 0,
+      error: step.error || "",
+    }))
     : Object.entries(state.step_data_json || {}).map(([label, value]) => {
-        let status = "pending"
-        let progress = 0
-        if (value === "success" || value === "skipped") {
-          status = "done"
-          progress = 100
-        } else if (value === "failed") {
-          status = "failed"
-        } else if (value === "running") {
-          status = "running"
-          progress = 50
-        } else if (typeof value === "string" && value.endsWith("%")) {
-          progress = Number.parseInt(value, 10) || 0
-          status = progress > 0 ? "running" : "pending"
-        }
-        return { key: label, label: STEP_LABEL_MAP[label] || label, status, progress, error: "" }
-      })
+      let status = "pending"
+      let progress = 0
+      if (value === "success" || value === "skipped") {
+        status = "done"
+        progress = 100
+      } else if (value === "failed") {
+        status = "failed"
+      } else if (value === "running") {
+        status = "running"
+        progress = 50
+      } else if (typeof value === "string" && value.endsWith("%")) {
+        progress = Number.parseInt(value, 10) || 0
+        status = progress > 0 ? "running" : "pending"
+      }
+      return { key: label, label: STEP_LABEL_MAP[label] || label, status, progress, error: "" }
+    })
   return {
     status: state.status,
     error: state.error_step ? `Lỗi ở bước ${state.error_step}` : state.last_log || "",

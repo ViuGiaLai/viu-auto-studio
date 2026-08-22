@@ -1,7 +1,7 @@
 import type {
   Channel, DashboardStats, FFmpegCheck, MediaInfo, Project, RenderConfig,
-  RenderJob, ScriptData, ScriptPayload, Scene, SubtitleConfig, TTSConfig, TTSVoice,
-    Character, PipelineState, StudioSettings, TimelineProject,
+  RenderJob, JobStats, ScriptData, ScriptPayload, Scene, SubtitleConfig, TTSConfig, TTSVoice,
+  Character, PipelineState, StudioSettings, TimelineProject,
 
 } from "@/types"
 
@@ -115,7 +115,7 @@ export async function openAiBrowser(provider: "chatgpt" | "gemini"): Promise<{ o
   if (w.electronAPI?.openAiBrowser) {
     return w.electronAPI.openAiBrowser({ provider })
   }
-    return post<{ ok: boolean; status: string; message: string; profilePath?: string; browserName?: string }>("/ai-browser/open", { provider })
+  return post<{ ok: boolean; status: string; message: string; profilePath?: string; browserName?: string }>("/ai-browser/open", { provider })
 
 }
 
@@ -124,7 +124,7 @@ export async function getAiBrowserStatus(provider: "chatgpt" | "gemini"): Promis
   if (w.electronAPI?.getAiBrowserStatus) {
     return w.electronAPI.getAiBrowserStatus({ provider })
   }
-    return request<{ connected: boolean; email?: string; model?: string; plan?: string; browserRunning?: boolean; message?: string }>(`/ai-browser/status?provider=${provider}`)
+  return request<{ connected: boolean; email?: string; model?: string; plan?: string; browserRunning?: boolean; message?: string }>(`/ai-browser/status?provider=${provider}`)
 
 }
 
@@ -133,7 +133,7 @@ export async function logoutAiBrowser(provider: "chatgpt" | "gemini"): Promise<{
   if (w.electronAPI?.logoutAiBrowser) {
     return w.electronAPI.logoutAiBrowser({ provider })
   }
-    return post<{ ok: boolean; message: string }>("/ai-browser/logout", { provider })
+  return post<{ ok: boolean; message: string }>("/ai-browser/logout", { provider })
 
 }
 
@@ -205,7 +205,7 @@ export const api = {
   deleteChannel: (id: number) => request<void>(`/channels/${id}`, { method: "DELETE" }),
 
   // Projects
-    listProjects: (search?: string, status?: string, includeSizes = false) => {
+  listProjects: (search?: string, status?: string, includeSizes = false) => {
     const params = new URLSearchParams()
     if (search) params.set("search", search)
     if (status) params.set("status", status)
@@ -222,7 +222,7 @@ export const api = {
     video_type?: string
     aspect_ratio?: string
     language?: string
-        target_duration?: number
+    target_duration?: number
     project_type?: string
     output_folder?: string
   }) => post<Project>(`/projects`, data),
@@ -262,7 +262,7 @@ export const api = {
   getScript: (projectId: number) => request<ScriptData>(`/projects/${projectId}/script`),
   saveScript: (projectId: number, payload: ScriptPayload) =>
     post<{ ok: boolean; script_id: number }>(`/projects/${projectId}/script`, payload),
-    approveScript: (projectId: number) =>
+  approveScript: (projectId: number) =>
     post<{ ok: boolean; approved: boolean; needs_scene_analysis?: boolean }>(`/projects/${projectId}/script/approve`),
 
   generateSeo: (projectId: number) =>
@@ -311,7 +311,7 @@ export const api = {
       `/projects/${projectId}/scenes/${sceneId}/regenerate-prompt`,
       data ?? {},
     ),
-    getTimeline: (projectId: number) => request<TimelineProject>(`/projects/${projectId}/timeline`),
+  getTimeline: (projectId: number) => request<TimelineProject>(`/projects/${projectId}/timeline`),
   saveTimeline: (projectId: number, timeline: {
     duration: number
     settings: Record<string, unknown>
@@ -337,7 +337,8 @@ export const api = {
 
   // App settings (Cài đặt)
   settingsGet: () => request<StudioSettings>(`/settings`),
-    settingsSave: (data: Partial<StudioSettings>) =>
+  getSettings: () => request<StudioSettings>(`/settings`),
+  settingsSave: (data: Partial<StudioSettings>) =>
     request<{ ok: boolean; updated?: string[] }>(`/settings`, { method: "PATCH", body: JSON.stringify(data) }),
   settingsTelegramTest: (data: { bot_token: string; chat_id: string; send_message?: boolean; message?: string }) =>
     post<{ ok: boolean; bot?: { username?: string; name?: string }; message_sent?: boolean }>(`/settings/telegram/test`, data),
@@ -426,7 +427,7 @@ export const api = {
 
   // TTS
   ttsGetConfig: () => request<TTSConfig>(`/tts/config`),
-    ttsSaveConfig: (data: Partial<TTSConfig> & {
+  ttsSaveConfig: (data: Partial<TTSConfig> & {
     provider: string
     voice: string
     speed: number
@@ -437,7 +438,7 @@ export const api = {
   ttsListProviders: () => request<Array<{ id: string; name: string; available: boolean }>>(`/tts/providers`),
   ttsListVoices: (provider?: string) =>
     request<TTSVoice[]>(`/tts/voices${provider ? `?provider=${encodeURIComponent(provider)}` : ""}`),
-  ttsTestConnection: (data?: { provider?: string }) =>
+  ttsTestConnection: (data?: { provider?: string; api_key?: string }) =>
     post<{ ok: boolean; message: string }>(`/tts/test-connection`, data ?? {}),
   ttsPreview: (text: string, overrides?: Partial<TTSConfig>) =>
     post<{ ok: boolean; audio_path?: string; cache_hit?: boolean; cache_key?: string; message?: string }>(`/tts/preview`, { text, ...overrides }),
@@ -494,6 +495,17 @@ export const api = {
   geminiCheckKey: (key: string) =>
     post<{ valid: boolean; models: string[]; image_ok: boolean; note: string }>(`/ai-media/check-key`, { key }),
 
+  // AI Auto Edit Engine (Tự động dựng timeline, multi-shots, gán media & chấm điểm)
+  autoEdit: (project_id: number, options: Record<string, any> = {}) =>
+    post<{
+      ok: boolean
+      project_id: number
+      scenes_count: number
+      shots_count: number
+      overall_edit_score: number
+      message: string
+    }>(`/projects/${project_id}/auto-edit`, options),
+
   // Phân cảnh AI theo ngữ nghĩa (không 1-1 câu-ảnh)
   semanticAnalyze: (project_id: number, data: { full_script?: string; existing_narrations?: string[] }) =>
     post<{
@@ -508,7 +520,7 @@ export const api = {
   regenerateMedia: (project_id: number, scene_id: number) =>
     post<Scene>(`/projects/${project_id}/scenes/${scene_id}/regenerate-media`),
 
-    // Flow Connector (Chrome Extension) — Factory session + media queue Google Flow
+  // Flow Connector (Chrome Extension) — Factory session + media queue Google Flow
   factoryStart: (projectId: number, options: { media_type?: string; aspect?: string; model?: string; factory_mode?: boolean; include_video?: boolean } = {}) =>
     post<{ ok: boolean; project_id: number; factory_session_id: string; factory_state: string; requires_login: boolean; queue_position: number; created: number; skipped: number; missing_prompts: number }>(
       `/flow-connection/factory/start`, { project_id: projectId, ...options },
@@ -554,7 +566,7 @@ export const api = {
   renderStart: (project_id: number, config: Partial<RenderConfig> = {}) =>
     post<{ ok: boolean; job_id?: number; message: string }>(`/render/start`, {
       project_id,
-            config: {
+      config: {
         output_preset: "youtube",
         voice_volume: 1,
         enable_ducking: true,
@@ -581,7 +593,22 @@ export const api = {
         ...config,
       },
     }),
-  listJobs: () => request<RenderJob[]>(`/render/jobs`),
+  listJobs: (domain?: string, status?: string) => {
+    const params = new URLSearchParams()
+    if (domain && domain !== "all") params.set("domain", domain)
+    if (status && status !== "all") params.set("status", status)
+    const qs = params.toString()
+    return request<RenderJob[]>(`/jobs${qs ? `?${qs}` : ""}`)
+  },
+  jobStats: () => request<JobStats>(`/jobs/stats`),
+  jobGetDetail: (jobId: number) => request<RenderJob>(`/jobs/${jobId}`),
+  jobPrioritize: (jobId: number) => post<{ ok: boolean; message: string }>(`/jobs/${jobId}/prioritize`),
+  jobPause: (jobId: number) => post<{ ok: boolean; message: string }>(`/jobs/${jobId}/pause`),
+  jobResume: (jobId: number) => post<{ ok: boolean; message: string }>(`/jobs/${jobId}/resume`),
+  dispatchAutoEditJob: (projectId: number, payload?: Record<string, unknown>) =>
+    post<{ ok: boolean; job_id: number; message: string }>(`/projects/${projectId}/auto-edit-job`, payload ?? {}),
+  dispatchTtsBatchJob: (projectId: number, payload?: Record<string, unknown>) =>
+    post<{ ok: boolean; job_id: number; message: string }>(`/projects/${projectId}/tts-batch-job`, payload ?? {}),
   getRenderHardware: (refresh = false) =>
     request<{
       available: boolean
@@ -593,11 +620,11 @@ export const api = {
       details: string
       all_supported: Array<{ encoder: string; name: string; is_hardware: boolean; speed_multiplier: number }>
     }>(`/render/hardware?refresh=${refresh}`),
-  getJob: (jobId: number) => request<{ ok: boolean; job?: RenderJob }>(`/render/jobs/${jobId}`),
-  cancelJob: (jobId: number) => post<{ ok: boolean }>(`/render/jobs/${jobId}/cancel`),
+  getJob: (jobId: number) => request<{ ok: boolean; job?: RenderJob }>(`/jobs/${jobId}`),
+  cancelJob: (jobId: number) => post<{ ok: boolean }>(`/jobs/${jobId}/cancel`),
   retryJob: (jobId: number, config: Partial<RenderConfig> = {}) =>
-    post<{ ok: boolean; message: string }>(`/render/jobs/${jobId}/retry`, { config }),
-    getJobLog: (jobId: number, lines = 100) =>
+    post<{ ok: boolean; message: string }>(`/jobs/${jobId}/retry`, { config }),
+  getJobLog: (jobId: number, lines = 100) =>
     request<{ ok: boolean; lines: string[] }>(`/render/jobs/${jobId}/log?lines=${lines}`),
   renderPreflight: (projectId: number, subtitleDisabled = false) =>
     post<{
@@ -619,7 +646,7 @@ export const api = {
       message?: string
     }>(`/render/verify/${jobId}`, {}),
 
-    // Skill Lab
+  // Skill Lab
 
   skillCatalog: () => request<SkillCatalogItem[]>(`/skills/catalog`),
   skillRuns: (projectId?: number) => request<SkillRun[]>(`/skills/runs${projectId ? `?project_id=${projectId}` : ""}`),
@@ -627,7 +654,7 @@ export const api = {
     post<SkillRun>(`/skills/runs`, data),
   skillRunRefresh: (runId: number) => post<SkillRun>(`/skills/runs/${runId}/refresh`, {}),
 
-    // Thành phần Viu Studio / Install by Capability
+  // Thành phần Viu Studio / Install by Capability
   manageFfmpeg: (action: "check" | "check_update" | "install" | "upgrade") =>
     post<{ ok: boolean; action: string; output?: string; state?: unknown; latest_version?: string; current_version?: string; update_available?: boolean }>(`/system/tools/ffmpeg`, { action }),
   systemCapabilities: () =>
