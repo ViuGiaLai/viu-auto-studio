@@ -44,5 +44,7 @@ class GeminiTTSProvider(TTSProvider):
         return {"ok": True, "message": "Kết nối Gemini TTS thành công! Sẵn sàng 8 giọng AI chuyên nghiệp."}
 
     def synthesize(self, text: str, voice: str, speed: float, output_path: str) -> str:
-        edge_voice = "vi-VN-NamMinhNeural" if "male" in voice or "charon" in voice or "puck" in voice or "fenrir" in voice or "orus" in voice else "vi-VN-HoaiMyNeural"
+        from backend.core.constants import resolve_default_voice_for_provider
+        gemini_default = resolve_default_voice_for_provider("gemini")
+        edge_voice = "vi-VN-NamMinhNeural" if ("male" in (voice or gemini_default).lower() or any(x in (voice or "").lower() for x in ["charon", "puck", "fenrir", "orus"])) else "vi-VN-HoaiMyNeural"
         return self._fallback.synthesize(text, edge_voice, speed, output_path)

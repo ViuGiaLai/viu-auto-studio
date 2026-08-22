@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-from backend.core.config import FFMPEG_BIN
+from backend.core.config import FFMPEG_BIN, get_system_subtitles_font_dir
 from backend.services.media import get_audio_duration
 
 log = logging.getLogger("viu.render")
@@ -235,12 +235,9 @@ class FFmpegEngine:
         # --- Subtitles ------------------------------------------------------
         if subtitle_ass and Path(subtitle_ass).exists():
             escaped = self._escape(str(subtitle_ass))
-            # fontsdir KHÔNG trỏ tới thư mục dự án: bộ lọc subtitles của ffmpeg sẽ
-            # quét TOÀN BỘ file trong thư mục đó như font (kể cả output.mp4 đang ghi)
-            # — gây lỗi đọc font và file đầu ra bị hỏng. Trỏ tới thư mục font hệ thống.
-            # Thư mục phải PHẲNG (không chứa thư mục con) — libass coi mọi mục
-            # trong fontsdir là file font và báo lỗi khi gặp thư mục con.
-            filters.append(f"{video_label}subtitles='{escaped}':fontsdir=/usr/share/fonts/truetype/dejavu[vf1]")
+            font_dir = get_system_subtitles_font_dir()
+            font_arg = f":fontsdir='{self._escape(font_dir)}'" if font_dir else ""
+            filters.append(f"{video_label}subtitles='{escaped}'{font_arg}[vf1]")
             video_label = "[vf1]"
 
         filter_complex = ";".join(filters)
@@ -414,10 +411,9 @@ class FFmpegEngine:
         # Global subtitles
         if subtitle_ass and Path(subtitle_ass).exists():
             escaped = self._escape(str(subtitle_ass))
-            filter_parts.append(
-                # fontsdir KHÔNG trỏ tới thư mục dự án — xem ghi chú trên.
-                f"[vout]subtitles='{escaped}':fontsdir=/usr/share/fonts/truetype/dejavu[vf2]"
-            )
+            font_dir = get_system_subtitles_font_dir()
+            font_arg = f":fontsdir='{self._escape(font_dir)}'" if font_dir else ""
+            filter_parts.append(f"[vout]subtitles='{escaped}'{font_arg}[vf2]")
             video_label = "[vf2]"
         else:
             video_label = "[vout]"

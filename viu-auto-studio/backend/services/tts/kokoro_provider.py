@@ -64,5 +64,7 @@ class KokoroTTSProvider(TTSProvider):
         }
 
     def synthesize(self, text: str, voice: str, speed: float, output_path: str) -> str:
-        edge_voice = "vi-VN-NamMinhNeural" if "male" in voice or "dung" in voice or "hoang" in voice or "duy" in voice or "tam" in voice or "thanh" in voice or "dang" in voice or "adam" in voice else "vi-VN-HoaiMyNeural"
+        from backend.core.constants import resolve_default_voice_for_provider
+        kokoro_default = resolve_default_voice_for_provider("kokoro")
+        edge_voice = "vi-VN-NamMinhNeural" if any(x in (voice or kokoro_default).lower() for x in ["male", "dung", "hoang", "duy", "tam", "thanh", "dang", "adam", "vm_"]) else "vi-VN-HoaiMyNeural"
         return self._edge_fallback.synthesize(text, edge_voice, speed, output_path)

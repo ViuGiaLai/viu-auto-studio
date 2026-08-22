@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process"
+import { spawn, execSync, type ChildProcess } from "node:child_process"
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs"
 import path from "node:path"
 import { findFreePort, getUserDataDir, dirnameOf, type RuntimeConfig } from "./runtime-config"
@@ -35,15 +35,24 @@ function terminateBrowserTree(proc: ChildProcess): void {
 
 function candidateChromePaths(): string[] {
   const env = process.env.VIU_CHROME_PATH || process.env.VIU_BROWSER_PATH
-  const values = env ? [env] : []
+  const values: string[] = env ? [env] : []
+
   if (process.platform === "win32") {
-    const programFiles = process.env.ProgramFiles || "C:\\Program Files"
-    const programFilesX86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)"
-    const localAppData = process.env.LOCALAPPDATA || path.join(process.env.USERPROFILE || "", "AppData", "Local")
-    // Chrome-branded builds removed --load-extension in M137. Prefer Chrome
-    // for Testing/Chromium, otherwise the Flow connector is silently ignored.
-    const playwrightRoot = path.join(localAppData, "ms-playwright")
-    if (existsSync(playwrightRoot)) {
+    try {
+      const whereOut = execSync("where.exe chrome.exe msedge.exe brave.exe 2>nul", { encoding: "utf8" })
+      for (const line of whereOut.split("\n")) {
+        const trimmed = line.trim()
+        if (trimmed && existsSync(trimmed)) values.push(trimmed)
+      }
+    } catch { /* proceed */ }
+
+    const drive = process.env.SystemDrive || "C:"
+    const programFiles = process.env.ProgramFiles || `${drive}\Program Files`
+    const programFilesX86 = process.env["ProgramFiles(x86)"] || `${drive}\Program Files (x86)`
+    const localAppData = process.env.LOCALAPPDATA || (process.env.USERPROFILE ? path.join(process.env.USERPROFILE, "AppData", "Local") : "")
+
+    const playwrightRoot = localAppData ? path.join(localAppData, "ms-playwright") : ""
+    if (playwrightRoot && existsSync(playwrightRoot)) {
       try {
         const installs = readdirSync(playwrightRoot)
           .filter((name) => name.startsWith("chromium-") && !name.includes("headless"))
@@ -52,35 +61,46 @@ function candidateChromePaths(): string[] {
         for (const install of installs) {
           values.push(path.join(playwrightRoot, install, "chrome-win64", "chrome.exe"))
         }
-      } catch { /* fall through to other browser candidates */ }
+      } catch { /* fall through */ }
     }
-    values.push(
-      // Google Chrome
-      path.join(programFiles, "Google", "Chrome", "Application", "chrome.exe"),
-      path.join(programFilesX86, "Google", "Chrome", "Application", "chrome.exe"),
-      path.join(localAppData, "Google", "Chrome", "Application", "chrome.exe"),
-      // Microsoft Edge
-      path.join(programFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
-      path.join(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe"),
-      path.join(localAppData, "Microsoft", "Edge", "Application", "msedge.exe"),
-    )
+
+    if (programFiles) {
+      values.push(
+        path.join(programFiles, "Google", "Chrome", "Application", "chrome.exe"),
+        path.join(programFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
+        path.join(programFiles, "BraveSoftware", "Brave-Browser", "Application", "brave.exe")
+      )
+    }
+    if (programFilesX86) {
+      values.push(
+        path.join(programFilesX86, "Google", "Chrome", "Application", "chrome.exe"),
+        path.join(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe")
+      )
+    }
+    if (localAppData) {
+      values.push(
+        path.join(localAppData, "Google", "Chrome", "Application", "chrome.exe"),
+        path.join(localAppData, "Microsoft", "Edge", "Application", "msedge.exe"),
+        path.join(localAppData, "BraveSoftware", "Brave-Browser", "Application", "brave.exe")
+      )
+    }
   } else if (process.platform === "darwin") {
     values.push(
       "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
       "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-      "/Applications/Chromium.app/Contents/MacOS/Chromium",
+      "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+      "/Applications/Chromium.app/Contents/MacOS/Chromium"
     )
   } else {
-    values.push(
-      "/usr/bin/google-chrome",
-      "/usr/bin/google-chrome-stable",
-      "/usr/bin/microsoft-edge",
-      "/usr/bin/microsoft-edge-stable",
-      "/usr/bin/chromium",
-      "/usr/bin/chromium-browser",
-    )
+    try {
+      const whichOut = execSync("which google-chrome google-chrome-stable chromium chromium-browser microsoft-edge 2>/dev/null", { encoding: "utf8" })
+      for (const line of whichOut.split("\n")) {
+        const trimmed = line.trim()
+        if (trimmed && existsSync(trimmed)) values.push(trimmed)
+      }
+    } catch { /* proceed */ }
   }
-  return [...new Set(values)].filter(Boolean)
+  return [...new Set(values)].filter((p) => p && existsSync(p))
 }
 
 function findChrome(): string | null {
@@ -246,7 +266,7 @@ async function configureExtension(runtime: RuntimeConfig, input: FlowBrowserStar
           console.log("[Flow] Configured extension via options page")
           return true
         } finally {
-          await page.close().catch(() => {})
+          await page.close().catch(() => { })
         }
       } catch (e) {
         console.warn("[Flow] Options page method failed:", e)
@@ -323,9 +343,9 @@ async function normalizeFlowPages(port: number, flowUrl: string): Promise<void> 
     }
 
     for (const page of flowPages) {
-      if (page !== keep) await page.close().catch(() => {})
+      if (page !== keep) await page.close().catch(() => { })
     }
-    await keep.bringToFront().catch(() => {})
+    await keep.bringToFront().catch(() => { })
   } catch (error) {
     console.warn("[Flow] Could not normalize restored Flow tabs:", error)
   } finally {

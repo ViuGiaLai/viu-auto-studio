@@ -55,7 +55,7 @@ def find_browser_executable() -> Optional[str]:
 
     candidates = []
     if sys.platform == "win32":
-        for exe in ["chrome.exe", "msedge.exe"]:
+        for exe in ["chrome.exe", "msedge.exe", "brave.exe"]:
             reg_path = find_from_windows_registry(exe)
             if reg_path:
                 candidates.append(reg_path)
@@ -63,9 +63,10 @@ def find_browser_executable() -> Optional[str]:
             if where_path:
                 candidates.append(where_path)
 
-        pf = os.environ.get("ProgramFiles", r"C:\Program Files")
-        pfx86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
-        localapp = os.environ.get("LOCALAPPDATA", os.path.expanduser(r"~\AppData\Local"))
+        drive = os.environ.get("SystemDrive", "C:")
+        pf = os.environ.get("ProgramFiles") or f"{drive}\Program Files"
+        pfx86 = os.environ.get("ProgramFiles(x86)") or f"{drive}\Program Files (x86)"
+        localapp = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~\AppData\Local")
         candidates.extend([
             os.path.join(pf, "Google", "Chrome", "Application", "chrome.exe"),
             os.path.join(pfx86, "Google", "Chrome", "Application", "chrome.exe"),
@@ -73,23 +74,22 @@ def find_browser_executable() -> Optional[str]:
             os.path.join(pf, "Microsoft", "Edge", "Application", "msedge.exe"),
             os.path.join(pfx86, "Microsoft", "Edge", "Application", "msedge.exe"),
             os.path.join(localapp, "Microsoft", "Edge", "Application", "msedge.exe"),
+            os.path.join(pf, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
         ])
     elif sys.platform == "darwin":
         candidates.extend([
             "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
             "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+            "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
         ])
     else:
-        candidates.extend([
-            "/usr/bin/google-chrome",
-            "/usr/bin/google-chrome-stable",
-            "/usr/bin/microsoft-edge",
-            "/usr/bin/chromium",
-            "/usr/bin/chromium-browser",
-        ])
+        for bin_name in ["google-chrome", "google-chrome-stable", "microsoft-edge", "chromium", "chromium-browser", "brave-browser"]:
+            found = shutil.which(bin_name)
+            if found:
+                candidates.append(found)
 
     for c in candidates:
-        if os.path.exists(c):
+        if c and os.path.exists(c):
             return c
     return None
 

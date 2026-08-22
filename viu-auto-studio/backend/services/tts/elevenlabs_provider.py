@@ -92,5 +92,7 @@ class ElevenLabsTTSProvider(TTSProvider):
             return {"ok": False, "message": f"Không thể xác thực ElevenLabs API Key: {exc}"}
 
     def synthesize(self, text: str, voice: str, speed: float, output_path: str) -> str:
-        edge_voice = "vi-VN-NamMinhNeural" if "male" in voice or "Adam" in voice or "Antoni" in voice or "Josh" in voice else "vi-VN-HoaiMyNeural"
+        from backend.core.constants import resolve_default_voice_for_provider
+        el_default = resolve_default_voice_for_provider("elevenlabs")
+        edge_voice = "vi-VN-NamMinhNeural" if any(x in (voice or el_default).lower() for x in ["male", "adam", "antoni", "josh", "brian", "bill"]) else "vi-VN-HoaiMyNeural"
         return self._fallback.synthesize(text, edge_voice, speed, output_path)

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """AI Director Auto-Edit Engine for Viu Auto Studio.
 
 Implements the complete professional editing pipeline:
@@ -9,7 +11,7 @@ Implements the complete professional editing pipeline:
 6. 4-Dimension AI Edit Scoring with Automated Auto-Fix Loop for shots < 85%.
 """
 
-from __future__ import annotations
+from backend.core.constants import DEFAULT_SCORING_WEIGHTS, DEFAULT_AUTO_FIX_THRESHOLD
 
 import json
 import logging
@@ -274,6 +276,7 @@ class AutoEditEngine:
         effect: str,
         has_action: bool = False,
         has_focus: bool = False,
+        weights: Optional[Dict[str, float]] = None,
     ) -> Dict[str, Any]:
         """Compute strict 4-dimension AI Edit Score."""
         has_media = bool(media_path and Path(media_path).exists())
@@ -311,11 +314,17 @@ class AutoEditEngine:
         # 4. Continuity (0-100)
         continuity = 93
 
+        w = weights or DEFAULT_SCORING_WEIGHTS
+        w_vis = w.get("visual_relevance", 0.35)
+        w_sync = w.get("voice_sync", 0.30)
+        w_comp = w.get("composition", 0.20)
+        w_cont = w.get("continuity", 0.15)
+
         overall = int(round(
-            visual_rel * 0.35 +
-            voice_sync * 0.30 +
-            composition * 0.20 +
-            continuity * 0.15
+            visual_rel * w_vis +
+            voice_sync * w_sync +
+            composition * w_comp +
+            continuity * w_cont
         ))
 
         return {
@@ -509,7 +518,7 @@ class AutoEditEngine:
                 }
 
                 # 6. Auto-Fix Loop for shots < 85%
-                if scores["overall"] < 85:
+                if scores["overall"] < min_acceptable_score:
                     shot_item = self.auto_fix_shot(shot_item, media_pool, master_dur, motion_idx)
                     motion_idx += 1
                     auto_fixed_count += 1

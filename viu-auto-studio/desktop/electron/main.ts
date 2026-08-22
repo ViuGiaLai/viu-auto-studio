@@ -134,7 +134,7 @@ function createWindow(): void {
   if (captureDir) {
     console.log("[Capture] enabled", captureDir, "uiSmoke=", process.env.VIU_UI_SMOKE)
     const routes = ["", "projects", "projects/new", "studio", "queue", "library", "voices", "characters", "flow", "analytics", "settings", "guide"]
-        mainWindow.webContents.once("did-finish-load", async () => {
+    mainWindow.webContents.once("did-finish-load", async () => {
 
       try {
         fs.mkdirSync(captureDir, { recursive: true })
@@ -635,7 +635,7 @@ ipcMain.handle("shell:open-path", async (_e, target: string) => {
         return { ok: true, message: "" }
       }
     }
-  } catch {}
+  } catch { }
   const error = await shell.openPath(targetPath)
   return { ok: !error, message: error || "" }
 })

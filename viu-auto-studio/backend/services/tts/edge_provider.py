@@ -63,7 +63,8 @@ CURATED_EDGE_VOICES = [
     TTSVoice(id="pt-BR-FranciscaNeural", name="Francisca (Nữ)", language="pt-BR", gender="female", description="Nữ Brazil, sôi động — hợp video bóng đá & giải trí Nam Mỹ"),
 ]
 
-DEFAULT_VOICE = "vi-VN-HoaiMyNeural"
+from backend.core.constants import resolve_default_voice_for_provider
+DEFAULT_VOICE = resolve_default_voice_for_provider("edge")
 EDGE_VOICES = CURATED_EDGE_VOICES
 
 

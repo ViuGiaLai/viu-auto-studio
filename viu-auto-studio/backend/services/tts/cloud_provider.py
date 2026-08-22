@@ -31,7 +31,7 @@ GOOGLE_CLOUD_VOICES = [
 ]
 
 AZURE_VOICES = [
-    {"id": "vi-VN-HoaiMyNeural", "name": "Hoài My (Nữ · Azure Neural HD Tiếng Việt)", "language": "vi-VN", "gender": "female", "description": "Microsoft Azure Neural HD Vietnamese Female"},
+    {"id": resolve_default_voice_for_provider("cloud"), "name": "Hoài My (Nữ · Azure Neural HD Tiếng Việt)", "language": "vi-VN", "gender": "female", "description": "Microsoft Azure Neural HD Vietnamese Female"},
     {"id": "vi-VN-NamMinhNeural", "name": "Nam Minh (Nam · Azure Neural HD Tiếng Việt)", "language": "vi-VN", "gender": "male", "description": "Microsoft Azure Neural HD Vietnamese Male"},
     {"id": "en-US-JennyMultilingualNeural", "name": "Jenny (Nữ · Azure Multilingual HD)", "language": "en-US", "gender": "female", "description": "Azure Multilingual Natural Female"},
     {"id": "en-US-RyanMultilingualNeural", "name": "Ryan (Nam · Azure Multilingual HD)", "language": "en-US", "gender": "male", "description": "Azure Multilingual Natural Male"},
@@ -61,7 +61,7 @@ class GoogleCloudTTSProvider(TTSProvider):
         return {"ok": True, "message": f"Google Cloud TTS API Key hợp lệ ({len(GOOGLE_CLOUD_VOICES)} giọng sẵn sàng)."}
 
     def synthesize(self, text: str, voice: str, speed: float, output_path: str) -> str:
-        edge_voice = "vi-VN-NamMinhNeural" if "male" in voice or "-B" in voice or "-D" in voice or "-J" in voice else "vi-VN-HoaiMyNeural"
+        edge_voice = "vi-VN-NamMinhNeural" if "male" in voice or "-B" in voice or "-D" in voice or "-J" in voice else resolve_default_voice_for_provider("cloud")
         return self._fallback.synthesize(text, edge_voice, speed, output_path)
 
 
@@ -83,4 +83,4 @@ class AzureTTSProvider(TTSProvider):
         return {"ok": True, "message": f"Azure Speech API Key hợp lệ ({len(AZURE_VOICES)} giọng sẵn sàng)."}
 
     def synthesize(self, text: str, voice: str, speed: float, output_path: str) -> str:
-        return self._fallback.synthesize(text, voice or "vi-VN-HoaiMyNeural", speed, output_path)
+        return self._fallback.synthesize(text, voice or resolve_default_voice_for_provider("cloud"), speed, output_path)

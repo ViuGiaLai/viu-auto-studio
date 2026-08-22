@@ -101,3 +101,39 @@ def init_data_dirs() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def get_system_subtitles_font_dir() -> str:
+    """Return the font directory, prioritizing bundled fonts in assets/fonts first for consistent cross-platform render."""
+    import sys
+    
+    # 1. Primary Priority: Bundled font asset directory within Viu Auto Studio
+    bundled_paths = [
+        ROOT_DIR / "backend" / "assets" / "fonts",
+        ROOT_DIR / "desktop" / "public" / "fonts",
+    ]
+    for bp in bundled_paths:
+        if bp.is_dir() and any(bp.iterdir()):
+            return str(bp)
+            
+    # 2. Secondary: System Fonts according to Operating System
+    if os.name == "nt":  # Windows
+        windir = os.environ.get("WINDIR") or "C:\Windows"
+        win_fonts = Path(windir) / "Fonts"
+        if win_fonts.is_dir():
+            return str(win_fonts)
+    elif os.name == "posix":
+        if sys.platform == "darwin":  # macOS
+            for p in [Path("/Library/Fonts"), Path("/System/Library/Fonts")]:
+                if p.is_dir():
+                    return str(p)
+        else:  # Linux
+            for p in [Path("/usr/share/fonts/truetype/dejavu"), Path("/usr/share/fonts/truetype"), Path("/usr/share/fonts")]:
+                if p.is_dir():
+                    return str(p)
+
+    # 3. Fallback to empty string (lets FFmpeg use default font lookup)
+    for bp in bundled_paths:
+        if bp.is_dir():
+            return str(bp)
+    return ""

@@ -89,35 +89,46 @@ export function candidateBrowsers(): string[] {
     if (edgeFromWhere) values.push(edgeFromWhere)
 
     // 3. Standard Program Files and LocalAppData locations
-    const programFiles = process.env.ProgramFiles || "C:\\Program Files"
-    const programFilesX86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)"
-    const localAppData = process.env.LOCALAPPDATA || path.join(process.env.USERPROFILE || "", "AppData", "Local")
+    const drive = process.env.SystemDrive || "C:"
+    const programFiles = process.env.ProgramFiles || `${drive}\\Program Files`
+    const programFilesX86 = process.env["ProgramFiles(x86)"] || `${drive}\\Program Files (x86)`
+    const localAppData = process.env.LOCALAPPDATA || (process.env.USERPROFILE ? path.join(process.env.USERPROFILE, "AppData", "Local") : "")
 
-    values.push(
-      // Google Chrome
-      path.join(programFiles, "Google", "Chrome", "Application", "chrome.exe"),
-      path.join(programFilesX86, "Google", "Chrome", "Application", "chrome.exe"),
-      path.join(localAppData, "Google", "Chrome", "Application", "chrome.exe"),
-      // Microsoft Edge (available on 100% of Windows 10/11)
-      path.join(programFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
-      path.join(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe"),
-      path.join(localAppData, "Microsoft", "Edge", "Application", "msedge.exe"),
-    )
+    if (programFiles) {
+      values.push(
+        path.join(programFiles, "Google", "Chrome", "Application", "chrome.exe"),
+        path.join(programFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
+        path.join(programFiles, "BraveSoftware", "Brave-Browser", "Application", "brave.exe")
+      )
+    }
+    if (programFilesX86) {
+      values.push(
+        path.join(programFilesX86, "Google", "Chrome", "Application", "chrome.exe"),
+        path.join(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe")
+      )
+    }
+    if (localAppData) {
+      values.push(
+        path.join(localAppData, "Google", "Chrome", "Application", "chrome.exe"),
+        path.join(localAppData, "Microsoft", "Edge", "Application", "msedge.exe"),
+        path.join(localAppData, "BraveSoftware", "Brave-Browser", "Application", "brave.exe")
+      )
+    }
   } else if (process.platform === "darwin") {
     values.push(
       "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
       "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-      "/Applications/Chromium.app/Contents/MacOS/Chromium",
+      "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+      "/Applications/Chromium.app/Contents/MacOS/Chromium"
     )
   } else {
-    values.push(
-      "/usr/bin/google-chrome",
-      "/usr/bin/google-chrome-stable",
-      "/usr/bin/microsoft-edge",
-      "/usr/bin/microsoft-edge-stable",
-      "/usr/bin/chromium",
-      "/usr/bin/chromium-browser",
-    )
+    try {
+      const whichOut = execSync("which google-chrome google-chrome-stable chromium chromium-browser microsoft-edge brave-browser 2>/dev/null", { encoding: "utf8" })
+      for (const line of whichOut.split("\n")) {
+        const trimmed = line.trim()
+        if (trimmed && existsSync(trimmed)) values.push(trimmed)
+      }
+    } catch { /* proceed */ }
   }
 
   return [...new Set(values)].filter((candidate) => existsSync(candidate))

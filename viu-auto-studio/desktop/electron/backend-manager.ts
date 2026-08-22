@@ -246,7 +246,7 @@ export async function startBackend(): Promise<{ port: number; apiBaseUrl: string
     backendProcess = null
     throw new Error(
       `Backend không khởi động được trên port ${port}. Xem log tại: ${logFile}` +
-        (py.isBundled ? "" : " (Máy này chưa cài Python — hãy dùng bộ cài đầy đủ của Viu Auto Studio)."),
+      (py.isBundled ? "" : " (Máy này chưa cài Python — hãy dùng bộ cài đầy đủ của Viu Auto Studio)."),
     )
   }
 
