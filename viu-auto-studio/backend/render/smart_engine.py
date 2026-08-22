@@ -41,6 +41,16 @@ def detect_hardware_capabilities(force_refresh: bool = False) -> Dict[str, Any]:
 
     ffmpeg_path = shutil.which(FFMPEG_BIN)
     if not ffmpeg_path:
+        from backend.core.config import DATA_DIR, ROOT_DIR
+        possible = [
+            DATA_DIR / "tools" / "ffmpeg" / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg"),
+            ROOT_DIR / "tools" / "ffmpeg" / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg"),
+        ]
+        for p in possible:
+            if p.is_file():
+                ffmpeg_path = str(p)
+                break
+    if not ffmpeg_path:
         return {
             "available": False,
             "engine": "none",

@@ -1,0 +1,178 @@
+[
+  {
+    "id": "vi-VN-HoaiMyNeural",
+    "name": "Hoài My (Nữ)",
+    "language": "vi-VN",
+    "gender": "female",
+    "description": "Nữ trẻ, trong và tươi sáng — hợp review, tin tức ngắn & quảng cáo",
+    "provider": "edge"
+  },
+  {
+    "id": "vi-VN-NamMinhNeural",
+    "name": "Nam Minh (Nam)",
+    "language": "vi-VN",
+    "gender": "male",
+    "description": "Nam, trầm ấm và rõ ràng — hợp review phim & tóm tắt câu chuyện",
+    "provider": "edge"
+  },
+  {
+    "id": "en-US-JennyNeural",
+    "name": "Jenny (Nữ)",
+    "language": "en-US",
+    "gender": "female",
+    "description": "Nữ Mỹ, tự nhiên và trôi chảy — hợp video tiếng Anh quốc tế",
+    "provider": "edge"
+  },
+  {
+    "id": "en-US-GuyNeural",
+    "name": "Guy (Nam)",
+    "language": "en-US",
+    "gender": "male",
+    "description": "Nam Mỹ, trầm và chuẩn — hợp video tài liệu, thuyết minh tiếng Anh",
+    "provider": "edge"
+  },
+  {
+    "id": "en-US-AriaNeural",
+    "name": "Aria (Nữ · Diễn cảm)",
+    "language": "en-US",
+    "gender": "female",
+    "description": "Nữ Mỹ, biểu cảm kịch tính — hợp kể chuyện & YouTube Shorts",
+    "provider": "edge"
+  },
+  {
+    "id": "en-US-ChristopherNeural",
+    "name": "Christopher (Nam · Kể chuyện)",
+    "language": "en-US",
+    "gender": "male",
+    "description": "Nam Mỹ, giọng kể chuyện sách nói & recap phim tiếng Anh",
+    "provider": "edge"
+  },
+  {
+    "id": "en-GB-SoniaNeural",
+    "name": "Sonia (Nữ)",
+    "language": "en-GB",
+    "gender": "female",
+    "description": "Nữ Anh, sang trọng và lịch sự — hợp video giới thiệu sản phẩm & du lịch",
+    "provider": "edge"
+  },
+  {
+    "id": "en-GB-RyanNeural",
+    "name": "Ryan (Nam)",
+    "language": "en-GB",
+    "gender": "male",
+    "description": "Nam Anh, điềm đạm — hợp podcast và sách nói tiếng Anh",
+    "provider": "edge"
+  },
+  {
+    "id": "ja-JP-NanamiNeural",
+    "name": "Nanami (Nữ)",
+    "language": "ja-JP",
+    "gender": "female",
+    "description": "Nữ Nhật, trong trẻo và dễ thương — hợp video anime, manga & game",
+    "provider": "edge"
+  },
+  {
+    "id": "ja-JP-KeitaNeural",
+    "name": "Keita (Nam)",
+    "language": "ja-JP",
+    "gender": "male",
+    "description": "Nam Nhật, điềm đạm — hợp video tài liệu & review",
+    "provider": "edge"
+  },
+  {
+    "id": "ko-KR-SunHiNeural",
+    "name": "Sun-Hi (Nữ)",
+    "language": "ko-KR",
+    "gender": "female",
+    "description": "Nữ Hàn, hiện đại và trẻ trung — hợp review phim Hàn, K-pop & vlog",
+    "provider": "edge"
+  },
+  {
+    "id": "ko-KR-InJoonNeural",
+    "name": "InJoon (Nam)",
+    "language": "ko-KR",
+    "gender": "male",
+    "description": "Nam Hàn, trầm ấm — hợp recap phim truyền hình Hàn Quốc",
+    "provider": "edge"
+  },
+  {
+    "id": "zh-CN-XiaoxiaoNeural",
+    "name": "Xiaoxiao (Nữ)",
+    "language": "zh-CN",
+    "gender": "female",
+    "description": "Nữ Trung, chuẩn phổ thông — hợp tin tức, recap Manhua & phim Trung",
+    "provider": "edge"
+  },
+  {
+    "id": "zh-CN-YunxiNeural",
+    "name": "Yunxi (Nam)",
+    "language": "zh-CN",
+    "gender": "male",
+    "description": "Nam Trung, năng động — hợp video tóm tắt phim kiếm hiệp & TikTok",
+    "provider": "edge"
+  },
+  {
+    "id": "th-TH-PremwadeeNeural",
+    "name": "Premwadee (Nữ)",
+    "language": "th-TH",
+    "gender": "female",
+    "description": "Nữ Thái Lan, ngọt ngào — hợp video giải trí TikTok Đông Nam Á",
+    "provider": "edge"
+  },
+  {
+    "id": "th-TH-NiwatNeural",
+    "name": "Niwat (Nam)",
+    "language": "th-TH",
+    "gender": "male",
+    "description": "Nam Thái Lan, rõ ràng — hợp video phóng sự & review",
+    "provider": "edge"
+  },
+  {
+    "id": "id-ID-GadisNeural",
+    "name": "Gadis (Nữ)",
+    "language": "id-ID",
+    "gender": "female",
+    "description": "Nữ Indonesia, tự nhiên — hợp thị trường TikTok Indonesia",
+    "provider": "edge"
+  },
+  {
+    "id": "es-ES-ElviraNeural",
+    "name": "Elvira (Nữ)",
+    "language": "es-ES",
+    "gender": "female",
+    "description": "Nữ Tây Ban Nha, chuẩn Châu Âu — hợp thị trường nói tiếng Tây Ban Nha",
+    "provider": "edge"
+  },
+  {
+    "id": "es-MX-JorgeNeural",
+    "name": "Jorge (Nam)",
+    "language": "es-MX",
+    "gender": "male",
+    "description": "Nam Mexico, hào sảng — hợp video giải trí Mỹ Latinh",
+    "provider": "edge"
+  },
+  {
+    "id": "fr-FR-DeniseNeural",
+    "name": "Denise (Nữ)",
+    "language": "fr-FR",
+    "gender": "female",
+    "description": "Nữ Pháp, thanh lịch — hợp video thời trang, ẩm thực & du lịch",
+    "provider": "edge"
+  },
+  {
+    "id": "de-DE-KatjaNeural",
+    "name": "Katja (Nữ)",
+    "language": "de-DE",
+    "gender": "female",
+    "description": "Nữ Đức, chuẩn xác và chuyên nghiệp — hợp video khoa học & kỹ thuật",
+    "provider": "edge"
+  },
+  {
+    "id": "pt-BR-FranciscaNeural",
+    "name": "Francisca (Nữ)",
+    "language": "pt-BR",
+    "gender": "female",
+    "description": "Nữ Brazil, sôi động — hợp video bóng đá & giải trí Nam Mỹ",
+    "provider": "edge"
+  }
+]

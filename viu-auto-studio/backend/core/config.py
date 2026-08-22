@@ -97,12 +97,12 @@ PRESET = _env("VIU_PRESET", "medium")
 
 
 def init_data_dirs() -> None:
-    """Ensure runtime data directories exist."""
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-
-
+    """Ensure all runtime data, project, log, cache and asset directories exist on first-run."""
+    for directory in [DATA_DIR, PROJECTS_DIR, LOG_DIR, DATA_DIR / "cache", DATA_DIR / "temp", DATA_DIR / "tools"]:
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:
+            pass
 def get_system_subtitles_font_dir() -> str:
     """Return the font directory, prioritizing bundled fonts in assets/fonts first for consistent cross-platform render."""
     import sys

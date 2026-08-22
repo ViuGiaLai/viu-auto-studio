@@ -1,0 +1,27 @@
+{
+  "clean": {
+    "font_size": 44,
+    "primary_color": "#FFFFFF",
+    "border_color": "#000000",
+    "border_width": 2,
+    "position": "bottom",
+    "max_chars_per_line": 52
+  },
+  "bold": {
+    "font_size": 56,
+    "primary_color": "#FFFFFF",
+    "border_color": "#000000",
+    "border_width": 4,
+    "position": "center",
+    "max_chars_per_line": 38,
+    "granularity": "phrase"
+  },
+  "cinematic": {
+    "font_size": 42,
+    "primary_color": "#FFFFFF",
+    "border_color": "#000000",
+    "border_width": 1,
+    "position": "bottom",
+    "max_chars_per_line": 48
+  }
+}

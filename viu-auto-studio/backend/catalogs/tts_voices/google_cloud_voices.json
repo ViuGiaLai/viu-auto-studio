@@ -1,0 +1,100 @@
+[
+  {
+    "id": "vi-VN-Neural2-A",
+    "name": "vi-VN-Neural2-A (Nữ · Google Neural AI Tiếng Việt)",
+    "language": "vi-VN",
+    "gender": "female",
+    "description": "Google Neural2 High Fidelity Vietnamese Female"
+  },
+  {
+    "id": "vi-VN-Neural2-D",
+    "name": "vi-VN-Neural2-D (Nam · Google Neural AI Tiếng Việt)",
+    "language": "vi-VN",
+    "gender": "male",
+    "description": "Google Neural2 High Fidelity Vietnamese Male"
+  },
+  {
+    "id": "vi-VN-Wavenet-A",
+    "name": "vi-VN-Wavenet-A (Nữ · DeepMind Wavenet)",
+    "language": "vi-VN",
+    "gender": "female",
+    "description": "DeepMind Wavenet Vietnamese Female"
+  },
+  {
+    "id": "vi-VN-Wavenet-B",
+    "name": "vi-VN-Wavenet-B (Nam · DeepMind Wavenet)",
+    "language": "vi-VN",
+    "gender": "male",
+    "description": "DeepMind Wavenet Vietnamese Male"
+  },
+  {
+    "id": "vi-VN-Wavenet-C",
+    "name": "vi-VN-Wavenet-C (Nữ · Wavenet Trầm)",
+    "language": "vi-VN",
+    "gender": "female",
+    "description": "DeepMind Wavenet Vietnamese Calm Female"
+  },
+  {
+    "id": "vi-VN-Wavenet-D",
+    "name": "vi-VN-Wavenet-D (Nam · Wavenet Trầm)",
+    "language": "vi-VN",
+    "gender": "male",
+    "description": "DeepMind Wavenet Vietnamese Deep Male"
+  },
+  {
+    "id": "vi-VN-Standard-A",
+    "name": "vi-VN-Standard-A (Nữ · Standard)",
+    "language": "vi-VN",
+    "gender": "female",
+    "description": "Standard Google Cloud Vietnamese Female"
+  },
+  {
+    "id": "vi-VN-Standard-B",
+    "name": "vi-VN-Standard-B (Nam · Standard)",
+    "language": "vi-VN",
+    "gender": "male",
+    "description": "Standard Google Cloud Vietnamese Male"
+  },
+  {
+    "id": "en-US-Journey-F",
+    "name": "en-US-Journey-F (Nữ · Google Journey Studio)",
+    "language": "en-US",
+    "gender": "female",
+    "description": "Latest Google Journey Conversational Female"
+  },
+  {
+    "id": "en-US-Journey-D",
+    "name": "en-US-Journey-D (Nam · Google Journey Studio)",
+    "language": "en-US",
+    "gender": "male",
+    "description": "Latest Google Journey Conversational Male"
+  },
+  {
+    "id": "en-US-Neural2-F",
+    "name": "en-US-Neural2-F (Nữ Mỹ · Neural2)",
+    "language": "en-US",
+    "gender": "female",
+    "description": "American Neural2 Female"
+  },
+  {
+    "id": "en-US-Neural2-J",
+    "name": "en-US-Neural2-J (Nam Mỹ · Neural2)",
+    "language": "en-US",
+    "gender": "male",
+    "description": "American Neural2 Male"
+  },
+  {
+    "id": "ja-JP-Neural2-B",
+    "name": "ja-JP-Neural2-B (Nữ Nhật · Neural2)",
+    "language": "ja-JP",
+    "gender": "female",
+    "description": "Japanese Neural2 Female"
+  },
+  {
+    "id": "ko-KR-Neural2-A",
+    "name": "ko-KR-Neural2-A (Nữ Hàn · Neural2)",
+    "language": "ko-KR",
+    "gender": "female",
+    "description": "Korean Neural2 Female"
+  }
+]

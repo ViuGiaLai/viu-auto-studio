@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import List
 
+from backend.core.constants import resolve_default_voice_for_provider
 from backend.schemas import TTSVoice
 from backend.services.tts.base import TTSProvider
 from backend.services.tts.edge_provider import EdgeTTSProvider

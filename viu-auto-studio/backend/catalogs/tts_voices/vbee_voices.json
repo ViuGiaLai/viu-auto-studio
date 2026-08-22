@@ -1,0 +1,58 @@
+[
+  {
+    "id": "hn_female_maiphuong",
+    "name": "Mai Phương (Nữ · Miền Bắc)",
+    "language": "vi-VN",
+    "gender": "female",
+    "description": "Nữ, ấm và rõ ràng — hợp kể chuyện, review phim & sách nói"
+  },
+  {
+    "id": "hn_female_thutrang",
+    "name": "Thu Trang (Nữ · Miền Bắc)",
+    "language": "vi-VN",
+    "gender": "female",
+    "description": "Nữ, cao và rõ — hợp bản tin, phóng sự & tài liệu thời sự"
+  },
+  {
+    "id": "hn_male_manhdung",
+    "name": "Mạnh Dũng (Nam · Miền Bắc)",
+    "language": "vi-VN",
+    "gender": "male",
+    "description": "Nam, trầm ấm — hợp review phim, tóm tắt truyện & truyện ma"
+  },
+  {
+    "id": "sg_female_thaotam",
+    "name": "Thảo Tâm (Nữ · Miền Nam)",
+    "language": "vi-VN",
+    "gender": "female",
+    "description": "Nữ, dịu dàng — hợp quảng cáo, giới thiệu sản phẩm & ẩm thực"
+  },
+  {
+    "id": "sg_male_minhhoang",
+    "name": "Minh Hoàng (Nam · Miền Nam)",
+    "language": "vi-VN",
+    "gender": "male",
+    "description": "Nam, năng động — hợp podcast, công nghệ & xu hướng giới trẻ"
+  },
+  {
+    "id": "hue_female_huonggiang",
+    "name": "Hương Giang (Nữ · Miền Trung)",
+    "language": "vi-VN",
+    "gender": "female",
+    "description": "Nữ, ngọt ngào — hợp video du lịch, hồi ức & văn hóa miền Trung"
+  },
+  {
+    "id": "hn_female_lannhi",
+    "name": "Lan Nhi (Nữ · Miền Bắc)",
+    "language": "vi-VN",
+    "gender": "female",
+    "description": "Nữ trẻ, trong và tươi sáng — hợp video ngắn TikTok, Reels & Shorts"
+  },
+  {
+    "id": "sg_male_thientam",
+    "name": "Thiên Tâm (Nam · Miền Nam)",
+    "language": "vi-VN",
+    "gender": "male",
+    "description": "Nam, sâu lắng — hợp radio tâm sự đêm & chia sẻ cuộc sống"
+  }
+]

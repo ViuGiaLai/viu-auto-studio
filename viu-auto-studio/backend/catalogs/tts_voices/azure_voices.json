@@ -1,0 +1,65 @@
+[
+  {
+    "id": "vi-VN-HoaiMyNeural",
+    "name": "Hoài My (Nữ · Azure Neural HD Tiếng Việt)",
+    "language": "vi-VN",
+    "gender": "female",
+    "description": "Microsoft Azure Neural HD Vietnamese Female"
+  },
+  {
+    "id": "vi-VN-NamMinhNeural",
+    "name": "Nam Minh (Nam · Azure Neural HD Tiếng Việt)",
+    "language": "vi-VN",
+    "gender": "male",
+    "description": "Microsoft Azure Neural HD Vietnamese Male"
+  },
+  {
+    "id": "en-US-JennyMultilingualNeural",
+    "name": "Jenny (Nữ · Azure Multilingual HD)",
+    "language": "en-US",
+    "gender": "female",
+    "description": "Azure Multilingual Natural Female"
+  },
+  {
+    "id": "en-US-RyanMultilingualNeural",
+    "name": "Ryan (Nam · Azure Multilingual HD)",
+    "language": "en-US",
+    "gender": "male",
+    "description": "Azure Multilingual Natural Male"
+  },
+  {
+    "id": "en-US-AriaNeural",
+    "name": "Aria (Nữ Mỹ · Diễn cảm HD)",
+    "language": "en-US",
+    "gender": "female",
+    "description": "Azure Expressive Female"
+  },
+  {
+    "id": "en-US-GuyNeural",
+    "name": "Guy (Nam Mỹ · Thuyết minh HD)",
+    "language": "en-US",
+    "gender": "male",
+    "description": "Azure Documentary Male"
+  },
+  {
+    "id": "ja-JP-NanamiNeural",
+    "name": "Nanami (Nữ Nhật · Neural HD)",
+    "language": "ja-JP",
+    "gender": "female",
+    "description": "Azure Japanese Neural Female"
+  },
+  {
+    "id": "ko-KR-SunHiNeural",
+    "name": "Sun-Hi (Nữ Hàn · Neural HD)",
+    "language": "ko-KR",
+    "gender": "female",
+    "description": "Azure Korean Neural Female"
+  },
+  {
+    "id": "zh-CN-XiaoxiaoNeural",
+    "name": "Xiaoxiao (Nữ Trung · Neural HD)",
+    "language": "zh-CN",
+    "gender": "female",
+    "description": "Azure Mandarin Neural Female"
+  }
+]

@@ -1,0 +1,44 @@
+[
+  {
+    "id": "gemini-2.0-flash",
+    "name": "Gemini 2.0 Flash (Khuyên dùng)",
+    "provider": "gemini",
+    "tier": "free",
+    "context_window": 1000000
+  },
+  {
+    "id": "gemini-1.5-pro",
+    "name": "Gemini 1.5 Pro (Sâu sắc)",
+    "provider": "gemini",
+    "tier": "paid",
+    "context_window": 2000000
+  },
+  {
+    "id": "gemini-1.5-flash",
+    "name": "Gemini 1.5 Flash (Tốc độ)",
+    "provider": "gemini",
+    "tier": "free",
+    "context_window": 1000000
+  },
+  {
+    "id": "gpt-4o",
+    "name": "GPT-4o (OpenAI)",
+    "provider": "openai",
+    "tier": "paid",
+    "context_window": 128000
+  },
+  {
+    "id": "claude-3-5-sonnet",
+    "name": "Claude 3.5 Sonnet (Anthropic)",
+    "provider": "anthropic",
+    "tier": "paid",
+    "context_window": 200000
+  },
+  {
+    "id": "deepseek-chat",
+    "name": "DeepSeek V3",
+    "provider": "deepseek",
+    "tier": "free",
+    "context_window": 64000
+  }
+]

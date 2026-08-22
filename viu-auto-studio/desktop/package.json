@@ -58,6 +58,9 @@
   "build": {
     "appId": "com.viuautostudio.app",
     "productName": "Viu Auto Studio",
+    "directories": {
+      "output": "release"
+    },
     "files": [
       "dist/**/*",
       "dist-electron/**/*"
@@ -86,18 +89,65 @@
           "**/*",
           "!**/*.map"
         ]
+      },
+      {
+        "from": "../version.json",
+        "to": "version.json"
       }
     ],
     "win": {
       "target": [
-        "nsis"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
-      "icon": "build/icon.ico"
+      "icon": "build/icon.ico",
+      "sign": null,
+      "signingHashAlgorithms": [
+        "sha256"
+      ],
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    }
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Viu Auto Studio",
+      "uninstallDisplayName": "Viu Auto Studio",
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Viu-Auto-Studio-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Viu-Auto-Studio-Portable-${version}.${ext}"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.video",
+      "artifactName": "Viu-Auto-Studio-macOS-${version}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "tar.gz"
+      ],
+      "category": "Video",
+      "artifactName": "Viu-Auto-Studio-Linux-${version}.${ext}"
+    },
+    "forceCodeSigning": false
   },
   "type": "module"
 }

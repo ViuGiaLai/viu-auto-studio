@@ -6,7 +6,7 @@ import { useAppStore } from "@/stores/app-store"
 import { AppShell, Sidebar } from "@/components/design-system"
 import { CommandPalette } from "@/components/command-palette"
 
-const APP_VERSION = "2.0.0"
+const APP_VERSION = "1.0.0"
 
 export function AppLayout() {
   const { backendOnline, setBackendOnline, setOperatorProfile, operatorName, operatorEmail } = useAppStore()
