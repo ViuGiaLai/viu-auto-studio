@@ -48,20 +48,28 @@ def main():
     # 5. Package Production Electron Distribution & Portable Package
     print("\n>>> Step 4/4: Packaging Production Standalone Distribution...")
     env_builder = {"CSC_IDENTITY_AUTO_DISCOVERY": "false"}
-    run("pnpm exec electron-builder --win zip --dir", cwd=ROOT / "desktop", env=env_builder)
+    run("pnpm exec electron-builder --win zip --dir -c.directories.output=dist_release", cwd=ROOT / "desktop", env=env_builder)
 
     # Standardize package name
-    release_dir = ROOT / "desktop" / "release"
+    release_dir = ROOT / "desktop" / "dist_release"
     raw_zip = release_dir / f"Viu Auto Studio-{version}-win.zip"
     target_zip = release_dir / f"Viu-Auto-Studio-Portable-{version}.zip"
+    target_exe = release_dir / f"Viu-Auto-Studio-Portable-{version}.exe"
+    unpacked_exe = release_dir / "win-unpacked" / "Viu Auto Studio.exe"
+
     if raw_zip.exists():
         shutil.copy2(raw_zip, target_zip)
         print(f"\nGenerated Standalone Release Package: {target_zip.name} ({target_zip.stat().st_size / (1024*1024):.2f} MB)")
 
+    if unpacked_exe.exists():
+        shutil.copy2(unpacked_exe, target_exe)
+        print(f"Generated Standalone Executable: {target_exe.name} ({target_exe.stat().st_size / (1024*1024):.2f} MB)")
+
     print("\n==================================================")
     print("BUILD & PACKAGING SUCCESSFUL!")
     print(f"1. Standalone Release Archive: {target_zip}")
-    print(f"2. Unpacked Binary Directory: {release_dir / 'win-unpacked'}")
+    print(f"2. Standalone Executable:      {target_exe}")
+    print(f"3. Unpacked Binary Directory:  {release_dir / 'win-unpacked'}")
     print("==================================================")
 
 if __name__ == "__main__":
