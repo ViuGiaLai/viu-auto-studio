@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="vi" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Viu Auto Studio - Phần mềm tạo Video AI Tự động</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        navy: '#0B0F12',
+                        teal: '#008080',
+                        accent: '#FAAA02',
+                        surface: '#1A202C'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #0B0F12; color: #ffffff; }
+        .hero-img-container::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(to top, #0B0F12 0%, transparent 40%);
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="antialiased selection:bg-accent selection:text-navy">
+
+    <!-- Navigation -->
+    <nav class="fixed w-full z-50 bg-navy/90 backdrop-blur-md border-b border-gray-800">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center gap-3">
+                    <img src="assets/logo.png" alt="Viu Auto Studio Logo" class="h-8 w-8 object-contain rounded-md" onerror="this.src='https://via.placeholder.com/32?text=V'">
+                    <span class="font-bold text-xl text-white tracking-wide">Viu Auto Studio <span class="text-accent text-sm">v2.0</span></span>
+                </div>
+                <div class="hidden md:block">
+                    <div class="ml-10 flex items-baseline space-x-8">
+                        <a href="#home" class="hover:text-accent px-3 py-2 rounded-md text-sm font-medium transition-colors">Trang chủ</a>
+                        <a href="#features" class="hover:text-accent px-3 py-2 rounded-md text-sm font-medium transition-colors">Tính năng</a>
+                        <a href="#workflow" class="hover:text-accent px-3 py-2 rounded-md text-sm font-medium transition-colors">Quy trình</a>
+                        <a href="#tech" class="hover:text-accent px-3 py-2 rounded-md text-sm font-medium transition-colors">Công nghệ</a>
+                        <a href="#download" class="bg-accent text-navy hover:bg-yellow-500 px-4 py-2 rounded-md text-sm font-bold transition-colors">Tải xuống ngay</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section id="home" class="pt-32 pb-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto text-center">
+        <h1 class="text-4xl md:text-6xl font-extrabold tracking-tight mb-6">
+            Tự Động Hóa Sản Xuất <span class="text-transparent bg-clip-text bg-gradient-to-r from-accent to-yellow-300">Video AI</span>
+        </h1>
+        <p class="mt-4 max-w-3xl mx-auto text-xl text-gray-400 mb-10">
+            Ứng dụng desktop toàn diện giúp bạn tạo video từ kịch bản đến bản dựng MP4 cuối cùng. Tích hợp AI sinh kịch bản, giọng đọc TTS đa dạng, quản lý media và tự động render bằng FFmpeg.
+        </p>
+        <div class="flex justify-center gap-4 mb-16">
+            <a href="#download" class="bg-accent text-navy hover:bg-yellow-500 font-bold py-3 px-8 rounded-lg shadow-lg shadow-accent/20 transition-all flex items-center gap-2">
+                <i class="fa-solid fa-download"></i> Tải bản Desktop
+            </a>
+            <a href="#features" class="bg-surface border border-gray-700 hover:border-gray-500 text-white font-medium py-3 px-8 rounded-lg transition-all">
+                Khám phá tính năng
+            </a>
+        </div>
+        
+        <div class="relative rounded-xl overflow-hidden border border-gray-800 shadow-2xl hero-img-container">
+            <img src="assets/hero.png" alt="Viu Auto Studio Dashboard" class="w-full h-auto object-cover" onerror="this.src='https://via.placeholder.com/1200x675?text=Dashboard+Screenshot'">
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="py-20 bg-surface/50 border-t border-b border-gray-800">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16">
+                <h2 class="text-3xl font-bold text-white mb-4">Mọi Công Cụ Trong Một Giao Diện</h2>
+                <p class="text-gray-400 max-w-2xl mx-auto">Viu Auto Studio cung cấp đầy đủ các pipeline cần thiết để sản xuất video hàng loạt mà không cần phần mềm thứ ba.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-12 items-center mb-20">
+                <div>
+                    <div class="inline-flex items-center justify-center p-3 bg-teal/20 text-teal rounded-lg mb-4">
+                        <i class="fa-solid fa-wand-magic-sparkles text-xl"></i>
+                    </div>
+                    <h3 class="text-2xl font-bold mb-4">Kịch Bản & Trợ lý AI</h3>
+                    <p class="text-gray-400 mb-6 leading-relaxed">
+                        Tích hợp trực tiếp OpenRouter & Gemini AI. Chỉ cần nhập ý tưởng, hệ thống sẽ tự động sinh kịch bản logic, phân chia các cảnh, mô tả hình ảnh và tạo lời thoại chi tiết.
+                    </p>
+                    <ul class="space-y-3 text-gray-300">
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-accent mt-1"></i> Sinh ý tưởng tự động</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-accent mt-1"></i> Hỗ trợ đa dạng tone & style</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-accent mt-1"></i> Tự động phân rã kịch bản thành các Scene (Cảnh)</li>
+                    </ul>
+                </div>
+                <div class="rounded-xl overflow-hidden border border-gray-700 shadow-lg">
+                    <img src="assets/script.png" alt="AI Scripting" class="w-full h-auto" onerror="this.src='https://via.placeholder.com/800x450?text=Script+Screenshot'">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-12 items-center mb-20 md:flex-row-reverse">
+                <div class="order-2 md:order-1 rounded-xl overflow-hidden border border-gray-700 shadow-lg">
+                    <img src="assets/visual.png" alt="Visual Storyboard" class="w-full h-auto" onerror="this.src='https://via.placeholder.com/800x450?text=Storyboard+Screenshot'">
+                </div>
+                <div class="order-1 md:order-2">
+                    <div class="inline-flex items-center justify-center p-3 bg-accent/20 text-accent rounded-lg mb-4">
+                        <i class="fa-solid fa-images text-xl"></i>
+                    </div>
+                    <h3 class="text-2xl font-bold mb-4">Phân Cảnh Visual & Quản Lý Media</h3>
+                    <p class="text-gray-400 mb-6 leading-relaxed">
+                        Hệ thống Storyboard mạnh mẽ giúp bạn ghép nối hình ảnh, video với từng phân đoạn giọng đọc. Dễ dàng điều chỉnh thời lượng, thêm hiệu ứng chuyển cảnh và quản lý kho thư viện Media trực quan.
+                    </p>
+                    <ul class="space-y-3 text-gray-300">
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-accent mt-1"></i> Tích hợp Google Flow (Labs)</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-accent mt-1"></i> Quản lý nhân vật (Host & Supporting)</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-accent mt-1"></i> Kéo thả Media trực quan</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+                <div>
+                    <div class="inline-flex items-center justify-center p-3 bg-blue-500/20 text-blue-400 rounded-lg mb-4">
+                        <i class="fa-solid fa-film text-xl"></i>
+                    </div>
+                    <h3 class="text-2xl font-bold mb-4">Render FFmpeg Hiệu Suất Cao</h3>
+                    <p class="text-gray-400 mb-6 leading-relaxed">
+                        Không còn chờ đợi render lâu. Engine FFmpeg tích hợp sẵn sẽ ghép nối các cảnh, áp dụng hiệu ứng (zoom/pan, fade), thêm phụ đề ASS và xuất ra file MP4 H.264/AAC sắc nét.
+                    </p>
+                    <ul class="space-y-3 text-gray-300">
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-accent mt-1"></i> Hàng đợi (Queue) render tự động</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-accent mt-1"></i> Tự động tạo phụ đề (ASS)</li>
+                        <li class="flex items-start gap-2"><i class="fa-solid fa-check text-accent mt-1"></i> Phục hồi render khi có lỗi</li>
+                    </ul>
+                </div>
+                <div class="rounded-xl overflow-hidden border border-gray-700 shadow-lg">
+                    <img src="assets/render.png" alt="Render Queue" class="w-full h-auto" onerror="this.src='https://via.placeholder.com/800x450?text=Render+Screenshot'">
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- TTS Section -->
+    <section class="py-20">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16">
+                <h2 class="text-3xl font-bold text-white mb-4">Đa Dạng Giọng Đọc (TTS)</h2>
+                <p class="text-gray-400 max-w-2xl mx-auto">Tích hợp nhiều nhà cung cấp giọng nói AI hàng đầu, hỗ trợ tạo giọng đọc chân thực chỉ với một click.</p>
+            </div>
+            
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+                <div class="bg-surface p-6 rounded-xl border border-gray-800 text-center hover:border-accent transition-colors">
+                    <div class="text-4xl mb-4 text-teal"><i class="fa-solid fa-microphone"></i></div>
+                    <h4 class="font-bold">Revo Voice</h4>
+                </div>
+                <div class="bg-surface p-6 rounded-xl border border-gray-800 text-center hover:border-accent transition-colors">
+                    <div class="text-4xl mb-4 text-teal"><i class="fa-solid fa-wave-square"></i></div>
+                    <h4 class="font-bold">OmniVoice</h4>
+                </div>
+                <div class="bg-surface p-6 rounded-xl border border-gray-800 text-center hover:border-accent transition-colors">
+                    <div class="text-4xl mb-4 text-teal"><i class="fa-brands fa-google"></i></div>
+                    <h4 class="font-bold">Google & Gemini TTS</h4>
+                </div>
+                <div class="bg-surface p-6 rounded-xl border border-gray-800 text-center hover:border-accent transition-colors">
+                    <div class="text-4xl mb-4 text-teal"><i class="fa-solid fa-robot"></i></div>
+                    <h4 class="font-bold">ElevenLabs & Vbee</h4>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Tech Stack -->
+    <section id="tech" class="py-20 bg-surface/50 border-t border-gray-800">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <h2 class="text-3xl font-bold text-white mb-12">Kiến Trúc Kỹ Thuật Hiện Đại</h2>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-8 items-center justify-center opacity-70">
+                <div class="flex flex-col items-center gap-2">
+                    <i class="fa-brands fa-react text-5xl mb-2"></i>
+                    <span class="font-medium">React 18</span>
+                </div>
+                <div class="flex flex-col items-center gap-2">
+                    <i class="fa-brands fa-python text-5xl mb-2"></i>
+                    <span class="font-medium">FastAPI</span>
+                </div>
+                <div class="flex flex-col items-center gap-2">
+                    <i class="fa-solid fa-desktop text-5xl mb-2"></i>
+                    <span class="font-medium">Electron</span>
+                </div>
+                <div class="flex flex-col items-center gap-2">
+                    <i class="fa-solid fa-database text-5xl mb-2"></i>
+                    <span class="font-medium">SQLite</span>
+                </div>
+                <div class="flex flex-col items-center gap-2">
+                    <i class="fa-solid fa-film text-5xl mb-2"></i>
+                    <span class="font-medium">FFmpeg</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA / Download -->
+    <section id="download" class="py-24 relative overflow-hidden">
+        <div class="absolute inset-0 bg-accent/10"></div>
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 relative text-center">
+            <h2 class="text-4xl font-bold mb-6">Sẵn Sàng Tạo Video AI Của Riêng Bạn?</h2>
+            <p class="text-xl text-gray-300 mb-10">Tải xuống Viu Auto Studio v2.0 và trải nghiệm quy trình sản xuất video hoàn toàn tự động.</p>
+            
+            <div class="flex flex-col sm:flex-row justify-center gap-4">
+                <button class="bg-accent text-navy hover:bg-yellow-500 font-bold py-4 px-8 rounded-lg shadow-lg text-lg transition-all flex items-center justify-center gap-2">
+                    <i class="fa-brands fa-windows text-xl"></i> Tải cho Windows
+                </button>
+                <button class="bg-surface border border-gray-600 hover:border-gray-400 text-white font-bold py-4 px-8 rounded-lg shadow-lg text-lg transition-all flex items-center justify-center gap-2">
+                    <i class="fa-brands fa-apple text-xl"></i> Tải cho macOS
+                </button>
+            </div>
+            <p class="mt-6 text-sm text-gray-500">Yêu cầu hệ thống: Windows 10/11 hoặc macOS 12+. Có sẵn FFmpeg.</p>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="bg-navy border-t border-gray-800 py-12 text-gray-400 text-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center">
+            <div class="flex items-center gap-3 mb-4 md:mb-0">
+                <img src="assets/logo.png" alt="Logo" class="h-6 w-6 opacity-50">
+                <span>&copy; 2026 Viu Auto Studio. All rights reserved.</span>
+            </div>
+            <div class="flex gap-6">
+                <a href="#" class="hover:text-accent transition-colors">Tài liệu hướng dẫn</a>
+                <a href="#" class="hover:text-accent transition-colors">Báo lỗi (GitHub)</a>
+                <a href="#" class="hover:text-accent transition-colors">Liên hệ</a>
+            </div>
+        </div>
+    </footer>
+
+</body>
+</html>

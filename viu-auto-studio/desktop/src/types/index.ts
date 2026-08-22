@@ -245,6 +245,7 @@ export interface TTSConfig {
   voice_clone_prompt?: string
   voice_design?: string
   model_name?: string
+  model_id?: string
   device?: string
   duration?: number | null
   num_step?: number

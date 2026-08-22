@@ -1501,6 +1501,14 @@ def tts_preview(payload: dict, db: Session = Depends(get_db)):
     from backend.registry.tts_registry import tts_registry
     raw_voice = str(payload.get("voice") or settings.get("voice") or "")
     req_voice = tts_registry.resolve_voice(req_provider, raw_voice)
+    if req_provider == "elevenlabs":
+        raw_model = str(payload.get("model_id") or payload.get("model_name") or payload.get("elevenlabs_model") or "")
+        if raw_model.startswith("eleven_"):
+            settings["model_id"] = raw_model
+            settings["model_name"] = raw_model
+        else:
+            settings["model_id"] = "eleven_multilingual_v2"
+            settings["model_name"] = "eleven_multilingual_v2"
     
     settings.update({k: v for k, v in payload.items() if k in ("provider", "voice", "speed", "pitch", "volume", "language", "model_name", "model_id", "api_key")})
     settings["provider"] = req_provider

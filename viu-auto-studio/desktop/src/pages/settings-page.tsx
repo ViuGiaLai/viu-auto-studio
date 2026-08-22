@@ -914,6 +914,8 @@ export default function SettingsPage() {
         pitch: config.pitch,
         volume: config.volume,
         api_key: activeKey,
+        model_id: config.provider === "elevenlabs" ? elevenLabsModel : undefined,
+        model_name: config.provider === "elevenlabs" ? elevenLabsModel : undefined,
       })
 
       if (res.ok && res.audio_path) {

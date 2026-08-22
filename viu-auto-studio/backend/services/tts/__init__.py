@@ -172,7 +172,8 @@ def get_provider(config: Optional[dict] = None) -> TTSProvider:
     if name == "edge":
         return EdgeTTSProvider()
     if name == "elevenlabs":
-        model_id = str(settings.get("model_name") or settings.get("model_id") or "eleven_multilingual_v2")
+        raw_model = str(settings.get("model_id") or settings.get("elevenlabs_model") or (settings.get("model_name") if str(settings.get("model_name", "")).startswith("eleven_") else "") or "eleven_multilingual_v2")
+        model_id = raw_model if raw_model.startswith("eleven_") else "eleven_multilingual_v2"
         return ElevenLabsTTSProvider(api_key=api_key, model_id=model_id)
     if name in {"gemini_tts", "gemini"}:
         return GeminiTTSProvider(api_key=api_key)

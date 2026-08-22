@@ -21,13 +21,24 @@ from backend.services.tts.base import TTSProvider
 logger = logging.getLogger(__name__)
 ELEVENLABS_API_BASE = "https://api.elevenlabs.io/v1"
 
+VALID_ELEVEN_MODELS = {
+    "eleven_multilingual_v2",
+    "eleven_flash_v2_5",
+    "eleven_turbo_v2_5",
+    "eleven_monolingual_v1",
+    "eleven_v3",
+    "eleven_turbo_v2",
+    "eleven_flash_v2",
+}
+
 
 class ElevenLabsTTSProvider(TTSProvider):
     """ElevenLabs TTS Provider chính thức."""
 
     def __init__(self, api_key: str = "", model_id: str = "eleven_multilingual_v2") -> None:
         self.api_key = api_key.strip()
-        self.model_id = model_id.strip() or "eleven_multilingual_v2"
+        m = model_id.strip() if model_id else "eleven_multilingual_v2"
+        self.model_id = m if m in VALID_ELEVEN_MODELS or m.startswith("eleven_") else "eleven_multilingual_v2"
 
     @property
     def name(self) -> str:
