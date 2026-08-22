@@ -150,5 +150,9 @@
     "forceCodeSigning": false
   },
   "type": "module",
-  "repository": "https://github.com/ViuGiaLai/viu-auto-studio"
+  "repository": "https://github.com/ViuGiaLai/viu-auto-studio",
+  "author": {
+    "name": "ViuGiaLai",
+    "email": "contact@viugialai.com"
+  }
 }
