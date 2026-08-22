@@ -1,11 +1,23 @@
 import type { SubtitleConfig } from "@/types"
 
-export const OUTPUT_PRESETS = [
-  { id: "youtube", title: "YouTube ngang", detail: "16:9 · 1920×1080 · 30 FPS", icon: "▰", aspect: "16:9", width: 1920, height: 1080 },
-  { id: "shorts", title: "Shorts / TikTok", detail: "9:16 · 1080×1920 · 30 FPS", icon: "▯", aspect: "9:16", width: 1080, height: 1920 },
-  { id: "square", title: "Video vuông", detail: "1:1 · 1080×1080 · 30 FPS", icon: "□", aspect: "1:1", width: 1080, height: 1080 },
-  { id: "4k", title: "Chất lượng cao", detail: "16:9 · 3840×2160 · 30 FPS", icon: "◈", aspect: "16:9", width: 3840, height: 2160 },
-] as const
+export type OutputPresetItem = {
+  id: string
+  title: string
+  detail: string
+  icon: string
+  aspect: string
+  width: number
+  height: number
+  fps?: number
+}
+
+// Fallback schema defaults (Primary data is dynamically loaded from GET /api/catalogs/presets)
+export const OUTPUT_PRESETS: readonly OutputPresetItem[] = [
+  { id: "youtube", title: "YouTube ngang", detail: "16:9 · 1920×1080 · 30 FPS", icon: "▰", aspect: "16:9", width: 1920, height: 1080, fps: 30 },
+  { id: "shorts", title: "Shorts / TikTok", detail: "9:16 · 1080×1920 · 30 FPS", icon: "▯", aspect: "9:16", width: 1080, height: 1920, fps: 30 },
+  { id: "square", title: "Video vuông", detail: "1:1 · 1080×1080 · 30 FPS", icon: "□", aspect: "1:1", width: 1080, height: 1080, fps: 30 },
+  { id: "4k", title: "Chất lượng cao", detail: "16:9 · 3840×2160 · 30 FPS", icon: "◈", aspect: "16:9", width: 3840, height: 2160, fps: 30 },
+]
 
 export const RENDER_PROFILES = [
   { id: "fastest", title: "⚡ Nhanh nhất", detail: "Hardware GPU / Ultrafast (Mặc định)" },

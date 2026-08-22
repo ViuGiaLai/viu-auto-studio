@@ -2147,6 +2147,19 @@ def update_channel_config(channel_id: int, payload: dict, db: Session = Depends(
 # AI video styles (Kiểu video — FREE / BASIC)
 # ===========================================================================
 VIDEO_STYLES = subtitle_registry.get_video_styles()
+@router.get("/catalogs/presets")
+def get_catalogs_presets():
+    """Single Source of Truth for Render, Subtitle, and AI Presets."""
+    from backend.registry.render_registry import render_registry
+    from backend.registry.subtitle_registry import subtitle_registry
+    from backend.registry.ai_registry import ai_registry
+    return {
+        "output_presets": render_registry.get_preset_list(),
+        "subtitle_presets": subtitle_registry.get_presets(),
+        "video_styles": subtitle_registry.get_video_styles(),
+        "ai_models": ai_registry.get_models(),
+    }
+
 
 
 @router.get("/ai/video-styles")

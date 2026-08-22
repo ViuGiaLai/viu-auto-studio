@@ -97,26 +97,18 @@ ENGINE_PROFILES = {
     "high": {"crf": 18, "preset": "slow"},
 }
 
-OUTPUT_PRESETS = {
-    "youtube": (1920, 1080, 30),
-    "shorts": (1080, 1920, 30),
-    "square": (1080, 1080, 30),
-    "4k": (3840, 2160, 30),
-}
+OUTPUT_PRESETS = render_registry.get_presets()
 
 
 def output_size(project: Project | None, render_config: RenderConfig) -> tuple[int, int]:
     preset = str(render_config.output_preset or "youtube").lower()
-    if preset in OUTPUT_PRESETS:
-        return OUTPUT_PRESETS[preset][:2]
+    dim = render_registry.get_dimensions(preset)
+    if dim:
+        return dim[:2]
     return (1080, 1920) if (project and project.aspect_ratio == "9:16") else (1920, 1080)
 
 
-SUBTITLE_STYLE_PRESETS = {
-    "clean": {"font_size": 44, "primary_color": "#FFFFFF", "border_color": "#000000", "border_width": 2, "position": "bottom", "max_chars_per_line": 52},
-    "bold": {"font_size": 56, "primary_color": "#FFFFFF", "border_color": "#000000", "border_width": 4, "position": "center", "max_chars_per_line": 38, "granularity": "phrase"},
-    "cinematic": {"font_size": 42, "primary_color": "#FFFFFF", "border_color": "#000000", "border_width": 1, "position": "bottom", "max_chars_per_line": 48},
-}
+SUBTITLE_STYLE_PRESETS = subtitle_registry.get_presets()
 
 
 def _apply_engine_profile(db, render_config: dict) -> dict:

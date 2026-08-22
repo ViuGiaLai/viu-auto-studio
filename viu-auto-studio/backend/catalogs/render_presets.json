@@ -1,22 +1,42 @@
 {
-  "youtube": [
-    1920,
-    1080,
-    30
-  ],
-  "shorts": [
-    1080,
-    1920,
-    30
-  ],
-  "square": [
-    1080,
-    1080,
-    30
-  ],
-  "4k": [
-    3840,
-    2160,
-    30
-  ]
+  "youtube": {
+    "id": "youtube",
+    "title": "YouTube ngang",
+    "detail": "16:9 · 1920×1080 · 30 FPS",
+    "icon": "▰",
+    "aspect": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 30
+  },
+  "shorts": {
+    "id": "shorts",
+    "title": "Shorts / TikTok",
+    "detail": "9:16 · 1080×1920 · 30 FPS",
+    "icon": "▯",
+    "aspect": "9:16",
+    "width": 1080,
+    "height": 1920,
+    "fps": 30
+  },
+  "square": {
+    "id": "square",
+    "title": "Video vuông",
+    "detail": "1:1 · 1080×1080 · 30 FPS",
+    "icon": "□",
+    "aspect": "1:1",
+    "width": 1080,
+    "height": 1080,
+    "fps": 30
+  },
+  "4k": {
+    "id": "4k",
+    "title": "Chất lượng cao",
+    "detail": "16:9 · 3840×2160 · 30 FPS",
+    "icon": "◈",
+    "aspect": "16:9",
+    "width": 3840,
+    "height": 2160,
+    "fps": 30
+  }
 }
