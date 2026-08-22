@@ -24,6 +24,9 @@ class LocalTTSProvider(TTSProvider):
     def name(self) -> str:
         return "local"
 
+    def is_configured(self) -> bool:
+        return self._discover_piper_model() is not None
+
     def __init__(self, model_dir: str = "") -> None:
         self.model_dir = Path(model_dir) if model_dir else Path()
 

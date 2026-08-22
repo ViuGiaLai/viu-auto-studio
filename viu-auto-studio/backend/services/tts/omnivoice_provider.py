@@ -39,6 +39,9 @@ class OmniVoiceProvider(TTSProvider):
     def name(self) -> str:
         return "omnivoice"
 
+    def is_configured(self) -> bool:
+        return self.is_available()
+
     @staticmethod
     def is_available() -> bool:
         return all(importlib.util.find_spec(name) is not None for name in ("omnivoice", "torch", "soundfile"))

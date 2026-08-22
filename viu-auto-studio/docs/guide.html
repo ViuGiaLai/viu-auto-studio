@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hướng Dẫn Sử Dụng - Viu Auto Studio</title>
+    
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -11,9 +13,11 @@
                 extend: {
                     colors: {
                         navy: '#0B0F12',
+                        navyLight: '#151b21',
                         teal: '#008080',
                         accent: '#FAAA02',
-                        surface: '#1A202C'
+                        surface: '#1A202C',
+                        surfaceHover: '#2d3748'
                     },
                     fontFamily: {
                         sans: ['Inter', 'sans-serif'],
@@ -22,27 +26,44 @@
             }
         }
     </script>
+    
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- AOS Animation CSS -->
+    <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
+
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #0B0F12; color: #ffffff; }
+        .glass-nav { background: rgba(11, 15, 18, 0.7); backdrop-filter: blur(12px); border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+        .step-card { position: relative; padding-left: 2.5rem; }
+        .step-card::before {
+            content: ''; position: absolute; left: 0.75rem; top: 3rem; bottom: -3rem; width: 2px; background: rgba(0, 128, 128, 0.3);
+        }
+        .step-card:last-child::before { display: none; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0B0F12; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
     </style>
 </head>
-<body class="antialiased selection:bg-accent selection:text-navy pt-20">
+<body class="antialiased selection:bg-accent selection:text-navy pt-24 relative">
+
+    <!-- Decoration -->
+    <div class="fixed top-0 left-0 w-full h-[500px] bg-teal/10 filter blur-[150px] z-[-1] pointer-events-none"></div>
 
     <!-- Navigation -->
-    <nav class="fixed top-0 w-full z-50 bg-navy/90 backdrop-blur-md border-b border-gray-800">
+    <nav class="fixed top-0 w-full z-50 glass-nav transition-all duration-300">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex items-center justify-between h-16">
+            <div class="flex items-center justify-between h-20">
                 <a href="index.html" class="flex items-center gap-3">
-                    <img src="assets/logo.png" alt="Viu Auto Studio Logo" class="h-8 w-8 object-contain rounded-md" onerror="this.src='https://via.placeholder.com/32?text=V'">
-                    <span class="font-bold text-xl text-white tracking-wide">Viu Auto Studio</span>
+                    <img src="assets/logo.png" alt="Logo" class="h-10 w-10 object-contain rounded-xl shadow-lg" onerror="this.src='https://via.placeholder.com/40?text=V'">
+                    <span class="font-bold text-2xl tracking-tight hidden sm:block">Viu Auto Studio</span>
                 </a>
-                <div class="hidden md:block">
-                    <div class="ml-10 flex items-baseline space-x-8">
-                        <a href="index.html" class="hover:text-accent px-3 py-2 rounded-md text-sm font-medium transition-colors">Trang chủ</a>
-                        <a href="guide.html" class="text-accent px-3 py-2 rounded-md text-sm font-medium transition-colors border-b-2 border-accent">Hướng dẫn</a>
-                    </div>
+                <div class="flex items-center space-x-2 sm:space-x-4">
+                    <a href="index.html" class="hover:text-accent px-4 py-2 rounded-full text-sm font-medium transition-colors">Trang chủ</a>
+                    <a href="guide.html" class="bg-surface/80 border border-teal/30 text-teal px-4 py-2 rounded-full text-sm font-medium">Tài liệu</a>
+                    <a href="index.html#download" class="bg-accent text-navy hover:bg-yellow-400 px-5 py-2 rounded-full text-sm font-bold transition-colors shadow-lg">Tải về</a>
                 </div>
             </div>
         </div>
@@ -50,52 +71,78 @@
 
     <!-- Guide Content -->
     <div class="max-w-4xl mx-auto px-4 py-12">
-        <h1 class="text-4xl font-bold mb-8">Hướng Dẫn Sử Dụng Nhanh</h1>
+        <div data-aos="fade-down" class="text-center mb-16">
+            <h1 class="text-4xl md:text-5xl font-extrabold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-teal to-accent">Hướng Dẫn Khởi Đầu Nhanh</h1>
+            <p class="text-gray-400 text-lg">Làm quen với Viu Auto Studio v2.0 và quy trình sản xuất video hoàn toàn tự động chỉ trong 4 bước cơ bản.</p>
+        </div>
         
-        <div class="space-y-12">
+        <div class="space-y-12 pl-2 sm:pl-0">
             <!-- Step 1 -->
-            <div class="bg-surface p-8 rounded-xl border border-gray-800">
-                <h2 class="text-2xl font-bold mb-4 flex items-center gap-3"><span class="bg-teal text-white w-8 h-8 rounded-full flex items-center justify-center text-sm">1</span> Cài đặt và Khởi động</h2>
-                <p class="text-gray-400 mb-4">
-                    Ứng dụng Viu Auto Studio bao gồm một Backend chạy ngầm (Python) và Giao diện Desktop (Electron). Khi khởi chạy file Desktop, backend sẽ tự động được kích hoạt.
-                </p>
-                <div class="bg-black/50 p-4 rounded-lg font-mono text-sm text-gray-300">
-                    Cơ sở dữ liệu sẽ được tự động tạo tại thư mục người dùng (~/.viu-auto-studio/app.db).
+            <div data-aos="fade-up" class="step-card group">
+                <div class="absolute left-0 top-0 w-6 h-6 rounded-full bg-teal text-navy flex items-center justify-center font-bold text-sm shadow-[0_0_15px_rgba(0,128,128,0.5)] group-hover:scale-125 transition-transform">1</div>
+                <div class="bg-surface/50 backdrop-blur-md p-6 sm:p-8 rounded-2xl border border-gray-800 hover:border-teal/50 transition-colors">
+                    <h2 class="text-2xl font-bold mb-4 flex items-center gap-3"><i class="fa-solid fa-download text-teal"></i> Cài đặt và Khởi động</h2>
+                    <p class="text-gray-400 mb-4 leading-relaxed">
+                        Ứng dụng bao gồm Backend xử lý (Python) và Giao diện (Electron). Sau khi tải và cài đặt file Desktop (.exe hoặc .dmg), bạn chỉ cần mở ứng dụng, hệ thống sẽ tự động kích hoạt tiến trình chạy ngầm.
+                    </p>
+                    <div class="bg-navy p-4 rounded-xl border border-gray-800 text-sm">
+                        <p class="text-gray-300 font-mono mb-2"><i class="fa-solid fa-folder-open text-accent mr-2"></i><strong>Thư mục làm việc:</strong></p>
+                        <p class="text-gray-500">Toàn bộ CSDL và dữ liệu dự án của bạn sẽ được lưu cục bộ tại thư mục: <code class="text-teal bg-teal/10 px-1 py-0.5 rounded">C:\Users\Username\.viu-auto-studio</code></p>
+                    </div>
                 </div>
             </div>
 
             <!-- Step 2 -->
-            <div class="bg-surface p-8 rounded-xl border border-gray-800">
-                <h2 class="text-2xl font-bold mb-4 flex items-center gap-3"><span class="bg-teal text-white w-8 h-8 rounded-full flex items-center justify-center text-sm">2</span> Tạo Dự Án Mới</h2>
-                <p class="text-gray-400 mb-4">
-                    Tại trang Dashboard, chọn <strong>"Tạo dự án"</strong>. Bạn có thể chọn loại video (Video dài, Shorts, hoặc Recap) và gán dự án cho một Kênh (Channel) cụ thể.
-                </p>
+            <div data-aos="fade-up" class="step-card group">
+                <div class="absolute left-0 top-0 w-6 h-6 rounded-full bg-teal text-navy flex items-center justify-center font-bold text-sm shadow-[0_0_15px_rgba(0,128,128,0.5)] group-hover:scale-125 transition-transform">2</div>
+                <div class="bg-surface/50 backdrop-blur-md p-6 sm:p-8 rounded-2xl border border-gray-800 hover:border-teal/50 transition-colors">
+                    <h2 class="text-2xl font-bold mb-4 flex items-center gap-3"><i class="fa-solid fa-layer-group text-accent"></i> Khởi Tạo Dự Án & Kênh</h2>
+                    <p class="text-gray-400 mb-4 leading-relaxed">
+                        Từ màn hình Dashboard, nhấp vào <strong>"Tạo dự án mới"</strong>. Bạn có thể chọn cấu hình video mặc định (Video Dài 16:9, Shorts 9:16) và gắn dự án này vào một "Kênh" (Workspace) để đồng bộ nhân vật và phong cách.
+                    </p>
+                    <div class="rounded-lg overflow-hidden border border-gray-800 mt-4 shadow-lg">
+                         <!-- Fallback to a placeholder if screenshot doesn't exist for this specific step -->
+                         <div class="bg-gray-800 h-10 flex items-center px-4 gap-2">
+                             <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                             <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                             <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                         </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Step 3 -->
-            <div class="bg-surface p-8 rounded-xl border border-gray-800">
-                <h2 class="text-2xl font-bold mb-4 flex items-center gap-3"><span class="bg-teal text-white w-8 h-8 rounded-full flex items-center justify-center text-sm">3</span> Sinh Kịch Bản Bằng AI</h2>
-                <p class="text-gray-400 mb-4">
-                    Chuyển sang tab <strong>Trình soạn thảo</strong>. Nếu đã cấu hình API Key (OpenRouter hoặc Gemini) trong phần Cài đặt, bạn chỉ cần nhập chủ đề. AI sẽ trả về kịch bản chi tiết bao gồm lời thoại và mô tả hình ảnh cho từng cảnh.
-                </p>
+            <div data-aos="fade-up" class="step-card group">
+                <div class="absolute left-0 top-0 w-6 h-6 rounded-full bg-teal text-navy flex items-center justify-center font-bold text-sm shadow-[0_0_15px_rgba(0,128,128,0.5)] group-hover:scale-125 transition-transform">3</div>
+                <div class="bg-surface/50 backdrop-blur-md p-6 sm:p-8 rounded-2xl border border-gray-800 hover:border-teal/50 transition-colors">
+                    <h2 class="text-2xl font-bold mb-4 flex items-center gap-3"><i class="fa-solid fa-robot text-teal"></i> Sinh Kịch Bản AI & Trích Xuất Cảnh</h2>
+                    <p class="text-gray-400 mb-4 leading-relaxed">
+                        Trong tab <strong>Trình soạn thảo</strong>, hãy kết nối API Key (OpenRouter hoặc Gemini). Chỉ với một câu prompt, AI sẽ viết lời thoại và tự động cắt kịch bản ra thành các Cảnh (Scene) riêng biệt kèm theo Prompt gợi ý hình ảnh cho từng cảnh.
+                    </p>
+                </div>
             </div>
 
             <!-- Step 4 -->
-            <div class="bg-surface p-8 rounded-xl border border-gray-800">
-                <h2 class="text-2xl font-bold mb-4 flex items-center gap-3"><span class="bg-teal text-white w-8 h-8 rounded-full flex items-center justify-center text-sm">4</span> Phân Cảnh (Storyboard) & Render</h2>
-                <p class="text-gray-400">
-                    Kéo thả hình ảnh hoặc video vào các cảnh trong Storyboard. Sau đó, vào tab <strong>Render</strong>, bấm "Thêm vào hàng đợi". Ứng dụng sẽ tự động tải giọng đọc TTS, tạo phụ đề và dùng FFmpeg để render video cuối cùng (MP4).
-                </p>
+            <div data-aos="fade-up" class="step-card group">
+                <div class="absolute left-0 top-0 w-6 h-6 rounded-full bg-teal text-navy flex items-center justify-center font-bold text-sm shadow-[0_0_15px_rgba(0,128,128,0.5)] group-hover:scale-125 transition-transform">4</div>
+                <div class="bg-surface/50 backdrop-blur-md p-6 sm:p-8 rounded-2xl border border-gray-800 hover:border-teal/50 transition-colors">
+                    <h2 class="text-2xl font-bold mb-4 flex items-center gap-3"><i class="fa-solid fa-film text-blue-400"></i> Storyboard & Đẩy Vào Hàng Đợi (Render Queue)</h2>
+                    <p class="text-gray-400 mb-4 leading-relaxed">
+                        Kéo thả ảnh/video của bạn vào các Scene đã được AI tạo sẵn. Ứng dụng tự động điều chỉnh độ dài ảnh khớp với Giọng đọc (được gen tự động). Cuối cùng, bấm <strong>Thêm vào Hàng Đợi</strong>. FFmpeg sẽ ngầm nối toàn bộ lại thành file MP4 hoàn chỉnh!
+                    </p>
+                </div>
             </div>
+        </div>
+        
+        <div data-aos="zoom-in" class="mt-16 text-center">
+            <a href="index.html" class="inline-flex items-center gap-2 text-gray-400 hover:text-accent transition-colors"><i class="fa-solid fa-arrow-left"></i> Quay lại trang chủ</a>
         </div>
     </div>
 
-    <!-- Footer -->
-    <footer class="bg-navy border-t border-gray-800 py-8 text-gray-400 text-sm mt-12">
-        <div class="max-w-7xl mx-auto px-4 text-center">
-            <span>&copy; 2026 Viu Auto Studio. All rights reserved.</span>
-        </div>
-    </footer>
-
+    <!-- AOS JS -->
+    <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+    <script>
+        AOS.init({ once: true, offset: 50 });
+    </script>
 </body>
 </html>

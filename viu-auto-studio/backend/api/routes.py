@@ -1445,7 +1445,7 @@ def regenerate_scene_voice(project_id: int, scene_id: int, payload: SceneVoiceRe
         scene.status = "voice_ready"
         scene.error_message = ""
         db.commit()
-        return {"ok": True, "audio_path": audio_path}
+        return {"ok": True, "audio_path": audio_path, "duration": new_dur, "status": scene.status}
     except RuntimeError as exc:
         scene.error_message = str(exc)
         scene.status = "error"

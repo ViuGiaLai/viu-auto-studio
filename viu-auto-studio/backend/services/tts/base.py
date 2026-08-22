@@ -1,8 +1,6 @@
-"""TTS provider adapter interface (bắt buộc theo đặc tả dự án).
+"""TTS provider adapter interface.
 
-Mọi nhà cung cấp TTS phải kế thừa từ TTSProvider và triển khai ba phương thức
-này. Kiến trúc adapter cho phép thay đổi nhà cung cấp mà không ảnh hưởng đến
-pipeline render.
+Mọi nhà cung cấp TTS phải kế thừa từ TTSProvider và triển khai các phương thức này.
 """
 
 from __future__ import annotations
@@ -19,7 +17,11 @@ class TTSProvider(ABC):
     @property
     @abstractmethod
     def name(self) -> str:
-        """Provider identifier, e.g. 'edge', 'local', 'cloud'."""
+        """Provider identifier, e.g. 'edge', 'elevenlabs', 'gemini_tts'."""
+
+    def is_configured(self) -> bool:
+        """Return whether provider has valid credentials/models configured."""
+        return True
 
     @abstractmethod
     def synthesize(self, text: str, voice: str, speed: float, output_path: str) -> str:

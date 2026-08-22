@@ -268,13 +268,25 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 
 def write_ass_v2(
-    entries: List[SubtitleEntry],
+    entries: List[SubtitleEntry] | List[dict],
     output_path: str,
-    config: SubtitleConfig,
+    config: SubtitleConfig | dict,
     canvas_width: int = 1920,
     canvas_height: int = 1080,
 ) -> str:
     """Ghi định dạng ASS chuẩn xác cao với viền và căn chỉnh an toàn."""
+    if isinstance(config, dict):
+        config = SubtitleConfig(**config)
+    
+    # Normalize dict entries to SubtitleEntry if needed
+    normalized_entries: List[SubtitleEntry] = []
+    for e in entries:
+        if isinstance(e, dict):
+            normalized_entries.append(SubtitleEntry(start=float(e.get("start", 0)), end=float(e.get("end", 0)), text=str(e.get("text", ""))))
+        else:
+            normalized_entries.append(e)
+    entries = normalized_entries
+
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     header = ASS_HEADER.format(
         width=canvas_width,
