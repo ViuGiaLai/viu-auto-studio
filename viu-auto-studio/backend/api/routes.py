@@ -1498,7 +1498,9 @@ def tts_preview(payload: dict, db: Session = Depends(get_db)):
     settings = get_tts_config(db)
     
     req_provider = str(payload.get("provider") or settings.get("provider") or "edge").lower().strip()
-    req_voice = str(payload.get("voice") or settings.get("voice") or "")
+    from backend.registry.tts_registry import tts_registry
+    raw_voice = str(payload.get("voice") or settings.get("voice") or "")
+    req_voice = tts_registry.resolve_voice(req_provider, raw_voice)
     
     settings.update({k: v for k, v in payload.items() if k in ("provider", "voice", "speed", "pitch", "volume", "language", "model_name", "model_id", "api_key")})
     settings["provider"] = req_provider

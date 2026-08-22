@@ -1506,6 +1506,7 @@ export default function SettingsPage() {
                       setElevenLabsKey(keyForProvider)
                       setGeminiTTSKey(keyForProvider)
                       setVbeeKey(keyForProvider)
+                      setConfig((prev) => prev ? { ...prev, provider: p, voice: defaultVoice } : prev)
                       await saveTTS({ provider: p, voice: defaultVoice })
                     } catch {
                       void saveTTS({ provider: p, voice: "" })

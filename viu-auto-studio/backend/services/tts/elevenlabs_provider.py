@@ -88,7 +88,7 @@ class ElevenLabsTTSProvider(TTSProvider):
                 "Vui lòng nhập API Key tại Cài đặt > Giọng & Âm thanh để tạo giọng ElevenLabs."
             )
 
-        voice_id = self._resolve_voice_id(voice)
+        voice_id = tts_registry.resolve_voice("elevenlabs", voice)
         out_file = Path(output_path)
         out_file.parent.mkdir(parents=True, exist_ok=True)
 

@@ -10,11 +10,18 @@ from typing import Optional, Dict
 # TTS Provider-specific Default Voices (Chuẩn hóa riêng cho từng Provider)
 PROVIDER_DEFAULT_VOICES: Dict[str, str] = {
     "edge": "vi-VN-HoaiMyNeural",
+    "elevenlabs": "pNInz6obpgDQGcFmaJgB",  # Adam (Nam · Commercial & Hot Trend)
     "gemini": "Puck",
-    "elevenlabs": "21m00Tcm4TlvDq8ikWAM",  # Rachel
+    "gemini_tts": "Puck",
     "kokoro": "af_bella",
-    "vbee": "vi-hanoi-nu-thao",
-    "cloud": "vi-VN-HoaiMyNeural",
+    "kokoro_vi": "af_bella",
+    "vbee": "hn_male_manhdung",
+    "google_cloud": "vi-VN-Standard-A",
+    "google_cloud_tts": "vi-VN-Standard-A",
+    "azure": "vi-VN-HoaiMyNeural",
+    "azure_tts": "vi-VN-HoaiMyNeural",
+    "omnivoice": "k2-fsa/OmniVoice",
+    "local": "vi_VN-nam-medium",
 }
 
 DEFAULT_TTS_PROVIDER = "edge"
@@ -25,8 +32,8 @@ DEFAULT_TTS_VOLUME = 1.0
 
 def resolve_default_voice_for_provider(provider: Optional[str]) -> str:
     """Resolve the default voice name specifically tailored for the given TTS provider."""
-    prov = (provider or DEFAULT_TTS_PROVIDER).lower()
-    return PROVIDER_DEFAULT_VOICES.get(prov, "vi-VN-HoaiMyNeural")
+    prov = (provider or DEFAULT_TTS_PROVIDER).lower().strip()
+    return PROVIDER_DEFAULT_VOICES.get(prov, PROVIDER_DEFAULT_VOICES.get("edge", "vi-VN-HoaiMyNeural"))
 
 
 # Video & Render defaults
