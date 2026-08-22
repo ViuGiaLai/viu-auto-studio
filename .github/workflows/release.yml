@@ -35,6 +35,8 @@ jobs:
           pip install pytest
 
       - name: Run Backend Validation Suite
+        env:
+          PYTHONUTF8: "1"
         run: |
           python -c "import sys; from pathlib import Path; sys.path.insert(0, 'viu-auto-studio'); from backend.core.config import init_data_dirs; init_data_dirs()"
           python -c "import sys; from pathlib import Path; sys.path.insert(0, 'viu-auto-studio'); from backend.render.smart_engine import detect_hardware_capabilities; print(detect_hardware_capabilities())"
@@ -160,4 +162,5 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 

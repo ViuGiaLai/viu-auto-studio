@@ -1,3 +1,4 @@
+from backend.registry.ai_registry import ai_registry
 """Gemini integration theo cơ chế của Flow Factory (1.1.8_0):
 
 1. Text API (generateContent) — GEMINI_TEXT_API — dùng để:
@@ -25,7 +26,7 @@ import requests
 
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
-TEXT_MODELS = ["gemini-3-flash-preview", "gemini-2.5-flash"]
+TEXT_MODELS = [m["id"] for m in ai_registry.get_models_by_provider("gemini")] or ["gemini-2.0-flash", "gemini-1.5-pro"]
 
 DEFAULT_STYLE_SUFFIX = (
     "Cinematic photorealistic illustration, consistent character design and "
