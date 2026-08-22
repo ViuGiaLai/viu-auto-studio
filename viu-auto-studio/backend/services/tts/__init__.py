@@ -154,21 +154,31 @@ def save_tts_config(db, config: TTSConfigRequest) -> dict:
 # ---------------------------------------------------------------------------
 
 def get_provider(config: Optional[dict] = None) -> TTSProvider:
-    """Build the active TTS provider from settings (or a plain dict)."""
+    """Build the active TTS provider from settings with strict provider isolation."""
     settings = config or {"provider": TTS_PROVIDER}
-    name = str(settings.get("provider", TTS_PROVIDER)).lower()
+    name = str(settings.get("provider", TTS_PROVIDER)).lower().strip()
 
     api_keys = settings.get("api_keys", {})
-    api_key = str(settings.get("api_key") or api_keys.get(name) or settings.get("cloud_api_key") or "")
+    api_key = str(
+        settings.get("api_key")
+        or api_keys.get(name)
+        or api_keys.get("elevenlabs" if name == "elevenlabs" else "")
+        or api_keys.get("gemini_tts" if "gemini" in name else "")
+        or api_keys.get("vbee" if name == "vbee" else "")
+        or settings.get("cloud_api_key")
+        or ""
+    ).strip()
 
     if name == "edge":
         return EdgeTTSProvider()
     if name == "elevenlabs":
-        return ElevenLabsTTSProvider(api_key=api_key)
-    if name == "gemini_tts":
+        model_id = str(settings.get("model_name") or settings.get("model_id") or "eleven_multilingual_v2")
+        return ElevenLabsTTSProvider(api_key=api_key, model_id=model_id)
+    if name in {"gemini_tts", "gemini"}:
         return GeminiTTSProvider(api_key=api_key)
     if name == "vbee":
-        return VbeeTTSProvider(api_key=api_key)
+        app_id = str(settings.get("app_id") or "")
+        return VbeeTTSProvider(api_key=api_key, app_id=app_id)
     if name in {"kokoro", "kokoro_vi"}:
         return KokoroTTSProvider(model_dir=str(settings.get("model_dir", "")))
     if name == "google_cloud_tts":
@@ -180,7 +190,7 @@ def get_provider(config: Optional[dict] = None) -> TTSProvider:
     if name == "local":
         return LocalTTSProvider(model_dir=str(settings.get("model_dir", TTS_MODEL_DIR)))
 
-    # Fallback to Edge TTS
+    # Explicit Edge provider when explicitly selected or fallback
     return EdgeTTSProvider()
 
 

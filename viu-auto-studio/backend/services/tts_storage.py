@@ -47,15 +47,18 @@ def _iter_audio(directory: Path) -> Iterable[Path]:
 
 
 def tts_cache_key(text: str, settings: dict) -> str:
+    # Hash the credential so changing key/account invalidates cache
+    api_key_sample = str(settings.get("api_key") or settings.get("api_keys", {}).get(settings.get("provider", "")) or "")[:12]
     material = {
-        "text": text,
-        "provider": settings.get("provider", ""),
-        "voice": settings.get("voice", ""),
-        "speed": settings.get("speed", 1.0),
-        "pitch": settings.get("pitch", 0.0),
-        "volume": settings.get("volume", 1.0),
-        "language": settings.get("language", ""),
-        "model": settings.get("model_name", ""),
+        "text": text.strip(),
+        "provider": str(settings.get("provider", "edge")).lower().strip(),
+        "voice": str(settings.get("voice", "")).strip(),
+        "speed": round(float(settings.get("speed", 1.0)), 2),
+        "pitch": round(float(settings.get("pitch", 0.0)), 2),
+        "volume": round(float(settings.get("volume", 1.0)), 2),
+        "language": str(settings.get("language", "")).strip(),
+        "model": str(settings.get("model_name", "") or settings.get("model_id", "")).strip(),
+        "key_hash": hashlib.md5(api_key_sample.encode("utf-8")).hexdigest() if api_key_sample else "",
     }
     encoded = json.dumps(material, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()

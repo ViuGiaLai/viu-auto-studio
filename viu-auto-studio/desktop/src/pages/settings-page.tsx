@@ -687,23 +687,21 @@ export default function SettingsPage() {
     }
   }
 
-  const saveTTS = async (patch: Partial<TTSConfig>) => {
+    const saveTTS = async (patch: Partial<TTSConfig>) => {
     if (!config) return
     const next = { ...config, ...patch }
     try {
       await api.ttsSaveConfig({
         provider: next.provider,
         voice: next.voice,
-
         speed: next.speed,
         pitch: next.pitch,
         volume: next.volume,
-
         model_dir: next.model_dir,
+        api_keys: next.api_keys,
       })
       setConfig(next)
       setDirty(true)
-      // auto saved silently
     } catch (e) {
       toast({ title: "Không thể lưu", description: String(e), variant: "destructive" })
     }
@@ -900,26 +898,42 @@ export default function SettingsPage() {
     }
   }
 
-  const preview = async () => {
-
+    const preview = async () => {
     if (!config) return
-
     setPreviewing(true)
     try {
+      const activeKey =
+        config.provider === "elevenlabs" ? (elevenLabsKey || config.api_keys?.elevenlabs || "") :
+        config.provider === "gemini_tts" ? (geminiTTSKey || config.api_keys?.gemini_tts || "") :
+        config.provider === "vbee" ? (vbeeKey || config.api_keys?.vbee || "") : ""
+
       const res = await api.ttsPreview(customText, {
         provider: config.provider,
         voice: config.voice,
         speed: config.speed,
+        pitch: config.pitch,
         volume: config.volume,
+        api_key: activeKey,
       })
-      if (res.audio_path) {
-        setPreviewUrl(mediaUrl(res.audio_path))
-        setTimeout(() => audioRef.current?.play(), 100)
-        api.ttsStorage().then(setTtsStorageStats).catch(() => { })
-        toast({ title: res.cache_hit ? "Đã dùng lại TTS cache" : "Đã tạo âm thanh mẫu thành công", description: res.cache_hit ? "Nội dung và cấu hình giống lần trước nên không gọi TTS lại." : "Preview được lưu tạm và sẽ tự dọn." })
 
+      if (res.ok && res.audio_path) {
+        const fullUrl = `${mediaUrl(res.audio_path)}?t=${Date.now()}`
+        setPreviewUrl(fullUrl)
+        if (audioRef.current) {
+          audioRef.current.src = fullUrl
+          setTimeout(() => audioRef.current?.play().catch(() => {}), 100)
+        }
+        api.ttsStorage().then(setTtsStorageStats).catch(() => {})
+        toast({
+          title: res.cache_hit ? "Đã dùng lại TTS cache" : "Đã tạo âm thanh mẫu thành công",
+          description: `Động cơ: ${res.actual_provider || config.provider} · Giọng: ${res.actual_voice || config.voice}`
+        })
       } else {
-        toast({ title: res.message || "Không thể tạo mẫu", variant: "destructive" })
+        toast({
+          title: "Không thể nghe thử",
+          description: res.message || "Nhà cung cấp chưa được cấu hình hoặc thiếu API Key.",
+          variant: "destructive"
+        })
       }
     } catch (e) {
       toast({ title: "Lỗi tạo mẫu", description: String(e), variant: "destructive" })

@@ -441,7 +441,7 @@ export const api = {
   ttsTestConnection: (data?: { provider?: string; api_key?: string }) =>
     post<{ ok: boolean; message: string }>(`/tts/test-connection`, data ?? {}),
   ttsPreview: (text: string, overrides?: Partial<TTSConfig>) =>
-    post<{ ok: boolean; audio_path?: string; cache_hit?: boolean; cache_key?: string; message?: string }>(`/tts/preview`, { text, ...overrides }),
+    post<{ ok: boolean; audio_path?: string; cache_hit?: boolean; cache_key?: string; message?: string; provider_id?: string; voice_id?: string; requested_provider?: string; actual_provider?: string; actual_voice?: string; configured?: boolean }>(`/tts/preview`, { text, ...overrides }),
   ttsStorage: () => request<{ ok: boolean; preview_bytes: number; generated_bytes: number; cache_bytes: number; cache_limit_bytes: number; preview_ttl_seconds: number; generated_ttl_seconds: number; cache_ttl_seconds: number; preview_dir: string; cache_dir: string }>(`/tts/storage`),
   ttsStorageClear: () => post<{ ok: boolean; removed: number; preview_removed: number; generated_removed: number; preview_bytes: number; generated_bytes: number; cache_bytes: number }>(`/tts/storage/clear`, {}),
 

@@ -1493,15 +1493,36 @@ def tts_test(payload: TTSTestConnectionRequest | None = None):
 
 @router.post("/tts/preview")
 def tts_preview(payload: dict, db: Session = Depends(get_db)):
-    """Create a temporary preview and reuse the same request from TTS cache."""
+    """Create a temporary preview with strict provider routing and metadata."""
     text = str(payload.get("text") or "Đây là đoạn giọng đọc mẫu của Viu Auto Studio.")
     settings = get_tts_config(db)
-    settings.update({k: v for k, v in payload.items() if k in ("provider", "voice", "speed", "pitch", "volume", "language", "model_name")})
+    
+    req_provider = str(payload.get("provider") or settings.get("provider") or "edge").lower().strip()
+    req_voice = str(payload.get("voice") or settings.get("voice") or "")
+    
+    settings.update({k: v for k, v in payload.items() if k in ("provider", "voice", "speed", "pitch", "volume", "language", "model_name", "model_id", "api_key")})
+    settings["provider"] = req_provider
+    settings["voice"] = req_voice
+
+    # 1. Resolve Provider instance and verify credentials
+    from backend.services.tts import get_provider, synthesize as tts_synthesize
+    provider_inst = get_provider(settings)
+
+    if not provider_inst.is_configured():
+        return {
+            "ok": False,
+            "configured": False,
+            "requested_provider": req_provider,
+            "actual_provider": req_provider,
+            "message": f"Nhà cung cấp {provider_inst.name.upper()} chưa được cấu hình API Key. Vui lòng nhập API Key tại Cài đặt > Giọng & Âm thanh.",
+        }
+
     cleanup_preview_files()
     cache_key = tts_cache_key(text, settings)
     cached = cache_path(cache_key)
     preview = new_preview_path(cache_key)
     remove_other_previews()
+
     try:
         if cached.is_file() and cached.stat().st_size > 0:
             mark_cache_used(cached)
@@ -1511,18 +1532,39 @@ def tts_preview(payload: dict, db: Session = Depends(get_db)):
             cached.parent.mkdir(parents=True, exist_ok=True)
             tts_synthesize(text, str(cached), settings)
             if not cached.is_file() or cached.stat().st_size == 0:
-                raise RuntimeError("TTS provider không tạo được file audio hợp lệ")
+                raise RuntimeError(f"TTS provider {provider_inst.name} không tạo được file audio hợp lệ")
             shutil.copy2(cached, preview)
             cache_hit = False
-        return {"ok": True, "audio_path": str(preview), "cache_hit": cache_hit, "cache_key": cache_key}
+
+        return {
+            "ok": True,
+            "audio_path": str(preview),
+            "cache_hit": cache_hit,
+            "cache_key": cache_key,
+            "provider_id": provider_inst.name,
+            "voice_id": req_voice,
+            "requested_provider": req_provider,
+            "actual_provider": provider_inst.name,
+            "actual_voice": req_voice,
+        }
     except RuntimeError as exc:
         cached.unlink(missing_ok=True)
         preview.unlink(missing_ok=True)
-        return {"ok": False, "message": str(exc)}
+        return {
+            "ok": False,
+            "message": str(exc),
+            "requested_provider": req_provider,
+            "actual_provider": provider_inst.name,
+        }
     except OSError as exc:
         cached.unlink(missing_ok=True)
         preview.unlink(missing_ok=True)
-        return {"ok": False, "message": f"Không thể lưu audio preview tạm: {exc}"}
+        return {
+            "ok": False,
+            "message": f"Không thể lưu audio preview tạm: {exc}",
+            "requested_provider": req_provider,
+            "actual_provider": provider_inst.name,
+        }
 
 
 @router.get("/tts/preview-audio")
