@@ -1,7 +1,7 @@
 {
   "name": "viu-auto-studio-desktop",
   "version": "1.0.0",
-  "description": "Viu Auto Studio — AI video generator desktop app (Electron + React + Vite)",
+  "description": "Viu Auto Studio \u2014 AI video generator desktop app (Electron + React + Vite)",
   "private": true,
   "main": "dist-electron/main.mjs",
   "scripts": {
@@ -149,5 +149,6 @@
     },
     "forceCodeSigning": false
   },
-  "type": "module"
+  "type": "module",
+  "repository": "https://github.com/ViuGiaLai/viu-auto-studio"
 }
